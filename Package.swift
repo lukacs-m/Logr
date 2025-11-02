@@ -16,10 +16,33 @@ let package = Package(
             name: "Logr",
             targets: ["Logr"]
         ),
+        .library(name: "LogrUI",
+                 targets: ["LogrUI"])
+    ],
+    dependencies: [
+        .package(url: "https://github.com/kishikawakatsumi/KeychainAccess", .upToNextMajor(from: "4.2.2")),
+        .package(url: "https://github.com/pointfreeco/sqlite-data", .upToNextMajor(from: "1.3.0")),
     ],
     targets: [
         .target(
-            name: "Logr"
+            name: "Logr",
+            dependencies: [
+                .product(name: "KeychainAccess", package: "KeychainAccess"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
+            ],
+            swiftSettings: [
+              .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+              .enableUpcomingFeature("InferIsolatedConformances")
+            ]
+        ),
+        .target(
+            name: "LogrUI",
+            dependencies: ["Logr"],
+            swiftSettings: [
+              .defaultIsolation(MainActor.self),
+              .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+              .enableUpcomingFeature("InferIsolatedConformances")
+            ]
         ),
         .testTarget(
             name: "LogrTests",
