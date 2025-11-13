@@ -235,15 +235,10 @@ struct LogrTests {
 
         let now = Date()
         let oneHourAgo = now.addingTimeInterval(-3600)
-//        let twoHoursAgo = now.addingTimeInterval(-7200)
 
         // Create an old log (if your LogR supports setting timestamps)
         // If not, you may need to mock the date or add a test-only initializer
         logr.log(level: .info, message: "Old message", category: .system)
-        
-        // Small delay to ensure different timestamps
-//        try await Task.sleep(for: .milliseconds(100))
-        
         logr.log(level: .info, message: "Recent message", category: .system)
 
         // Filter logs from now (should get all logs just created)

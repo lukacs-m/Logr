@@ -30,6 +30,24 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable {
         self.function = function
         self.line = line
     }
+    
+    public static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.timestamp == rhs.timestamp &&
+        lhs.level == rhs.level &&
+        lhs.category == rhs.category &&
+        lhs.subsystem == rhs.subsystem &&
+        lhs.message == rhs.message
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(timestamp)
+        hasher.combine(level)
+        hasher.combine(category)
+        hasher.combine(subsystem)
+        hasher.combine(message)
+    }
 }
 
 public struct EncryptedLogEntry: Sendable, Codable, Identifiable, Hashable {

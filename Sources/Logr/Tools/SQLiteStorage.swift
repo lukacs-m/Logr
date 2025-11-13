@@ -9,26 +9,26 @@ import Foundation
 import SQLiteData
 import Foundation
 
-@Table
+@Table("EncryptedLogEntryDAO")
 struct EncryptedLogEntryDAO: Identifiable, Sendable {
     @Column(primaryKey: true) var id: String
     @Column var data: Data // For storing encrypted log data
-    @Column var timestamp: Date
+    @Column var timestamp: TimeInterval
     
-    init(id: String, timestamp: Date, data: Data) {
+    init(id: String, timestamp: TimeInterval, data: Data) {
         self.id = id
         self.data = data
         self.timestamp = timestamp
     }
     
     var toEncryptedLogEntry: EncryptedLogEntry {
-        EncryptedLogEntry(id: id, timestamp: timestamp, data: data)
+        EncryptedLogEntry(id: id, timestamp: Date(timeIntervalSince1970: timestamp), data: data)
     }
 }
 
 extension EncryptedLogEntry {
     var toEncryptedLogEntryDAO: EncryptedLogEntryDAO {
-        EncryptedLogEntryDAO(id: id, timestamp: timestamp, data: data)
+        EncryptedLogEntryDAO(id: id, timestamp: timestamp.timeIntervalSince1970, data: data)
     }
 }
 
@@ -53,7 +53,7 @@ public final class LogRepository: LogRPersistence {
                     withIntermediateDirectories: true
                 )
             }
-            
+
             // Create database connection - this will create the file if it doesn't exist
             self.database = try DatabaseQueue(path: databasePath)
             
@@ -92,12 +92,9 @@ public final class LogRepository: LogRPersistence {
             try db.create(table: "EncryptedLogEntryDAO") { table in
                 table.column("id", .text).primaryKey()
                 table.column("data", .blob).notNull()
-                table.column("timestamp", .date).notNull()
+                table.column("timestamp", .double).notNull()
             }
         }
-        
-        // Add more migrations here as needed in the future
-        // migrator.registerMigration("add_new_column") { db in ... }
         
         try migrator.migrate(database)
     }
@@ -125,7 +122,7 @@ public final class LogRepository: LogRPersistence {
     public func deleteEntries(olderThan date: Date) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO
-                .where { $0.timestamp < date}
+                .where { $0.timestamp < date.timeIntervalSince1970 }
                 .delete()
                 .execute(db)
         }
