@@ -8,8 +8,6 @@
 import Foundation
 import OSLog
 
-
-@frozen
 public enum LogLevel: String, CaseIterable, Sendable, Codable {
     // debug: Debug-level messages to use in a development environment while actively debugging.
     case debug

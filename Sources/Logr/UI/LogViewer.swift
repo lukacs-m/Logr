@@ -1,33 +1,39 @@
-//import SwiftUI
-//import UniformTypeIdentifiers
-//
+import SwiftUI
+import UniformTypeIdentifiers
+
 //#if canImport(UIKit)
 //import UIKit
 //#elseif canImport(AppKit)
 //import AppKit
 //#endif
-//
-//// MARK: - Share Item
-//
-//public struct ShareItem: Transferable {
-//    let data: Data
-//    let fileName: String
-//    let contentType: UTType
-//    
-//    public static var transferRepresentation: some TransferRepresentation {
-//        DataRepresentation(contentType: .data) { item in
-//            item.data
-//        } importing: { data in
-//            ShareItem(data: data, fileName: "imported.json", contentType: .json)
-//        }
-//        .suggestedFileName { item in
-//            item.fileName
-//        }
-//    }
-//}
-//
+
+// MARK: - Share Item
+
+public struct ShareItem: Transferable {
+    let data: Data
+    let fileName: String
+    let contentType: UTType
+    
+    public init(data: Data, fileName: String, contentType: UTType) {
+        self.data = data
+        self.fileName = fileName
+        self.contentType = contentType
+    }
+    
+    public static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(contentType: .data) { item in
+            item.data
+        } importing: { data in
+            ShareItem(data: data, fileName: "imported.json", contentType: .json)
+        }
+        .suggestedFileName { item in
+            item.fileName
+        }
+    }
+}
+
 //public struct LogViewer: View {
-//    @Environment(LogRService) private var logr
+//    @Environment(\.logService) var logr
 //    @State private var searchText = ""
 //    @State private var selectedLevels: Set<LogLevel> = Set(LogLevel.allCases)
 //    @State private var selectedCategories: Set<LogCategory> = []
@@ -40,38 +46,15 @@
 //    
 //    public init() {}
 //    
-//    @available(*, deprecated, message: "Use init() and provide LogRService via environment")
-//    public init(logr: LogRService) {
-//        // This initializer is kept for backward compatibility but deprecated
-//        // Users should use the environment-based approach
-//    }
-//    
 //    public var body: some View {
 //        NavigationStack {
-//            VStack(spacing: 0) {
-//                if logr.isCleanupRunning {
-//                    HStack {
-//                        ProgressView()
-//                            .scaleEffect(0.8)
-//                        Text("Cleaning up logs...")
-//                            .font(.caption)
-//                            .foregroundStyle(.secondary)
-//                    }
-//                    .padding(.vertical, 8)
-//                    .frame(maxWidth: .infinity)
-//                    .background(Color.secondary.opacity(0.1))
-//                }
-//                
 //                List {
 //                    ForEach(filteredLogs, id: \.id) { entry in
 //                        LogEntryRow(entry: entry)
 //                    }
 //                }
-//                .searchable(text: $searchText, prompt: "Search logs...")
-//                .refreshable {
-//                    await refreshLogs()
-//                }
-//            }
+//            .searchable(text: $searchText, prompt: "Search logs...")
+//            
 //            .navigationTitle("LogR Viewer")
 //            .toolbar {
 //                ToolbarItemGroup(placement: .primaryAction) {
@@ -187,10 +170,6 @@
 //        availableCategories = Set(logr.recentLogs.map(\.category))
 //    }
 //    
-//    private func refreshLogs() async {
-//        // The @Observable LogR will automatically update recentLogs
-//    }
-//    
 //    private func prepareShareItem(format: ExportFormat) async {
 //        do {
 //            let data = try await logr.exportLogs(format: format)
@@ -226,50 +205,125 @@
 //    }
 //}
 //
+//
 //struct LogEntryRow: View {
 //    let entry: LogEntry
 //    @State private var isExpanded = false
-//    
+//
 //    var body: some View {
-//        VStack(alignment: .leading, spacing: 4) {
-//            HStack {
+//
+////        DisclosureGroup(isExpanded: $isExpanded) {
+////                            VStack(alignment: .leading, spacing: 4) {
+////                                Group {
+////                                    DetailRow("Subsystem", entry.subsystem)
+////                                    DetailRow("File", URL(fileURLWithPath: entry.file).lastPathComponent)
+////                                    DetailRow("Function", entry.function)
+////                                    DetailRow("Line", "\(entry.line)")
+////                                    DetailRow("Timestamp", entry.timestamp.formatted(.iso8601))
+////                                }
+////                                .font(.caption)
+////                                .foregroundStyle(.secondary)
+////                            }
+////        } label: {
+////            VStack(alignment: .leading, spacing: 4) {
+////                HStack {
+////                    LogLevelBadge(level: entry.level)
+////                    
+////                    VStack(alignment: .leading, spacing: 4) {
+////                        HStack {
+////                            Text(entry.category.displayName)
+////                                .font(.caption)
+////                                .foregroundStyle(.secondary)
+////                            
+////                            Spacer()
+////                            
+////                            Text(entry.timestamp, style: .time)
+////                                .font(.caption2)
+////                                .foregroundStyle(.tertiary)
+////                        }
+////                        
+////    //                    Text("\(entry.file) / \(entry.function) / line \(entry.line.description)")
+////    //                        .font(.body)
+////    //                        .lineLimit(isExpanded ? nil : 3)
+////    //
+////                        Text(entry.message)
+////                            .fontWeight(.semibold)
+////                            .lineLimit(isExpanded ? nil : 3)
+////                    }
+////                    
+////                    Spacer()
+////                }
+////                        .contentShape(Rectangle())
+////                        .onTapGesture {
+////                //            withAnimation(.easeInOut(duration: 0.2)) {
+////                                isExpanded.toggle()
+////                //            }
+////                        }
+////                
+////    //            if isExpanded {
+////    //                VStack(alignment: .leading, spacing: 4) {
+////    //                    Divider()
+////    //
+////    //                    Group {
+////    //                        DetailRow("Subsystem", entry.subsystem)
+////    //                        DetailRow("File", URL(fileURLWithPath: entry.file).lastPathComponent)
+////    //                        DetailRow("Function", entry.function)
+////    //                        DetailRow("Line", "\(entry.line)")
+////    //                        DetailRow("Timestamp", entry.timestamp.formatted(.iso8601))
+////    //                    }
+////    //                    .font(.caption)
+////    //                    .foregroundStyle(.secondary)
+////    //                }
+////    //            }
+////            }
+////        }
+////        .disclosureGroupStyle(CustomDisclosureGroupStyle(button: Text("ok")))
+//
+//        
+//        VStack(alignment: .center, spacing: 4) {
+//            HStack(alignment: .center) {
 //                LogLevelBadge(level: entry.level)
+//                    .frame(minWidth: 60, alignment: .leading)
 //                
-//                VStack(alignment: .leading, spacing: 2) {
+//                VStack(alignment: .leading, spacing: 4) {
 //                    HStack {
 //                        Text(entry.category.displayName)
-//                            .font(.caption)
-//                            .foregroundStyle(.secondary)
 //                        
 //                        Spacer()
 //                        
 //                        Text(entry.timestamp, style: .time)
-//                            .font(.caption2)
-//                            .foregroundStyle(.tertiary)
 //                    }
+//                    .font(.caption2)
+//                    .foregroundStyle(.tertiary)
 //                    
+////                    Text("\(entry.file) / \(entry.function) / line \(entry.line.description)")
+////                        .font(.body)
+////                        .lineLimit(isExpanded ? nil : 3)
+////                    
 //                    Text(entry.message)
-//                        .font(.body)
+//                        .fontWeight(.semibold)
 //                        .lineLimit(isExpanded ? nil : 3)
 //                }
 //                
 //                Spacer()
+//            }
+//            .alignmentGuide(.leading) { d in d[.trailing] }
+//            .transaction { transaction in
+//                transaction.animation = nil
 //            }
 //            
 //            if isExpanded {
 //                VStack(alignment: .leading, spacing: 4) {
 //                    Divider()
 //                    
-//                    Group {
-//                        DetailRow("Subsystem", entry.subsystem)
-//                        DetailRow("File", URL(fileURLWithPath: entry.file).lastPathComponent)
-//                        DetailRow("Function", entry.function)
-//                        DetailRow("Line", "\(entry.line)")
-//                        DetailRow("Timestamp", entry.timestamp.formatted(.iso8601))
-//                    }
-//                    .font(.caption)
-//                    .foregroundStyle(.secondary)
+//                    DetailRow("Subsystem", entry.subsystem)
+//                    DetailRow("File", URL(fileURLWithPath: entry.file).lastPathComponent)
+//                    DetailRow("Function", entry.function)
+//                    DetailRow("Line", "\(entry.line)")
+//                    DetailRow("Timestamp", entry.timestamp.formatted(.iso8601))
 //                }
+//                .font(.caption)
+//                .foregroundStyle(.secondary)
 //            }
 //        }
 //        .contentShape(Rectangle())
@@ -278,6 +332,7 @@
 //                isExpanded.toggle()
 //            }
 //        }
+//        .padding(.vertical, 7)
 //    }
 //}
 //
@@ -321,6 +376,7 @@
 //        case .notice: return .green
 //        case .error: return .orange
 //        case .fault: return .red
+//        case .warning: return .yellow
 //        }
 //    }
 //    
@@ -484,5 +540,29 @@
 //#Preview {
 //    @Previewable @State var mock = MockLogR()
 //    LogViewer()
-//        .environment(mock)
+//        .environment(\.logService, mock)
+//}
+//
+//struct CustomDisclosureGroupStyle<Label: View>: DisclosureGroupStyle {
+//    let button: Label
+//    
+//    func makeBody(configuration: Configuration) -> some View {
+//        HStack {
+//            configuration.label
+//            Spacer()
+//            button
+//                .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+//        }
+//        .contentShape(Rectangle())
+//        .onTapGesture {
+//            withAnimation {
+//                configuration.isExpanded.toggle()
+//            }
+//        }
+//        if configuration.isExpanded {
+//            configuration.content
+//                .padding(.leading, 30)
+//                .disclosureGroupStyle(self)
+//        }
+//    }
 //}

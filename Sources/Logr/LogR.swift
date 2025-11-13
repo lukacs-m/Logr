@@ -14,6 +14,9 @@ public protocol LogRService: Observable {
         file: String,
         function: String,
         line: Int)
+    
+    func exportLogs(format: ExportFormat) async throws -> Data
+    func clearLogs() async throws 
 }
 
 // MARK: - Helper functions
@@ -360,7 +363,7 @@ public enum ExportFormat {
         }
     }
     
-    func encode(_ logs: [LogEntry]) throws -> Data {
+public    func encode(_ logs: [LogEntry]) throws -> Data {
         switch self {
         case .json:
             let encoder = JSONEncoder()

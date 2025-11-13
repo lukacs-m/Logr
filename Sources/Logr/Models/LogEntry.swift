@@ -1,6 +1,5 @@
 import Foundation
 
-@frozen
 public struct LogEntry: Sendable, Codable, Identifiable, Hashable {
     public let id: String
     public let timestamp: Date
