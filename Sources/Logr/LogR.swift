@@ -185,57 +185,7 @@ public extension LogR {
         }
 
         return filteredEntries
-//        return try await storage?.retrieve(
-//            levels: levels,
-//            categories: categories,
-//            subsystems: subsystems,
-//            from: startDate,
-//            to: endDate,
-//            limit: limit
-//        ) ?? []
     }
-
-//
-//    //TODO: put this logic in array extension
-//    public func retrieve(levels: Set<LogLevel>? = nil,
-//        categories: Set<LogCategory>? = nil,
-//        subsystems: Set<String>? = nil,
-//        from startDate: Date? = nil,
-//        to endDate: Date? = nil,
-//        limit: Int? = nil) async throws -> [LogEntry] {
-//        let entries = try await loadEntries()
-//
-//        var filteredEntries = entries
-//
-//        if let levels = levels {
-//            filteredEntries = filteredEntries.filter { levels.contains($0.level) }
-//        }
-//
-//        if let categories = categories {
-//            filteredEntries = filteredEntries.filter { categories.contains($0.category) }
-//        }
-//
-//        if let subsystems = subsystems {
-//            filteredEntries = filteredEntries.filter { subsystems.contains($0.subsystem) }
-//        }
-//
-//        if let startDate = startDate {
-//            filteredEntries = filteredEntries.filter { $0.timestamp >= startDate }
-//        }
-//
-//        if let endDate = endDate {
-//            filteredEntries = filteredEntries.filter { $0.timestamp <= endDate }
-//        }
-//
-//        filteredEntries.sort { $0.timestamp > $1.timestamp }
-//
-//        if let limit = limit {
-//            filteredEntries = Array(filteredEntries.prefix(limit))
-//        }
-//
-//        return filteredEntries
-//    }
-//
 
     func clearLogs() async throws {
         try await storage?.clear()
@@ -243,14 +193,6 @@ public extension LogR {
     }
 
     func exportLogs(format: ExportFormat = .json) async throws -> Data {
-//        let logs = try await storage?.retrieve(
-//            levels: nil,
-//            categories: nil,
-//            subsystems: nil,
-//            from: nil,
-//            to: nil,
-//            limit: nil
-//        ) ?? []
         try format.encode(recentLogs)
     }
 }
@@ -332,14 +274,6 @@ private extension LogR {
             let encryptedLogs = try await storage?.fetchEntries()
             let logs: [LogEntry] = encryptedLogs?
                 .compactMap { try? cryptoService.symmetricDecrypt(encryptedData: $0.data) } ?? []
-//            let logs = try await storage?.retrieve(
-//                levels: nil,
-//                categories: nil,
-//                subsystems: nil,
-//                from: nil,
-//                to: nil,
-//                limit: configuration.maxLogEntries
-//            ) ?? []
             recentLogs = logs
         } catch {
             getLogger(for: .system).error("Failed to load recent logs: \(error.localizedDescription)")
