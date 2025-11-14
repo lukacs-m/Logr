@@ -10,7 +10,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable {
     public let file: String
     public let function: String
     public let line: Int
-    
+
     public init(id: String = UUID().uuidString,
                 timestamp: Date = Date(),
                 level: LogLevel,
@@ -30,14 +30,14 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable {
         self.function = function
         self.line = line
     }
-    
+
     public static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
         lhs.id == rhs.id &&
-        lhs.timestamp == rhs.timestamp &&
-        lhs.level == rhs.level &&
-        lhs.category == rhs.category &&
-        lhs.subsystem == rhs.subsystem &&
-        lhs.message == rhs.message
+            lhs.timestamp == rhs.timestamp &&
+            lhs.level == rhs.level &&
+            lhs.category == rhs.category &&
+            lhs.subsystem == rhs.subsystem &&
+            lhs.message == rhs.message
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -54,8 +54,8 @@ public struct EncryptedLogEntry: Sendable, Codable, Identifiable, Hashable {
     public let id: String
     public let timestamp: Date
     public let data: Data
-    
-   public init(id: String, timestamp: Date, data: Data) {
+
+    public init(id: String, timestamp: Date, data: Data) {
         self.id = id
         self.timestamp = timestamp
         self.data = data

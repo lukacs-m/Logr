@@ -6,21 +6,21 @@ public enum LogCategory: Sendable, Codable, Hashable {
     case lifecycle
     case initialization
     case configuration
-    
+
     // Networking
     case network
     case api
     case http
     case websocket
     case ssl
-    
+
     // User Interface
     case ui
     case navigation
     case animation
     case layout
     case gesture
-    
+
     // Data & Storage
     case database
     case coreData
@@ -28,7 +28,7 @@ public enum LogCategory: Sendable, Codable, Hashable {
     case cache
     case persistence
     case sync
-    
+
     // Security & Authentication
     case authentication
     case authorization
@@ -36,7 +36,7 @@ public enum LogCategory: Sendable, Codable, Hashable {
     case encryption
     case keychain
     case biometrics
-    
+
     // Performance & Monitoring
     case performance
     case memory
@@ -45,7 +45,7 @@ public enum LogCategory: Sendable, Codable, Hashable {
     case analytics
     case crash
     case profiling
-    
+
     // External Services
     case push
     case location
@@ -54,7 +54,7 @@ public enum LogCategory: Sendable, Codable, Hashable {
     case contacts
     case calendar
     case photos
-    
+
     // Business Logic
     case payment
     case subscription
@@ -62,130 +62,130 @@ public enum LogCategory: Sendable, Codable, Hashable {
     case user
     case content
     case search
-    
+
     // Development & Testing
     case debug
     case test
     case mock
-    
+
     // Custom category for project-specific needs
     case custom(String)
-    
+
     public var rawValue: String {
         switch self {
-        case .system: return "system"
-        case .lifecycle: return "lifecycle"
-        case .initialization: return "initialization"
-        case .configuration: return "configuration"
-        case .network: return "network"
-        case .api: return "api"
-        case .http: return "http"
-        case .websocket: return "websocket"
-        case .ssl: return "ssl"
-        case .ui: return "ui"
-        case .navigation: return "navigation"
-        case .animation: return "animation"
-        case .layout: return "layout"
-        case .gesture: return "gesture"
-        case .database: return "database"
-        case .coreData: return "coreData"
-        case .fileSystem: return "fileSystem"
-        case .cache: return "cache"
-        case .persistence: return "persistence"
-        case .sync: return "sync"
-        case .authentication: return "authentication"
-        case .authorization: return "authorization"
-        case .security: return "security"
-        case .encryption: return "encryption"
-        case .keychain: return "keychain"
-        case .biometrics: return "biometrics"
-        case .performance: return "performance"
-        case .memory: return "memory"
-        case .cpu: return "cpu"
-        case .battery: return "battery"
-        case .analytics: return "analytics"
-        case .crash: return "crash"
-        case .profiling: return "profiling"
-        case .push: return "push"
-        case .location: return "location"
-        case .camera: return "camera"
-        case .microphone: return "microphone"
-        case .contacts: return "contacts"
-        case .calendar: return "calendar"
-        case .photos: return "photos"
-        case .payment: return "payment"
-        case .subscription: return "subscription"
-        case .purchase: return "purchase"
-        case .user: return "user"
-        case .content: return "content"
-        case .search: return "search"
-        case .debug: return "debug"
-        case .test: return "test"
-        case .mock: return "mock"
-        case .custom(let value): return value
+        case .system: "system"
+        case .lifecycle: "lifecycle"
+        case .initialization: "initialization"
+        case .configuration: "configuration"
+        case .network: "network"
+        case .api: "api"
+        case .http: "http"
+        case .websocket: "websocket"
+        case .ssl: "ssl"
+        case .ui: "ui"
+        case .navigation: "navigation"
+        case .animation: "animation"
+        case .layout: "layout"
+        case .gesture: "gesture"
+        case .database: "database"
+        case .coreData: "coreData"
+        case .fileSystem: "fileSystem"
+        case .cache: "cache"
+        case .persistence: "persistence"
+        case .sync: "sync"
+        case .authentication: "authentication"
+        case .authorization: "authorization"
+        case .security: "security"
+        case .encryption: "encryption"
+        case .keychain: "keychain"
+        case .biometrics: "biometrics"
+        case .performance: "performance"
+        case .memory: "memory"
+        case .cpu: "cpu"
+        case .battery: "battery"
+        case .analytics: "analytics"
+        case .crash: "crash"
+        case .profiling: "profiling"
+        case .push: "push"
+        case .location: "location"
+        case .camera: "camera"
+        case .microphone: "microphone"
+        case .contacts: "contacts"
+        case .calendar: "calendar"
+        case .photos: "photos"
+        case .payment: "payment"
+        case .subscription: "subscription"
+        case .purchase: "purchase"
+        case .user: "user"
+        case .content: "content"
+        case .search: "search"
+        case .debug: "debug"
+        case .test: "test"
+        case .mock: "mock"
+        case let .custom(value): value
         }
     }
-    
+
     public var displayName: String {
         switch self {
-        case .system: return "System"
-        case .lifecycle: return "Lifecycle"
-        case .initialization: return "Initialization"
-        case .configuration: return "Configuration"
-        case .network: return "Network"
-        case .api: return "API"
-        case .http: return "HTTP"
-        case .websocket: return "WebSocket"
-        case .ssl: return "SSL/TLS"
-        case .ui: return "User Interface"
-        case .navigation: return "Navigation"
-        case .animation: return "Animation"
-        case .layout: return "Layout"
-        case .gesture: return "Gesture"
-        case .database: return "Database"
-        case .coreData: return "Core Data"
-        case .fileSystem: return "File System"
-        case .cache: return "Cache"
-        case .persistence: return "Persistence"
-        case .sync: return "Synchronization"
-        case .authentication: return "Authentication"
-        case .authorization: return "Authorization"
-        case .security: return "Security"
-        case .encryption: return "Encryption"
-        case .keychain: return "Keychain"
-        case .biometrics: return "Biometrics"
-        case .performance: return "Performance"
-        case .memory: return "Memory"
-        case .cpu: return "CPU"
-        case .battery: return "Battery"
-        case .analytics: return "Analytics"
-        case .crash: return "Crash"
-        case .profiling: return "Profiling"
-        case .push: return "Push Notifications"
-        case .location: return "Location"
-        case .camera: return "Camera"
-        case .microphone: return "Microphone"
-        case .contacts: return "Contacts"
-        case .calendar: return "Calendar"
-        case .photos: return "Photos"
-        case .payment: return "Payment"
-        case .subscription: return "Subscription"
-        case .purchase: return "Purchase"
-        case .user: return "User"
-        case .content: return "Content"
-        case .search: return "Search"
-        case .debug: return "Debug"
-        case .test: return "Test"
-        case .mock: return "Mock"
-        case .custom(let value): return value.capitalized
+        case .system: "System"
+        case .lifecycle: "Lifecycle"
+        case .initialization: "Initialization"
+        case .configuration: "Configuration"
+        case .network: "Network"
+        case .api: "API"
+        case .http: "HTTP"
+        case .websocket: "WebSocket"
+        case .ssl: "SSL/TLS"
+        case .ui: "User Interface"
+        case .navigation: "Navigation"
+        case .animation: "Animation"
+        case .layout: "Layout"
+        case .gesture: "Gesture"
+        case .database: "Database"
+        case .coreData: "Core Data"
+        case .fileSystem: "File System"
+        case .cache: "Cache"
+        case .persistence: "Persistence"
+        case .sync: "Synchronization"
+        case .authentication: "Authentication"
+        case .authorization: "Authorization"
+        case .security: "Security"
+        case .encryption: "Encryption"
+        case .keychain: "Keychain"
+        case .biometrics: "Biometrics"
+        case .performance: "Performance"
+        case .memory: "Memory"
+        case .cpu: "CPU"
+        case .battery: "Battery"
+        case .analytics: "Analytics"
+        case .crash: "Crash"
+        case .profiling: "Profiling"
+        case .push: "Push Notifications"
+        case .location: "Location"
+        case .camera: "Camera"
+        case .microphone: "Microphone"
+        case .contacts: "Contacts"
+        case .calendar: "Calendar"
+        case .photos: "Photos"
+        case .payment: "Payment"
+        case .subscription: "Subscription"
+        case .purchase: "Purchase"
+        case .user: "User"
+        case .content: "Content"
+        case .search: "Search"
+        case .debug: "Debug"
+        case .test: "Test"
+        case .mock: "Mock"
+        case let .custom(value): value.capitalized
         }
     }
-    
+
     /// Common categories for quick access
     public static let common: [LogCategory] = [
         .system, .network, .ui, .authentication, .database, .performance, .debug
     ]
-    
+
     /// All predefined categories (excluding custom)
     public static let predefined: [LogCategory] = [
         .system, .lifecycle, .initialization, .configuration,
@@ -198,7 +198,7 @@ public enum LogCategory: Sendable, Codable, Hashable {
         .payment, .subscription, .purchase, .user, .content, .search,
         .debug, .test, .mock
     ]
-    
+
     public init(rawValue: String) {
         if let predefined = Self.predefined.first(where: { $0.rawValue == rawValue }) {
             self = predefined
@@ -214,12 +214,12 @@ extension LogCategory: Identifiable {
 
 extension LogCategory: CaseIterable {
     public static var allCases: [LogCategory] {
-        return predefined
+        predefined
     }
 }
 
 extension LogCategory: CustomStringConvertible {
     public var description: String {
-        return displayName
+        displayName
     }
 }

@@ -22,6 +22,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/kishikawakatsumi/KeychainAccess", .upToNextMajor(from: "4.2.2")),
         .package(url: "https://github.com/pointfreeco/sqlite-data", .upToNextMajor(from: "1.3.0")),
+        .package(url: "https://github.com/nicklockwood/SwiftFormat", from: "0.58.6"),
     ],
     targets: [
         .target(

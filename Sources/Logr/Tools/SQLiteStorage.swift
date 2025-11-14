@@ -1,4 +1,4 @@
-//  
+//
 //  SQLiteStorage.swift
 //  Logr
 //
@@ -7,20 +7,19 @@
 
 import Foundation
 import SQLiteData
-import Foundation
 
 @Table("EncryptedLogEntryDAO")
 struct EncryptedLogEntryDAO: Identifiable, Sendable {
     @Column(primaryKey: true) var id: String
     @Column var data: Data // For storing encrypted log data
     @Column var timestamp: TimeInterval
-    
+
     init(id: String, timestamp: TimeInterval, data: Data) {
         self.id = id
         self.data = data
         self.timestamp = timestamp
     }
-    
+
     var toEncryptedLogEntry: EncryptedLogEntry {
         EncryptedLogEntry(id: id, timestamp: Date(timeIntervalSince1970: timestamp), data: data)
     }
@@ -34,59 +33,55 @@ extension EncryptedLogEntry {
 
 public final class LogRepository: LogRPersistence {
     private let database: any DatabaseWriter
-    
+
     public enum DatabaseError: Error {
         case databaseInitializationFailed
         case invalidDatabasePath
     }
-    
+
     /// Initialize with a specific database path
     public init(databasePath: String) throws {
         do {
             // Create parent directory if it doesn't exist
             let fileURL = URL(fileURLWithPath: databasePath)
             let directoryURL = fileURL.deletingLastPathComponent()
-            
+
             if !FileManager.default.fileExists(atPath: directoryURL.path) {
-                try FileManager.default.createDirectory(
-                    at: directoryURL,
-                    withIntermediateDirectories: true
-                )
+                try FileManager.default.createDirectory(at: directoryURL,
+                                                        withIntermediateDirectories: true)
             }
 
             // Create database connection - this will create the file if it doesn't exist
-            self.database = try DatabaseQueue(path: databasePath)
-            
+            database = try DatabaseQueue(path: databasePath)
+
             // Run migrations to create tables
             try runMigrations()
-            
+
         } catch {
             throw DatabaseError.databaseInitializationFailed
         }
     }
-    
+
     /// Initialize with default database path in Application Support directory
     public convenience init() throws {
         let fileManager = FileManager.default
-        guard let appSupportURL = fileManager.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
+        guard let appSupportURL = fileManager.urls(for: .applicationSupportDirectory,
+                                                   in: .userDomainMask).first else {
             throw DatabaseError.invalidDatabasePath
         }
-        
+
         let appBundleID = Bundle.main.bundleIdentifier ?? "LogRPersistence"
         let appDirectory = appSupportURL.appendingPathComponent(appBundleID)
         let databasePath = appDirectory
             .appendingPathComponent("logs.sqlite")
             .path
-        
+
         try self.init(databasePath: databasePath)
     }
-    
+
     private func runMigrations() throws {
         var migrator = DatabaseMigrator()
-        
+
         // Initial migration to create the EncryptedLogEntry table
         migrator.registerMigration("create_encrypted_log_entries") { db in
             try db.create(table: "EncryptedLogEntryDAO") { table in
@@ -95,12 +90,12 @@ public final class LogRepository: LogRPersistence {
                 table.column("timestamp", .double).notNull()
             }
         }
-        
+
         try migrator.migrate(database)
     }
-    
+
     // MARK: - LogRPersistence Implementation
-    
+
     public func store(_ entry: EncryptedLogEntry) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO.insert {
@@ -109,16 +104,16 @@ public final class LogRepository: LogRPersistence {
             .execute(db)
         }
     }
-    
+
     public func fetchEntries() async throws -> [EncryptedLogEntry] {
-       let results: [EncryptedLogEntryDAO] = try await database.read { db in
+        let results: [EncryptedLogEntryDAO] = try await database.read { db in
             try EncryptedLogEntryDAO
                 .order(by: \.timestamp)
                 .fetchAll(db)
         }
-            return results.map(\.toEncryptedLogEntry)
+        return results.map(\.toEncryptedLogEntry)
     }
-    
+
     public func deleteEntries(olderThan date: Date) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO
@@ -142,13 +137,13 @@ public final class LogRepository: LogRPersistence {
             try db.execute(sql: sql, arguments: [count])
         }
     }
-    
+
     public func clear() async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO.all.delete().execute(db)
         }
     }
-    
+
     public func count() async throws -> Int {
         try await database.read { db in
             try EncryptedLogEntryDAO.all.fetchCount(db)

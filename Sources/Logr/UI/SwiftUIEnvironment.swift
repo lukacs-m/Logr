@@ -1,22 +1,22 @@
-//import SwiftUI
+// import SwiftUI
 //
 //// MARK: - Environment Key and Values
 //
-//public struct LogRServiceEnvironmentKey: @preconcurrency EnvironmentKey {
+// public struct LogRServiceEnvironmentKey: @preconcurrency EnvironmentKey {
 //    @MainActor
 //    public static let defaultValue: LogRService = LogR()
-//}
+// }
 //
-//public extension EnvironmentValues {
+// public extension EnvironmentValues {
 //    @MainActor
 //    var logService: any LogRService {
 //        get { self[LogRServiceEnvironmentKey.self] }
 //        set { self[LogRServiceEnvironmentKey.self] = newValue }
 //    }
-//}
+// }
 //
 ////extension EnvironmentValues {
-////    @Entry var logService: LogRService = 
+////    @Entry var logService: LogRService =
 ////}
 //
 //
@@ -38,43 +38,43 @@
 //
 ////public struct LogRServiceModifier: ViewModifier {
 ////    let service: LogRService
-////    
+////
 ////    public func body(content: Content) -> some View {
 ////        content
 ////            .environment(\.logr, service)
 ////    }
 ////}
 //
-//public struct LogRServiceModifier: ViewModifier {
+// public struct LogRServiceModifier: ViewModifier {
 //    let service: LogRService
-//    
+//
 //    public func body(content: Content) -> some View {
 //        content
 //            .environment(\.logService, service)
 //    }
-//}
-//    
-//extension View {
+// }
+//
+// extension View {
 //    /// Injects a LogRService into the SwiftUI environment
 //    func logRService(_ service: LogRService) -> some View {
 //        modifier(LogRServiceModifier(service: service))
 //    }
-//}
+// }
 //
 //// MARK: - Mock Implementation
 //
-//@Observable
-//@MainActor
-//public final class MockLogR: LogRService, Sendable {
+// @Observable
+// @MainActor
+// public final class MockLogR: LogRService, Sendable {
 //    public private(set) var recentLogs: [LogEntry] = []
 //    public private(set) var isCleanupRunning = false
-//    
+//
 //    private var mockLogs: [LogEntry] = []
-//    
+//
 //    public init() {
 //        generateMockData()
 //    }
-//    
+//
 //    private func generateMockData() {
 //        let mockEntries: [LogEntry] = [
 //            LogEntry(
@@ -127,13 +127,13 @@
 //                message: "Memory usage: 45MB, CPU: 12%"
 //            )
 //        ]
-//        
+//
 //        mockLogs = mockEntries
 //        recentLogs = mockEntries
 //    }
-//    
+//
 //    // MARK: - LogRService Implementation
-//    
+//
 //    public func log(
 //        level: LogLevel,
 //        message: String,
@@ -151,10 +151,10 @@
 //            function: function,
 //            line: line
 //        )
-//        
+//
 //        mockLogs.insert(entry, at: 0)
 //        recentLogs.insert(entry, at: 0)
-//        
+//
 //        // Keep only the most recent 100 entries for demo
 //        if mockLogs.count > 100 {
 //            mockLogs.removeLast()
@@ -163,7 +163,7 @@
 //            recentLogs.removeLast()
 //        }
 //    }
-//    
+//
 ////    public func log(
 ////        level: LogLevel,
 ////        message: String,
@@ -174,9 +174,10 @@
 ////        line: Int = #line
 ////    ) async {
 ////        let fullMessage = "\(message) \(privateData.redacted)"
-////        await log(level: level, message: fullMessage, category: category, file: file, function: function, line: line)
+////        await log(level: level, message: fullMessage, category: category, file: file, function: function, line:
+/// line)
 ////    }
-//    
+//
 //    public func debug(
 //        _ message: String,
 //        category: LogCategory,
@@ -186,7 +187,7 @@
 //    ) async {
 //         log(level: .debug, message: message, category: category, file: file, function: function, line: line)
 //    }
-//    
+//
 //    public func info(
 //        _ message: String,
 //        category: LogCategory,
@@ -196,7 +197,7 @@
 //    ) async {
 //         log(level: .info, message: message, category: category, file: file, function: function, line: line)
 //    }
-//    
+//
 //    public func notice(
 //        _ message: String,
 //        category: LogCategory,
@@ -206,7 +207,7 @@
 //    ) async {
 //         log(level: .notice, message: message, category: category, file: file, function: function, line: line)
 //    }
-//    
+//
 //    public func error(
 //        _ message: String,
 //        category: LogCategory,
@@ -216,7 +217,7 @@
 //    ) async {
 //         log(level: .error, message: message, category: category, file: file, function: function, line: line)
 //    }
-//    
+//
 //    public func fault(
 //        _ message: String,
 //        category: LogCategory,
@@ -226,7 +227,7 @@
 //    ) async {
 //         log(level: .fault, message: message, category: category, file: file, function: function, line: line)
 //    }
-//    
+//
 ////    public func debug(
 ////        _ message: String,
 ////        privateData: PrivateString,
@@ -235,9 +236,10 @@
 ////        function: String = #function,
 ////        line: Int = #line
 ////    ) async {
-////        await log(level: .debug, message: message, privateData: privateData, category: category, file: file, function: function, line: line)
+////        await log(level: .debug, message: message, privateData: privateData, category: category, file: file,
+/// function: function, line: line)
 ////    }
-////    
+////
 ////    public func info(
 ////        _ message: String,
 ////        privateData: PrivateString,
@@ -246,9 +248,10 @@
 ////        function: String = #function,
 ////        line: Int = #line
 ////    ) async {
-////        await log(level: .info, message: message, privateData: privateData, category: category, file: file, function: function, line: line)
+////        await log(level: .info, message: message, privateData: privateData, category: category, file: file,
+/// function: function, line: line)
 ////    }
-////    
+////
 ////    public func notice(
 ////        _ message: String,
 ////        privateData: PrivateString,
@@ -257,9 +260,10 @@
 ////        function: String = #function,
 ////        line: Int = #line
 ////    ) async {
-////        await log(level: .notice, message: message, privateData: privateData, category: category, file: file, function: function, line: line)
+////        await log(level: .notice, message: message, privateData: privateData, category: category, file: file,
+/// function: function, line: line)
 ////    }
-////    
+////
 ////    public func error(
 ////        _ message: String,
 ////        privateData: PrivateString,
@@ -268,9 +272,10 @@
 ////        function: String = #function,
 ////        line: Int = #line
 ////    ) async {
-////        await log(level: .error, message: message, privateData: privateData, category: category, file: file, function: function, line: line)
+////        await log(level: .error, message: message, privateData: privateData, category: category, file: file,
+/// function: function, line: line)
 ////    }
-////    
+////
 ////    public func fault(
 ////        _ message: String,
 ////        privateData: PrivateString,
@@ -279,9 +284,10 @@
 ////        function: String = #function,
 ////        line: Int = #line
 ////    ) async {
-////        await log(level: .fault, message: message, privateData: privateData, category: category, file: file, function: function, line: line)
+////        await log(level: .fault, message: message, privateData: privateData, category: category, file: file,
+/// function: function, line: line)
 ////    }
-//    
+//
 //    public func getLogs(
 //        levels: Set<LogLevel>? = nil,
 //        categories: Set<LogCategory>? = nil,
@@ -291,42 +297,42 @@
 //        limit: Int? = nil
 //    ) async throws -> [LogEntry] {
 //        var filtered = mockLogs
-//        
+//
 //        if let levels = levels {
 //            filtered = filtered.filter { levels.contains($0.level) }
 //        }
-//        
+//
 //        if let categories = categories {
 //            filtered = filtered.filter { categories.contains($0.category) }
 //        }
-//        
+//
 //        if let subsystems = subsystems {
 //            filtered = filtered.filter { subsystems.contains($0.subsystem) }
 //        }
-//        
+//
 //        if let startDate = startDate {
 //            filtered = filtered.filter { $0.timestamp >= startDate }
 //        }
-//        
+//
 //        if let endDate = endDate {
 //            filtered = filtered.filter { $0.timestamp <= endDate }
 //        }
-//        
+//
 //        filtered.sort { $0.timestamp > $1.timestamp }
-//        
+//
 //        if let limit = limit {
 //            filtered = Array(filtered.prefix(limit))
 //        }
-//        
+//
 //        return filtered
 //    }
-//    
+//
 //    public func clearLogs() async throws {
 //        mockLogs.removeAll()
 //        recentLogs.removeAll()
 //    }
-//    
+//
 //    public func exportLogs(format: ExportFormat = .json) async throws -> Data {
 //        return try format.encode(mockLogs)
 //    }
-//}
+// }

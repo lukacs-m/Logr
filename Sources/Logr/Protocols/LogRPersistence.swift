@@ -1,4 +1,4 @@
-//  
+//
 //  LogRPersistence.swift
 //  Logr
 //

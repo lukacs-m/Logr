@@ -1,11 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-//#if canImport(UIKit)
-//import UIKit
-//#elseif canImport(AppKit)
-//import AppKit
-//#endif
+// #if canImport(UIKit)
+// import UIKit
+// #elseif canImport(AppKit)
+// import AppKit
+// #endif
 
 // MARK: - Share Item
 
@@ -13,13 +13,13 @@ public struct ShareItem: Transferable {
     let data: Data
     let fileName: String
     let contentType: UTType
-    
+
     public init(data: Data, fileName: String, contentType: UTType) {
         self.data = data
         self.fileName = fileName
         self.contentType = contentType
     }
-    
+
     public static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(contentType: .data) { item in
             item.data
@@ -32,7 +32,7 @@ public struct ShareItem: Transferable {
     }
 }
 
-//public struct LogViewer: View {
+// public struct LogViewer: View {
 //    @Environment(\.logService) var logr
 //    @State private var searchText = ""
 //    @State private var selectedLevels: Set<LogLevel> = Set(LogLevel.allCases)
@@ -43,9 +43,9 @@ public struct ShareItem: Transferable {
 //    @State private var showingDeleteConfirmation = false
 //    @State private var selectedExportFormat: ExportFormat = .json
 //    @State private var shareItem: ShareItem?
-//    
+//
 //    public init() {}
-//    
+//
 //    public var body: some View {
 //        NavigationStack {
 //                List {
@@ -54,7 +54,7 @@ public struct ShareItem: Transferable {
 //                    }
 //                }
 //            .searchable(text: $searchText, prompt: "Search logs...")
-//            
+//
 //            .navigationTitle("LogR Viewer")
 //            .toolbar {
 //                ToolbarItemGroup(placement: .primaryAction) {
@@ -62,7 +62,7 @@ public struct ShareItem: Transferable {
 //                        showingFilters = true
 //                    }
 //                    .disabled(logr.recentLogs.isEmpty)
-//                    
+//
 //                    Menu {
 //                        Menu("Share") {
 //                            ShareLink(
@@ -81,30 +81,30 @@ public struct ShareItem: Transferable {
 //                                    await prepareShareItem(format: .json)
 //                                }
 //                            }
-//                            
+//
 //                            Button("Share as CSV") {
 //                                Task { await prepareShareItem(format: .csv) }
 //                            }
 //                            .disabled(filteredLogs.isEmpty)
-//                            
+//
 //                            Button("Share as Text") {
 //                                Task { await prepareShareItem(format: .txt) }
 //                            }
 //                            .disabled(filteredLogs.isEmpty)
 //                        }
-//                        
+//
 //                        Button("Export to Files") {
 //                            showingExport = true
 //                        }
 //                        .disabled(filteredLogs.isEmpty)
-//                        
+//
 //                        Divider()
-//                        
+//
 //                        Button("Clear All Logs", role: .destructive) {
 //                            showingDeleteConfirmation = true
 //                        }
 //                        .disabled(logr.recentLogs.isEmpty)
-//                        
+//
 //                    } label: {
 //                        Image(systemName: "ellipsis.circle")
 //                    }
@@ -146,30 +146,30 @@ public struct ShareItem: Transferable {
 //            updateAvailableCategories()
 //        }
 //    }
-//    
+//
 //    private var filteredLogs: [LogEntry] {
 //        let levelFiltered = logr.recentLogs.filter { selectedLevels.contains($0.level) }
-//        
-//        let categoryFiltered = selectedCategories.isEmpty 
-//            ? levelFiltered 
+//
+//        let categoryFiltered = selectedCategories.isEmpty
+//            ? levelFiltered
 //            : levelFiltered.filter { selectedCategories.contains($0.category) }
-//        
-//        let searchFiltered = searchText.isEmpty 
-//            ? categoryFiltered 
-//            : categoryFiltered.filter { 
+//
+//        let searchFiltered = searchText.isEmpty
+//            ? categoryFiltered
+//            : categoryFiltered.filter {
 //                $0.message.localizedCaseInsensitiveContains(searchText) ||
 //                $0.category.rawValue.localizedCaseInsensitiveContains(searchText) ||
 //                $0.category.displayName.localizedCaseInsensitiveContains(searchText) ||
 //                $0.subsystem.localizedCaseInsensitiveContains(searchText)
 //            }
-//        
+//
 //        return searchFiltered
 //    }
-//    
+//
 //    private func updateAvailableCategories() {
 //        availableCategories = Set(logr.recentLogs.map(\.category))
 //    }
-//    
+//
 //    private func prepareShareItem(format: ExportFormat) async {
 //        do {
 //            let data = try await logr.exportLogs(format: format)
@@ -179,34 +179,34 @@ public struct ShareItem: Transferable {
 //            case .csv: .commaSeparatedText
 //            case .txt: .plainText
 //            }
-//            
+//
 //            shareItem = ShareItem(data: data, fileName: fileName, contentType: contentType)
 //        } catch {
 //            print("Failed to prepare share item: \(error)")
 //        }
 //    }
-//    
+//
 //    private func exportLogs(format: ExportFormat) {
 //        Task {
 //            do {
 //                let data = try await logr.exportLogs(format: format)
 //                let fileName = "logs_\(Date().timeIntervalSince1970).\(format.fileExtension)"
-//                
+//
 //                // Save to app's Documents directory
 //                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
 //                let fileURL = documentsPath.appendingPathComponent(fileName)
 //                try data.write(to: fileURL)
-//                
+//
 //                print("Logs exported to: \(fileURL.path)")
 //            } catch {
 //                print("Export failed: \(error)")
 //            }
 //        }
 //    }
-//}
+// }
 //
 //
-//struct LogEntryRow: View {
+// struct LogEntryRow: View {
 //    let entry: LogEntry
 //    @State private var isExpanded = false
 //
@@ -228,20 +228,20 @@ public struct ShareItem: Transferable {
 ////            VStack(alignment: .leading, spacing: 4) {
 ////                HStack {
 ////                    LogLevelBadge(level: entry.level)
-////                    
+////
 ////                    VStack(alignment: .leading, spacing: 4) {
 ////                        HStack {
 ////                            Text(entry.category.displayName)
 ////                                .font(.caption)
 ////                                .foregroundStyle(.secondary)
-////                            
+////
 ////                            Spacer()
-////                            
+////
 ////                            Text(entry.timestamp, style: .time)
 ////                                .font(.caption2)
 ////                                .foregroundStyle(.tertiary)
 ////                        }
-////                        
+////
 ////    //                    Text("\(entry.file) / \(entry.function) / line \(entry.line.description)")
 ////    //                        .font(.body)
 ////    //                        .lineLimit(isExpanded ? nil : 3)
@@ -250,7 +250,7 @@ public struct ShareItem: Transferable {
 ////                            .fontWeight(.semibold)
 ////                            .lineLimit(isExpanded ? nil : 3)
 ////                    }
-////                    
+////
 ////                    Spacer()
 ////                }
 ////                        .contentShape(Rectangle())
@@ -259,7 +259,7 @@ public struct ShareItem: Transferable {
 ////                                isExpanded.toggle()
 ////                //            }
 ////                        }
-////                
+////
 ////    //            if isExpanded {
 ////    //                VStack(alignment: .leading, spacing: 4) {
 ////    //                    Divider()
@@ -279,43 +279,43 @@ public struct ShareItem: Transferable {
 ////        }
 ////        .disclosureGroupStyle(CustomDisclosureGroupStyle(button: Text("ok")))
 //
-//        
+//
 //        VStack(alignment: .center, spacing: 4) {
 //            HStack(alignment: .center) {
 //                LogLevelBadge(level: entry.level)
 //                    .frame(minWidth: 60, alignment: .leading)
-//                
+//
 //                VStack(alignment: .leading, spacing: 4) {
 //                    HStack {
 //                        Text(entry.category.displayName)
-//                        
+//
 //                        Spacer()
-//                        
+//
 //                        Text(entry.timestamp, style: .time)
 //                    }
 //                    .font(.caption2)
 //                    .foregroundStyle(.tertiary)
-//                    
+//
 ////                    Text("\(entry.file) / \(entry.function) / line \(entry.line.description)")
 ////                        .font(.body)
 ////                        .lineLimit(isExpanded ? nil : 3)
-////                    
+////
 //                    Text(entry.message)
 //                        .fontWeight(.semibold)
 //                        .lineLimit(isExpanded ? nil : 3)
 //                }
-//                
+//
 //                Spacer()
 //            }
 //            .alignmentGuide(.leading) { d in d[.trailing] }
 //            .transaction { transaction in
 //                transaction.animation = nil
 //            }
-//            
+//
 //            if isExpanded {
 //                VStack(alignment: .leading, spacing: 4) {
 //                    Divider()
-//                    
+//
 //                    DetailRow("Subsystem", entry.subsystem)
 //                    DetailRow("File", URL(fileURLWithPath: entry.file).lastPathComponent)
 //                    DetailRow("Function", entry.function)
@@ -334,17 +334,17 @@ public struct ShareItem: Transferable {
 //        }
 //        .padding(.vertical, 7)
 //    }
-//}
+// }
 //
-//struct DetailRow: View {
+// struct DetailRow: View {
 //    let label: String
 //    let value: String
-//    
+//
 //    init(_ label: String, _ value: String) {
 //        self.label = label
 //        self.value = value
 //    }
-//    
+//
 //    var body: some View {
 //        HStack {
 //            Text("\(label):")
@@ -353,11 +353,11 @@ public struct ShareItem: Transferable {
 //            Spacer()
 //        }
 //    }
-//}
+// }
 //
-//struct LogLevelBadge: View {
+// struct LogLevelBadge: View {
 //    let level: LogLevel
-//    
+//
 //    var body: some View {
 //        Text(level.displayName.uppercased())
 //            .font(.caption2)
@@ -368,7 +368,7 @@ public struct ShareItem: Transferable {
 //            .foregroundColor(foregroundColor)
 //            .clipShape(Capsule())
 //    }
-//    
+//
 //    private var backgroundColor: Color {
 //        switch level {
 //        case .debug: return .gray
@@ -379,18 +379,18 @@ public struct ShareItem: Transferable {
 //        case .warning: return .yellow
 //        }
 //    }
-//    
+//
 //    private var foregroundColor: Color {
 //        .white
 //    }
-//}
+// }
 //
-//struct FilterSheet: View {
+// struct FilterSheet: View {
 //    @Binding var selectedLevels: Set<LogLevel>
 //    @Binding var selectedCategories: Set<LogCategory>
 //    let availableCategories: [LogCategory]
 //    @Environment(\.dismiss) private var dismiss
-//    
+//
 //    var body: some View {
 //        NavigationStack {
 //            List {
@@ -399,7 +399,7 @@ public struct ShareItem: Transferable {
 //                        HStack {
 //                            LogLevelBadge(level: level)
 //                            Spacer()
-//                            
+//
 //                            if selectedLevels.contains(level) {
 //                                Image(systemName: "checkmark")
 //                                    .foregroundColor(.blue)
@@ -415,27 +415,27 @@ public struct ShareItem: Transferable {
 //                        }
 //                    }
 //                }
-//                
+//
 //                if !availableCategories.isEmpty {
 //                    Section("Categories") {
 //                        HStack {
 //                            Button("Select All") {
 //                                selectedCategories = Set(availableCategories)
 //                            }
-//                            
+//
 //                            Spacer()
-//                            
+//
 //                            Button("Clear All") {
 //                                selectedCategories.removeAll()
 //                            }
 //                        }
 //                        .buttonStyle(.borderless)
-//                        
+//
 //                        ForEach(availableCategories.sorted(by: { $0.displayName < $1.displayName }), id: \.self) { category in
 //                            HStack {
 //                                Text(category.displayName)
 //                                Spacer()
-//                                
+//
 //                                if selectedCategories.contains(category) {
 //                                    Image(systemName: "checkmark")
 //                                        .foregroundColor(.blue)
@@ -463,13 +463,13 @@ public struct ShareItem: Transferable {
 //            }
 //        }
 //    }
-//}
+// }
 //
-//struct ExportSheet: View {
+// struct ExportSheet: View {
 //    @Binding var selectedFormat: ExportFormat
 //    let onExport: () -> Void
 //    @Environment(\.dismiss) private var dismiss
-//    
+//
 //    var body: some View {
 //        NavigationStack {
 //            List {
@@ -483,9 +483,9 @@ public struct ShareItem: Transferable {
 //                                    .font(.caption)
 //                                    .foregroundStyle(.secondary)
 //                            }
-//                            
+//
 //                            Spacer()
-//                            
+//
 //                            if selectedFormat == format {
 //                                Image(systemName: "checkmark.circle.fill")
 //                                    .foregroundColor(.blue)
@@ -500,7 +500,7 @@ public struct ShareItem: Transferable {
 //                        }
 //                    }
 //                }
-//                
+//
 //                Section {
 //                    Button("Export to Files App") {
 //                        onExport()
@@ -519,7 +519,7 @@ public struct ShareItem: Transferable {
 //            }
 //        }
 //    }
-//    
+//
 //    private func formatName(_ format: ExportFormat) -> String {
 //        switch format {
 //        case .json: return "JSON"
@@ -527,7 +527,7 @@ public struct ShareItem: Transferable {
 //        case .txt: return "Plain Text"
 //        }
 //    }
-//    
+//
 //    private func formatDescription(_ format: ExportFormat) -> String {
 //        switch format {
 //        case .json: return "Structured data format, preserves all fields"
@@ -535,17 +535,17 @@ public struct ShareItem: Transferable {
 //        case .txt: return "Human readable format, easy to view"
 //        }
 //    }
-//}
+// }
 //
-//#Preview {
+// #Preview {
 //    @Previewable @State var mock = MockLogR()
 //    LogViewer()
 //        .environment(\.logService, mock)
-//}
+// }
 //
-//struct CustomDisclosureGroupStyle<Label: View>: DisclosureGroupStyle {
+// struct CustomDisclosureGroupStyle<Label: View>: DisclosureGroupStyle {
 //    let button: Label
-//    
+//
 //    func makeBody(configuration: Configuration) -> some View {
 //        HStack {
 //            configuration.label
@@ -565,4 +565,4 @@ public struct ShareItem: Transferable {
 //                .disclosureGroupStyle(self)
 //        }
 //    }
-//}
+// }

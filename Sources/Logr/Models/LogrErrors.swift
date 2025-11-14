@@ -1,5 +1,5 @@
-//  
-//  LogRErrors.swift
+//
+//  LogrErrors.swift
 //  Logr
 //
 //  Created by martin on 14/09/2025.
@@ -13,19 +13,19 @@ public enum LogRErrors: Error, LocalizedError {
     case fileNotFound
     case encodingFailed
     case decodingFailed
-    
+
     public var errorDescription: String? {
         switch self {
         case .invalidJSON:
-            return "Invalid JSON format in configuration"
+            "Invalid JSON format in configuration"
         case .fileNotFound:
-            return "Configuration file not found"
+            "Configuration file not found"
         case .encodingFailed:
-            return "Failed to encode configuration"
+            "Failed to encode configuration"
         case .decodingFailed:
-            return "Failed to decode configuration"
+            "Failed to decode configuration"
         case .directoryNotFound:
-            return "Directory not found"
+            "Directory not found"
         }
     }
 }
