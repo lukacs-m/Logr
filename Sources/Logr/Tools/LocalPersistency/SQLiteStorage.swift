@@ -8,29 +8,6 @@
 import Foundation
 import SQLiteData
 
-@Table("EncryptedLogEntryDAO")
-struct EncryptedLogEntryDAO: Identifiable, Sendable {
-    @Column(primaryKey: true) var id: String
-    @Column var data: Data // For storing encrypted log data
-    @Column var timestamp: TimeInterval
-
-    init(id: String, timestamp: TimeInterval, data: Data) {
-        self.id = id
-        self.data = data
-        self.timestamp = timestamp
-    }
-
-    var toEncryptedLogEntry: EncryptedLogEntry {
-        EncryptedLogEntry(id: id, timestamp: Date(timeIntervalSince1970: timestamp), data: data)
-    }
-}
-
-extension EncryptedLogEntry {
-    var toEncryptedLogEntryDAO: EncryptedLogEntryDAO {
-        EncryptedLogEntryDAO(id: id, timestamp: timestamp.timeIntervalSince1970, data: data)
-    }
-}
-
 public final class LogRepository: LogRPersistence {
     private let database: any DatabaseWriter
 
@@ -93,10 +70,13 @@ public final class LogRepository: LogRPersistence {
 
         try migrator.migrate(database)
     }
+}
 
-    // MARK: - LogRPersistence Implementation
+// MARK: - LogRPersistence Implementation / CRUD actions
 
-    public func store(_ entry: EncryptedLogEntry) async throws {
+public extension LogRepository {
+
+     func store(_ entry: EncryptedLogEntry) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO.insert {
                 entry.toEncryptedLogEntryDAO
@@ -105,7 +85,7 @@ public final class LogRepository: LogRPersistence {
         }
     }
 
-    public func fetchEntries() async throws -> [EncryptedLogEntry] {
+     func fetchEntries() async throws -> [EncryptedLogEntry] {
         let results: [EncryptedLogEntryDAO] = try await database.read { db in
             try EncryptedLogEntryDAO
                 .order(by: \.timestamp)
@@ -114,7 +94,7 @@ public final class LogRepository: LogRPersistence {
         return results.map(\.toEncryptedLogEntry)
     }
 
-    public func deleteEntries(olderThan date: Date) async throws {
+     func deleteEntries(olderThan date: Date) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO
                 .where { $0.timestamp < date.timeIntervalSince1970 }
@@ -123,7 +103,7 @@ public final class LogRepository: LogRPersistence {
         }
     }
 
-    public func deleteEntries(keepingLatest count: Int) async throws {
+     func deleteEntries(keepingLatest count: Int) async throws {
         try await database.write { db in
             // This uses raw SQL for the complex query
             let sql = """
@@ -138,13 +118,13 @@ public final class LogRepository: LogRPersistence {
         }
     }
 
-    public func clear() async throws {
+     func clear() async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO.all.delete().execute(db)
         }
     }
 
-    public func count() async throws -> Int {
+     func count() async throws -> Int {
         try await database.read { db in
             try EncryptedLogEntryDAO.all.fetchCount(db)
         }

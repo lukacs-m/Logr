@@ -1,3 +1,10 @@
+//
+//  LogRPersistence.swift
+//  Logr
+//
+//  Created by martin on 02/11/2025.
+//
+
 import Foundation
 
 public struct LogEntry: Sendable, Codable, Identifiable, Hashable {
