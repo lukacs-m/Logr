@@ -1,5 +1,5 @@
-//  
-//  DAOModels+Extensiosn.swift
+//
+//  DAOModels+Extensions.swift
 //  Logr
 //
 //  Created by Martin Lukacs on 16/11/2025.

@@ -8,7 +8,7 @@
 import Foundation
 import OSLog
 
-public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable {
+public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable, Identifiable {
     // debug: Debug-level messages to use in a development environment while actively debugging.
     case debug
     // info: Call this function to capture information that may be helpful, but isn’t essential, for troubleshooting. High-level system events (start, stop, config).
@@ -56,7 +56,7 @@ public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable {
         }
     }
 
-    var visualQueue: String {
+    public var visualQueue: String {
         switch self {
         case .debug: "🟣"
         case .info, .notice: "🔵"
@@ -64,4 +64,6 @@ public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable {
         case .error, .fault: "🔴"
         }
     }
+
+    public var id: Self { self }
 }

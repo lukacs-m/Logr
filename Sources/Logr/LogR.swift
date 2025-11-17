@@ -234,6 +234,7 @@ public enum ExportFormat {
         }
     }
 
+    //TODO: check other for export formatting
     public func encode(_ logs: [LogEntry]) throws -> Data {
         switch self {
         case .json:

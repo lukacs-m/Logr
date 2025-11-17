@@ -1,4 +1,4 @@
-//  
+//
 //  LogRService.swift
 //  Logr
 //

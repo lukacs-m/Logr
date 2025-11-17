@@ -75,8 +75,7 @@ public final class LogRepository: LogRPersistence {
 // MARK: - LogRPersistence Implementation / CRUD actions
 
 public extension LogRepository {
-
-     func store(_ entry: EncryptedLogEntry) async throws {
+    func store(_ entry: EncryptedLogEntry) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO.insert {
                 entry.toEncryptedLogEntryDAO
@@ -85,7 +84,7 @@ public extension LogRepository {
         }
     }
 
-     func fetchEntries() async throws -> [EncryptedLogEntry] {
+    func fetchEntries() async throws -> [EncryptedLogEntry] {
         let results: [EncryptedLogEntryDAO] = try await database.read { db in
             try EncryptedLogEntryDAO
                 .order(by: \.timestamp)
@@ -94,7 +93,7 @@ public extension LogRepository {
         return results.map(\.toEncryptedLogEntry)
     }
 
-     func deleteEntries(olderThan date: Date) async throws {
+    func deleteEntries(olderThan date: Date) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO
                 .where { $0.timestamp < date.timeIntervalSince1970 }
@@ -103,7 +102,7 @@ public extension LogRepository {
         }
     }
 
-     func deleteEntries(keepingLatest count: Int) async throws {
+    func deleteEntries(keepingLatest count: Int) async throws {
         try await database.write { db in
             // This uses raw SQL for the complex query
             let sql = """
@@ -118,13 +117,13 @@ public extension LogRepository {
         }
     }
 
-     func clear() async throws {
+    func clear() async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO.all.delete().execute(db)
         }
     }
 
-     func count() async throws -> Int {
+    func count() async throws -> Int {
         try await database.read { db in
             try EncryptedLogEntryDAO.all.fetchCount(db)
         }

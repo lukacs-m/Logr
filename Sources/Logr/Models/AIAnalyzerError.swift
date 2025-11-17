@@ -1,5 +1,5 @@
 //
-//  LogRPersistence.swift
+//  AIAnalyzerError.swift
 //  Logr
 //
 //  Created by martin on 02/11/2025.
@@ -8,17 +8,18 @@
 import Foundation
 
 public enum AIAnalyzerError: Error, LocalizedError, Sendable {
-    case modelUnavailable
+    case modelUnavailable(String)
     case contextLengthExceeded
     case inferenceTimeout
     case invalidResponse
     case noLogsToAnalyze
     case systemError(Error)
+    case mergeError
 
     public var errorDescription: String? {
         switch self {
-        case .modelUnavailable:
-            "Apple Intelligence is not available on this device. Requires iOS 18+, macOS 15+, or later."
+        case let .modelUnavailable(reason):
+            "Apple Intelligence is not available on this device. \(reason)"
         case .contextLengthExceeded:
             "Too many logs to analyze in a single request. Try analyzing fewer logs."
         case .inferenceTimeout:
@@ -29,6 +30,8 @@ public enum AIAnalyzerError: Error, LocalizedError, Sendable {
             "No logs available to analyze."
         case let .systemError(error):
             "System error: \(error.localizedDescription)"
+        case .mergeError:
+            "Something went wrong while merging the analysis results. Please try again."
         }
     }
 }

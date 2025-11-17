@@ -1,5 +1,5 @@
 //
-//  LogRPersistence.swift
+//  PrivacyWarning.swift
 //  Logr
 //
 //  Created by martin on 02/11/2025.
@@ -16,7 +16,7 @@ public struct PrivacyWarning: Sendable, Identifiable, Hashable, Equatable {
     @Guide(description: "The source file where the exposure was detected")
     public var file: String
 
-    @Guide(description: "The line number in the source file", .range(1...100000))
+    @Guide(description: "The line number in the source file", .range(1...100_000))
     public var line: Int
 
     @Guide(description: "Type of private data exposed (e.g., email, phone, credit card, API key, token, SSN, address, name, location)")
@@ -34,7 +34,8 @@ public struct PrivacyWarning: Sendable, Identifiable, Hashable, Equatable {
     @Guide(description: "Recommended action to fix this privacy issue")
     public var recommendation: String
 
-    public init(file: String, line: Int, exposureType: String, exposedContent: String, explanation: String, severity: String, recommendation: String) {
+    public init(file: String, line: Int, exposureType: String, exposedContent: String, explanation: String,
+                severity: String, recommendation: String) {
         self.file = file
         self.line = line
         self.exposureType = exposureType
@@ -54,10 +55,10 @@ public struct PrivacyAnalysisResult: Sendable, Equatable {
     @Guide(description: "Overall summary of privacy concerns found")
     public var summary: String
 
-    @Guide(description: "Total count of critical severity warnings", .range(0...1000))
+    @Guide(description: "Total count of critical severity warnings", .range(0...1_000))
     public var criticalCount: Int
 
-    @Guide(description: "Total count of high severity warnings", .range(0...1000))
+    @Guide(description: "Total count of high severity warnings", .range(0...1_000))
     public var highCount: Int
 
     public init(warnings: [PrivacyWarning], summary: String, criticalCount: Int, highCount: Int) {
