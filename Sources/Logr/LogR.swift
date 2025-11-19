@@ -132,8 +132,8 @@ public extension LogR {
         recentLogs.removeAll()
     }
 
-    func exportLogs(format: ExportFormat = .json) async throws -> Data {
-        try format.encode(recentLogs)
+    func exportLogs(format: ExportFormat = .json) async throws -> Data? {
+        try encode(for: format)
     }
 }
 
@@ -221,39 +221,29 @@ private extension LogR {
     }
 }
 
-public enum ExportFormat {
-    case json
-    case csv
-    case txt
-
-    public var fileExtension: String {
-        switch self {
-        case .json: "json"
-        case .csv: "csv"
-        case .txt: "txt"
-        }
-    }
-
+// MARK: - Export
+private extension LogR {
     //TODO: check other for export formatting
-    public func encode(_ logs: [LogEntry]) throws -> Data {
-        switch self {
+    func encode(for exportFormat: ExportFormat) throws -> Data? {
+        guard !recentLogs.isEmpty else { return nil }
+        switch exportFormat {
         case .json:
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            return try encoder.encode(logs)
+            return try encoder.encode(recentLogs)
 
         case .csv:
             var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line\n"
             let formatter = ISO8601DateFormatter()
 
-            for log in logs {
+            for log in recentLogs {
                 let timestamp = formatter.string(from: log.timestamp)
                 let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
                 csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line)\n"
             }
 
-            return csv.data(using: .utf8) ?? Data()
+            return csv.data(using: .utf8)
 
         case .txt:
             let formatter = DateFormatter()
@@ -261,14 +251,15 @@ public enum ExportFormat {
             formatter.timeStyle = .long
 
             var text = ""
-            for log in logs {
+            for log in recentLogs {
                 text += "[\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] \(log.message)\n"
             }
 
-            return text.data(using: .utf8) ?? Data()
+            return text.data(using: .utf8)
         }
     }
 }
+
 
 // MARK: - Background Writer Actor
 

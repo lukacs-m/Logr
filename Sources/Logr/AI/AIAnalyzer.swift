@@ -359,8 +359,10 @@ public actor AIAnalyzer: LogAIAnalyzer {
 
     // MARK: - Availability Checking
 
-    public var isAvailable: Bool {
-        model.isAvailable
+    public var  isAvailable: Bool {
+        get async {
+            model.isAvailable
+        }
     }
 
     /// Gets detailed availability information

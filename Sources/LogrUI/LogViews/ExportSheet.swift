@@ -34,11 +34,15 @@ struct ExportSheet: View {
     private func exportLogs(format: ExportFormat) {
         Task {
             do {
-                let data = try await logr.exportLogs(format: format)
+                guard let data = try await logr.exportLogs(format: format) else {
+                    return
+                }
                 let fileName = "logs_\(Date().timeIntervalSince1970).\(format.fileExtension)"
 
                 // Save to app's Documents directory
-                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                    return
+                }
                 let fileURL = documentsPath.appendingPathComponent(fileName)
                 try data.write(to: fileURL)
 

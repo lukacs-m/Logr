@@ -19,7 +19,7 @@ public protocol LogRService: Observable {
              function: String,
              line: Int)
 
-    func exportLogs(format: ExportFormat) async throws -> Data
+    func exportLogs(format: ExportFormat) async throws -> Data?
     func clearLogs() async throws
 }
 

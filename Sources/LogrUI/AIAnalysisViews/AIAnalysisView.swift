@@ -36,7 +36,7 @@ public struct AIAnalysisView: View {
             Text(errorMessage)
         }
         .task {
-            checkAvailability()
+           await checkAvailability()
         }
     }
 
@@ -149,8 +149,8 @@ public struct AIAnalysisView: View {
 
     // MARK: - Analysis Actions
 
-    private func checkAvailability() {
-        let available = analyzer.isAvailable
+    private func checkAvailability() async {
+        let available = await analyzer.isAvailable
         if !available {
             errorMessage = "Apple Intelligence is not available on this device. Requires iOS 18+, macOS 15+, or later."
             showError = true

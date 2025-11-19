@@ -175,7 +175,42 @@ public final class MockLogR: LogRService, Sendable {
         recentLogs.removeAll()
     }
 
-    public func exportLogs(format: ExportFormat = .json) async throws -> Data {
-        try format.encode(mockLogs)
+    public func exportLogs(format: ExportFormat = .json) async throws -> Data? {
+        try encode(for: format)
+    }
+    
+    func encode(for exportFormat: ExportFormat) throws -> Data? {
+        guard !mockLogs.isEmpty else { return nil }
+        switch exportFormat {
+        case .json:
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            return try encoder.encode(recentLogs)
+
+        case .csv:
+            var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line\n"
+            let formatter = ISO8601DateFormatter()
+
+            for log in recentLogs {
+                let timestamp = formatter.string(from: log.timestamp)
+                let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
+                csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line)\n"
+            }
+
+            return csv.data(using: .utf8)
+
+        case .txt:
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .long
+
+            var text = ""
+            for log in recentLogs {
+                text += "[\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] \(log.message)\n"
+            }
+
+            return text.data(using: .utf8)
+        }
     }
 }

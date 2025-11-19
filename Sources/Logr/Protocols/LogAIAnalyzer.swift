@@ -11,7 +11,7 @@ import Foundation
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 public protocol LogAIAnalyzer: Sendable {
     /// Checks if Apple Intelligence is available on the current device
-    var isAvailable: Bool { get }
+    var isAvailable: Bool { get async }
 
     /// Scans logs for potential privacy exposures (PII, credentials, etc.)
     /// - Parameter logs: Array of log entries to analyze

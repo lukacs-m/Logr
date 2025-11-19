@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 
 public struct ShareItem: Transferable {
     let data: Data
-    let fileName: String
+   public let fileName: String
     let contentType: UTType
 
     public init(data: Data, fileName: String, contentType: UTType) {
