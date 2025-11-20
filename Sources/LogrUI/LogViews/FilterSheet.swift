@@ -1,12 +1,12 @@
-//  
+//
 //  FilterSheet.swift
 //  Logr
 //
 //  Created by Martin Lukacs on 16/11/2025.
 //
 
-import SwiftUI
 import Logr
+import SwiftUI
 
 struct FilterSheet: View {
     @Environment(\.logService) private var logr
@@ -15,8 +15,8 @@ struct FilterSheet: View {
     @Binding var selectedCategories: Set<LogCategory>
 
     private var availableCategories: [LogCategory] {
-         Array(Set(logr.recentLogs.map(\.category)))
-     }
+        Array(Set(logr.recentLogs.map(\.category)))
+    }
 
     var body: some View {
         NavigationStack {

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public enum LogCategory: Sendable, Codable, Hashable {
+public enum LogCategory: Sendable, Codable, Hashable, Equatable {
     // System & Core
     case system
     case lifecycle

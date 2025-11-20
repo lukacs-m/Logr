@@ -132,8 +132,8 @@ public extension LogR {
         recentLogs.removeAll()
     }
 
-    func exportLogs(format: ExportFormat = .json) async throws -> Data? {
-        try encode(for: format)
+    func exportLogs(format: ExportFormat = .json) -> Data? {
+        encode(for: format)
     }
 }
 
@@ -222,16 +222,17 @@ private extension LogR {
 }
 
 // MARK: - Export
+
 private extension LogR {
-    //TODO: check other for export formatting
-    func encode(for exportFormat: ExportFormat) throws -> Data? {
+    // TODO: check other for export formatting
+    func encode(for exportFormat: ExportFormat) -> Data? {
         guard !recentLogs.isEmpty else { return nil }
         switch exportFormat {
         case .json:
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            return try encoder.encode(recentLogs)
+            return try? encoder.encode(recentLogs)
 
         case .csv:
             var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line\n"
@@ -259,7 +260,6 @@ private extension LogR {
         }
     }
 }
-
 
 // MARK: - Background Writer Actor
 

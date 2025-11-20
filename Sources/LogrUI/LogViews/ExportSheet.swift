@@ -1,4 +1,4 @@
-//  
+//
 //  ExportSheet.swift
 //  Logr
 //
@@ -30,59 +30,43 @@ struct ExportSheet: View {
         }
     }
 
-    //TODO: export in model or service
+    // TODO: export in model or service
     private func exportLogs(format: ExportFormat) {
-        Task {
-            do {
-                guard let data = try await logr.exportLogs(format: format) else {
-                    return
-                }
-                let fileName = "logs_\(Date().timeIntervalSince1970).\(format.fileExtension)"
-
-                // Save to app's Documents directory
-                guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-                    return
-                }
-                let fileURL = documentsPath.appendingPathComponent(fileName)
-                try data.write(to: fileURL)
-
-                print("Logs exported to: \(fileURL.path)")
-            } catch {
-                print("Export failed: \(error)")
+        do {
+            guard let data = logr.exportLogs(format: format) else {
+                return
             }
-        }
-    }
+            let fileName = "logs_\(Date().timeIntervalSince1970).\(format.fileExtension)"
 
-    private func formatName(_ format: ExportFormat) -> String {
-        switch format {
-        case .json: "JSON"
-        case .csv: "CSV"
-        case .txt: "Plain Text"
-        }
-    }
+            // Save to app's Documents directory
+            guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            else {
+                return
+            }
+            let fileURL = documentsPath.appendingPathComponent(fileName)
+            try data.write(to: fileURL)
 
-    private func formatDescription(_ format: ExportFormat) -> String {
-        switch format {
-        case .json: "Structured data format, preserves all fields"
-        case .csv: "Spreadsheet compatible, good for analysis"
-        case .txt: "Human readable format, easy to view"
+            print("Logs exported to: \(fileURL.path)")
+        } catch {
+            print("Export failed: \(error)")
         }
     }
 }
 
 // MARK: - Sections
+
 private extension ExportSheet {
     var exportFromatSection: some View {
         Section("Export Format") {
-            ForEach([ExportFormat.json, .csv, .txt], id: \.self) { format in
+            ForEach(ExportFormat.allCases) { format in
                 Button {
                     selectedFormat = format
                 } label: {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text(formatName(format))
+                            Text(format.formatName)
                                 .fontWeight(.medium)
-                            Text(formatDescription(format))
+                            Text(format.formatDescription)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -113,5 +97,4 @@ private extension ExportSheet {
             .frame(maxWidth: .infinity, alignment: .center)
         }
     }
-
 }

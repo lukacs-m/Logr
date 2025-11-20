@@ -8,7 +8,7 @@
 import Foundation
 
 @MainActor
-public protocol LogRService: Observable {
+public protocol LogRService: Observable, Sendable {
     var recentLogs: [LogEntry] { get }
 
     // Core logging methods
@@ -19,7 +19,7 @@ public protocol LogRService: Observable {
              function: String,
              line: Int)
 
-    func exportLogs(format: ExportFormat) async throws -> Data?
+    func exportLogs(format: ExportFormat) -> Data?
     func clearLogs() async throws
 }
 

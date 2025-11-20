@@ -175,18 +175,18 @@ public final class MockLogR: LogRService, Sendable {
         recentLogs.removeAll()
     }
 
-    public func exportLogs(format: ExportFormat = .json) async throws -> Data? {
-        try encode(for: format)
+    public func exportLogs(format: ExportFormat = .json) -> Data? {
+        encode(for: format)
     }
-    
-    func encode(for exportFormat: ExportFormat) throws -> Data? {
+
+    func encode(for exportFormat: ExportFormat) -> Data? {
         guard !mockLogs.isEmpty else { return nil }
         switch exportFormat {
         case .json:
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            return try encoder.encode(recentLogs)
+            return try? encoder.encode(recentLogs)
 
         case .csv:
             var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line\n"

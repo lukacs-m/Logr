@@ -1,7 +1,7 @@
 import Logr
 import SwiftUI
 
-//TODO: get env key for logr
+// TODO: get env key for logr
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 public struct AIAnalysisView: View {
     let logs: [LogEntry]
@@ -36,7 +36,7 @@ public struct AIAnalysisView: View {
             Text(errorMessage)
         }
         .task {
-           await checkAvailability()
+            await checkAvailability()
         }
     }
 

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct LogEntry: Sendable, Codable, Identifiable, Hashable {
+public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     public let id: String
     public let timestamp: Date
     public let level: LogLevel

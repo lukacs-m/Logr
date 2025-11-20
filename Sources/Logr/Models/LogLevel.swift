@@ -8,7 +8,7 @@
 import Foundation
 import OSLog
 
-public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable, Identifiable {
+public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable, Identifiable, Equatable {
     // debug: Debug-level messages to use in a development environment while actively debugging.
     case debug
     // info: Call this function to capture information that may be helpful, but isn’t essential, for troubleshooting. High-level system events (start, stop, config).

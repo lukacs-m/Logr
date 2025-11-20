@@ -359,7 +359,7 @@ public actor AIAnalyzer: LogAIAnalyzer {
 
     // MARK: - Availability Checking
 
-    public var  isAvailable: Bool {
+    public var isAvailable: Bool {
         get async {
             model.isAvailable
         }

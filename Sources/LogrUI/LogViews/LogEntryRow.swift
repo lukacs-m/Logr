@@ -1,4 +1,4 @@
-//  
+//
 //  LogEntryRow.swift
 //  Logr
 //
@@ -8,7 +8,7 @@
 import Logr
 import SwiftUI
 
-struct LogEntryRow: View {
+struct LogEntryRow: View, @MainActor Equatable {
     let entry: LogEntry
     @Binding var displayState: Bool
     @State private var isExpanded = false
@@ -16,7 +16,7 @@ struct LogEntryRow: View {
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 4) {
-                Group {
+                VStack(spacing: 5) {
                     DetailRow("File", URL(fileURLWithPath: entry.file).lastPathComponent)
                     DetailRow("Function", entry.function)
                     DetailRow("Line", "\(entry.line)")
@@ -64,10 +64,13 @@ struct LogEntryRow: View {
         }
 //        .disclosureGroupStyle(CustomDisclosureGroupStyle(button: Text("ok")))
     }
+    
+    static func == (lhs: LogEntryRow, rhs: LogEntryRow) -> Bool {
+        lhs.displayState == rhs.displayState && lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded
+    }
 }
 
-
-fileprivate struct DetailRow: View {
+private struct DetailRow: View {
     private let label: String
     private let value: String
 
@@ -116,7 +119,7 @@ struct LogLevelBadge: View {
     }
 }
 
-//struct CustomDisclosureGroupStyle<Label: View>: DisclosureGroupStyle {
+// struct CustomDisclosureGroupStyle<Label: View>: DisclosureGroupStyle {
 //    let button: Label
 //
 //    func makeBody(configuration: Configuration) -> some View {
@@ -138,4 +141,4 @@ struct LogLevelBadge: View {
 //                .disclosureGroupStyle(self)
 //        }
 //    }
-//}
+// }

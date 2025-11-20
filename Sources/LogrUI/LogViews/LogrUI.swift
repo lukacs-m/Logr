@@ -5,200 +5,57 @@
 //  Created by martin on 01/11/2025.
 //
 
+import Combine
 import Logr
 import SwiftUI
 import UniformTypeIdentifiers
-
-////TODO: logic in model for search debounce + test with 1000 elements
-//public struct LogViewer: View {
-//    @Environment(\.logService) private var logr
-//    @State private var searchText = ""
-//    @State private var selectedLevels: Set<LogLevel> = Set(LogLevel.allCases)
-//    @State private var selectedCategories: Set<LogCategory> = []
-//    @State private var showingFilters = false
-//    @State private var showingExport = false
-//    @State private var showingDeleteConfirmation = false
-//    @State private var shareItem: ShareItem?
-//    @State private var allExpanded = false
-//
-//    public init() {}
-//
-//    public var body: some View {
-//        NavigationStack {
-//            List {
-//                ForEach(filteredLogs) { entry in
-//                    LogEntryRow(entry: entry, displayState: $allExpanded)
-//                }
-//            }
-//            .searchable(text: $searchText, prompt: "Search logs...")
-//            .navigationTitle("LogR Viewer")
-//            .toolbar {
-//                toolbarContent
-//            }
-//        }
-//        .sheet(isPresented: $showingFilters) {
-//            FilterSheet(selectedLevels: $selectedLevels,
-//                        selectedCategories: $selectedCategories)
-//        }
-//        .sheet(isPresented: $showingExport) {
-//            ExportSheet()
-//        }
-//        .confirmationDialog("Clear All Logs",
-//                            isPresented: $showingDeleteConfirmation,
-//                            titleVisibility: .visible) {
-//            Button("Clear All Logs", role: .destructive) {
-//                Task {
-//                    try? await logr.clearLogs()
-//                }
-//            }
-//            Button("Cancel", role: .cancel) {}
-//        } message: {
-//            Text("This will permanently delete all stored log entries. This action cannot be undone.")
-//        }
-//    }
-//
-//    private var filteredLogs: [LogEntry] {
-//        
-//        let levelFiltered = logr.recentLogs.filter { selectedLevels.contains($0.level) }
-//
-//        let categoryFiltered = selectedCategories.isEmpty
-//            ? levelFiltered
-//            : levelFiltered.filter { selectedCategories.contains($0.category) }
-//
-//        let searchFiltered = searchText.isEmpty
-//            ? categoryFiltered
-//            : categoryFiltered.filter {
-//                $0.message.localizedCaseInsensitiveContains(searchText) ||
-//                    $0.category.rawValue.localizedCaseInsensitiveContains(searchText) ||
-//                    $0.category.displayName.localizedCaseInsensitiveContains(searchText)
-//            }
-//
-//        return searchFiltered
-//    }
-//
-//    private func prepareShareItem(format: ExportFormat) async {
-//        do {
-//            guard let data = try await logr.exportLogs(format: format) else {
-//                return
-//            }
-//            let fileName = "logs_\(Date().timeIntervalSince1970).\(format.fileExtension)"
-//  
-//            shareItem = ShareItem(data: data, fileName: fileName, contentType: format.contentType)
-//        } catch {
-//            print("Failed to prepare share item: \(error)")
-//        }
-//    }
-//}
-//
-//// MARK: - Toolbar actions
-//private extension LogViewer {
-//    var toolbarContent: some ToolbarContent {
-//        ToolbarItemGroup(placement: .primaryAction) {
-//            Button("Filters") {
-//                showingFilters = true
-//            }
-//            .disabled(logr.recentLogs.isEmpty)
-//
-//            Menu {
-//                Button(allExpanded ? "Collapse All" : "Expand All") {
-//                    allExpanded.toggle()
-//                }
-//                .disabled(logr.recentLogs.isEmpty)
-//
-//                Menu("Share") {
-//                    ShareLink(item: shareItem ?? ShareItem(data: Data(),
-//                                                           fileName: "logs.json",
-//                                                           contentType: .json),
-//                              preview: SharePreview("LogR Export")) {
-//                        Label("Share as JSON", systemImage: "square.and.arrow.up")
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//                    .task {
-//                        if shareItem == nil {
-//                            await prepareShareItem(format: .json)
-//                        }
-//                    }
-//
-//                    Button("Share as CSV") {
-//                        Task { await prepareShareItem(format: .csv) }
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//
-//                    Button("Share as Text") {
-//                        Task { await prepareShareItem(format: .txt) }
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//                }
-//
-//                Button("Export to Files") {
-//                    showingExport = true
-//                }
-//                .disabled(filteredLogs.isEmpty)
-//
-//                Divider()
-//
-//                Button("Clear All Logs", role: .destructive) {
-//                    showingDeleteConfirmation = true
-//                }
-//                .disabled(logr.recentLogs.isEmpty)
-//
-//            } label: {
-//                Image(systemName: "ellipsis.circle")
-//            }
-//            .disabled(logr.recentLogs.isEmpty)
-//        }
-//    }
-//}
-//
-//@Observable
-//final class LogViewerStateModel {
-//    private var logService: (any LogRService)?
-//    
-//    init() {}
-//    
-//    func setUp(with logService: any LogRService) {
-//        self.logService = logService
-//    }
-//}
-//
-//#Preview {
-//    @Previewable @State var mock = MockLogR()
-//    LogViewer()
-//        .environment(\.logService, mock)
-//}
-
-//TODO: logic in model for search debounce + test with 1000 elements
+  
 public struct LogViewer: View {
     @Environment(\.logService) private var logr
-    @State private var stateModel = LogViewerStateModel()
-//    @State private var showingFilters = false
-//    @State private var showingExport = false
     @State private var showingDeleteConfirmation = false
     @State private var shareItem: ShareItem?
     @State private var presentedSheet: SheetDestination?
-
+    @State private var selectedLevels: Set<LogLevel> = Set(LogLevel.allCases)
+    @State private var selectedCategories: Set<LogCategory> = []
+    @State private var allExpanded = false
+    @State private var searchText = ""
+    @State private var debouncedQuery = ""
+    
     enum SheetDestination: Identifiable {
         case filters
         case export
-        
+
         var id: Self { self }
     }
 
-    public init() {
-        stateModel.setUp(with: logr)
-    }
+    public init() {}
 
     public var body: some View {
         NavigationStack {
             List {
                 ForEach(filteredLogs) { entry in
-                    LogEntryRow(entry: entry, displayState: $stateModel.allExpanded)
+                    LogEntryRow(entry: entry, displayState: $allExpanded)
+                        .equatable()
                 }
             }
-            .searchable(text: $stateModel.searchText, prompt: "Search logs...")
+            .searchable(text: $searchText, prompt: "Search logs...")
+            .task(id: searchText) {
+                // Skip debounce for empty string (immediate clear)
+                if searchText.isEmpty {
+                    debouncedQuery = ""
+                    return
+                }
+                // Debounce
+                try? await Task.sleep(for: .milliseconds(300))
+                if Task.isCancelled { return }
+                debouncedQuery = searchText
+            }
             .navigationTitle("LogR Viewer")
             .toolbar {
                 toolbarContent
+            }
+            .overlay {
+                overlayContent
             }
         }
         .sheet(item: $presentedSheet) { destination in
@@ -208,7 +65,7 @@ public struct LogViewer: View {
                             isPresented: $showingDeleteConfirmation,
                             titleVisibility: .visible) {
             Button("Clear All Logs", role: .destructive) {
-                stateModel.clearAllLogs()
+                clearAllLogs()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -216,46 +73,66 @@ public struct LogViewer: View {
         }
     }
 
-    private var filteredLogs: [LogEntry] {
-        
-        let levelFiltered = logr.recentLogs.filter { stateModel.selectedLevels.contains($0.level) }
-
-        let categoryFiltered = stateModel.selectedCategories.isEmpty
-            ? levelFiltered
-        : levelFiltered.filter { stateModel.selectedCategories.contains($0.category) }
-
-        let searchFiltered = stateModel.searchText.isEmpty
-            ? categoryFiltered
-            : categoryFiltered.filter {
-                $0.message.localizedCaseInsensitiveContains(stateModel.searchText) ||
-                $0.category.rawValue.localizedCaseInsensitiveContains(stateModel.searchText) ||
-                $0.category.displayName.localizedCaseInsensitiveContains(stateModel.searchText)
-            }
-
-        return searchFiltered
-    }
-
-    private func prepareShareItem(format: ExportFormat) async {
-        do {
-            guard let data = try await logr.exportLogs(format: format) else {
-                return
-            }
-            let fileName = "logs_\(Date().timeIntervalSince1970).\(format.fileExtension)"
-  
-            shareItem = ShareItem(data: data, fileName: fileName, contentType: format.contentType)
-        } catch {
-            print("Failed to prepare share item: \(error)")
-        }
-    }
-    
     @ViewBuilder
-    func sheetView(destination: SheetDestination) -> some View {
+    private func sheetView(destination: SheetDestination) -> some View {
         switch destination {
         case .export:
             ExportSheet()
         case .filters:
-            FilterSheet(selectedLevels: $stateModel.selectedLevels,
-                        selectedCategories: $stateModel.selectedCategories)
+            FilterSheet(selectedLevels: $selectedLevels,
+                        selectedCategories: $selectedCategories)
+        }
+    }
+    
+    private var filteredLogs: [LogEntry] {
+        filterData()
+    }
+}
+
+// MARK: - Overlay
+private extension LogViewer {
+    @ViewBuilder
+    var overlayContent: some View {
+        if filteredLogs.isEmpty && !searchText.isEmpty {
+            VStack(spacing: 20) {
+                Spacer()
+                Text("Couldn't find any logs corresponding to your search criteria \"\(searchText)\"")
+                    .fontWeight(.semibold)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                Text("Try searching using different spelling or keywords")
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .multilineTextAlignment(.center)
+
+                Spacer()
+            }
+            .frame(maxHeight: .infinity)
+            .padding(.horizontal)
+        } else if filteredLogs.isEmpty && debouncedQuery.isEmpty {
+            ContentUnavailableView {
+                Image(systemName: "text.page.badge.magnifyingglass")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 210, height: 120)
+                    .padding(.bottom, 16)
+            } description: {
+                VStack(spacing: 8) {
+                    Text("No logs available yet")
+                        .font(.title2)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .opacity(0.9)
+                    Text("Protect your accounts with an extra layer of security.")
+                        .font(.title3)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 32)
+                }
+                .padding(.horizontal, 16)
+            } actions: {}
         }
     }
 }
@@ -270,81 +147,12 @@ private extension LogViewer {
             .disabled(logr.recentLogs.isEmpty)
 
             Menu {
-                Button(stateModel.allExpanded ? "Collapse All" : "Expand All") {
-                    stateModel.toggleAllExpanded()
+                Button(allExpanded ? "Collapse All" : "Expand All") {
+                    allExpanded.toggle()
                 }
                 .disabled(logr.recentLogs.isEmpty)
-                
-                Menu("Export & Share") {
-                    // Format selection buttons
-                    ForEach(ExportFormat.allCases) { format in
-                        Button("Prepare \(format.fileExtension) export") {
-                            Task { await prepareShareItem(format: format) }
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    // ShareLink only visible when item is ready
-                    if let item = shareItem {
-                        ShareLink(item: item, preview: SharePreview("LogR Export")) {
-                            Label("Share \(item.fileName)", systemImage: "square.and.arrow.up")
-                        }
-                    }
-                    
-                    ShareLink(item: shareItem ?? ShareItem(data: Data(), uti: "public.text"), preview: SharePreview("LogR Export")) {
-                        
-                    }
-                }
-                .disabled(filteredLogs.isEmpty)
 
-//                Menu("Share") {
-//                    Button("Share as JSON") {
-//                        Task { await prepareShareItem(format: .json) }
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//                    
-//                    Button("Share as CSV") {
-//                        Task { await prepareShareItem(format: .csv) }
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//                    
-//                    Button("Share as Text") {
-//                        Task { await prepareShareItem(format: .txt) }
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//                }
-             
-
-//                Menu("Share") {
-//                    ShareLink(item: shareItem ?? ShareItem(data: Data(),
-//                                                           fileName: "logs.json",
-//                                                           contentType: .json),
-//                              preview: SharePreview("LogR Export")) {
-//                        Label("Share as JSON", systemImage: "square.and.arrow.up")
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//                    .task {
-//                        if shareItem == nil {
-//                            await prepareShareItem(format: .json)
-//                        }
-//                    }
-//
-//                    Button("Share as CSV") {
-//                        Task { await prepareShareItem(format: .csv) }
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//
-//                    Button("Share as Text") {
-//                        Task { await prepareShareItem(format: .txt) }
-//                    }
-//                    .disabled(filteredLogs.isEmpty)
-//                }
-
-                Button("Export to Files") {
-                    presentedSheet = .export
-                }
-                .disabled(filteredLogs.isEmpty)
+                shareMenu
 
                 Divider()
 
@@ -359,41 +167,69 @@ private extension LogViewer {
             .disabled(logr.recentLogs.isEmpty)
         }
     }
-    func test() -> ShareItem {
-        Data()
+
+    @ViewBuilder
+    var shareMenu: some View {
+        if !logr.recentLogs.isEmpty {
+            Menu("Export & Share") {
+                ForEach(ExportFormat.allCases) { format in
+                    let fileName = format.formatName
+                    ShareLink(item: prepareShareItem(format: format, fileName: fileName),
+                              preview: SharePreview("LogR Export")) {
+                        Label("Share \(fileName)", systemImage: "square.and.arrow.up")
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    presentedSheet = .export
+                } label: {
+                    Label("Export to Files", systemImage: "folder.fill")
+                }
+            }
+        }
     }
 }
 
-@Observable
-final class LogViewerStateModel {
-    private var logService: (any LogRService)?
-    var searchText = ""
-    var selectedLevels: Set<LogLevel> = Set(LogLevel.allCases)
-    var selectedCategories: Set<LogCategory> = []
-    var shareItem: ShareItem?
-    var allExpanded = false
+// MARK: - Logic actions
+private extension LogViewer {
     
-    init() {}
-    
-    func setUp(with logService: any LogRService) {
-        self.logService = logService
+    func prepareShareItem(format: ExportFormat, fileName: String) -> ShareItem {
+        guard let data = logr.exportLogs(format: format) else {
+            return .empty
+        }
+
+        return ShareItem(data: data, fileName: fileName, contentType: format.contentType)
     }
     
     func clearAllLogs() {
-        guard let logService else {
-            return
-        }
         Task {
             do {
-                try await logService.clearLogs()
+                try await logr.clearLogs()
             } catch {
                 print("Failed to clear logs: \(error)")
             }
         }
     }
     
-    func toggleAllExpanded() {
-        allExpanded.toggle()
+    
+    func filterData() -> [LogEntry] {
+        logr.recentLogs.filter { entry in
+            guard selectedLevels.contains(entry.level) else { return false }
+            
+            if !selectedCategories.isEmpty && !selectedCategories.contains(entry.category) {
+                return false
+            }
+            
+            if !debouncedQuery.isEmpty {
+                return entry.message.localizedCaseInsensitiveContains(debouncedQuery) ||
+                       entry.category.rawValue.localizedCaseInsensitiveContains(debouncedQuery) ||
+                       entry.category.displayName.localizedCaseInsensitiveContains(debouncedQuery)
+            }
+            
+            return true
+        }
     }
 }
 
@@ -401,4 +237,10 @@ final class LogViewerStateModel {
     @Previewable @State var mock = MockLogR()
     LogViewer()
         .environment(\.logService, mock)
+}
+
+private extension ExportFormat {
+    var exportFileName: String {
+        "logs.\(fileExtension)"
+    }
 }
