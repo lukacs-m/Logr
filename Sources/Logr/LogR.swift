@@ -21,6 +21,19 @@ public final class LogR: LogRService, Sendable {
 
     @ObservationIgnored
     private let writer: LogWriterActor?
+    
+    private var _analyser: (any SendableMetatype)?
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    private var analyser: LogAIAnalyzer? {
+        _analyser as? LogAIAnalyzer
+    }
+    
+    public var canAnalyseLogs: Bool {
+        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *), let analyser else {
+            return false
+        }
+        return analyser.isAvailable
+    }
 
     public init(storage: LogRPersistence? = nil,
                 cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
@@ -36,7 +49,16 @@ public final class LogR: LogRService, Sendable {
 
         setup()
     }
-
+    
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public convenience init(storage: LogRPersistence? = nil,
+                            logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
+                cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
+                configuration: LogrConfiguration = .default) {
+        self.init(storage: storage, cryptoService: cryptoService, configuration: configuration)
+        _analyser = logAnalyser
+    }
+    
     deinit {
         stopTimer()
     }

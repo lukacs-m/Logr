@@ -9,7 +9,7 @@ import Combine
 import Logr
 import SwiftUI
 import UniformTypeIdentifiers
-  
+
 public struct LogViewer: View {
     @Environment(\.logService) private var logr
     @State private var showingDeleteConfirmation = false
@@ -20,6 +20,7 @@ public struct LogViewer: View {
     @State private var allExpanded = false
     @State private var searchText = ""
     @State private var debouncedQuery = ""
+    @State private var showError: Error?
     
     enum SheetDestination: Identifiable {
         case filters
@@ -27,37 +28,32 @@ public struct LogViewer: View {
 
         var id: Self { self }
     }
+    
+    enum LogViewerError: LocalizedError {
+        case failedLogClearing
+
+        var errorDescription: String? {
+            switch self {
+            case .failedLogClearing:
+                return "Failed to clear logs"
+            }
+        }
+
+        var recoverySuggestion: String? {
+            switch self {
+            case .failedLogClearing:
+                return "Article publishing failed due to missing title"
+            }
+        }
+    }
 
     public init() {}
 
     public var body: some View {
         NavigationStack {
-            List {
-                ForEach(filteredLogs) { entry in
-                    LogEntryRow(entry: entry, displayState: $allExpanded)
-                        .equatable()
-                }
-            }
-            .searchable(text: $searchText, prompt: "Search logs...")
-            .task(id: searchText) {
-                // Skip debounce for empty string (immediate clear)
-                if searchText.isEmpty {
-                    debouncedQuery = ""
-                    return
-                }
-                // Debounce
-                try? await Task.sleep(for: .milliseconds(300))
-                if Task.isCancelled { return }
-                debouncedQuery = searchText
-            }
-            .navigationTitle("LogR Viewer")
-            .toolbar {
-                toolbarContent
-            }
-            .overlay {
-                overlayContent
-            }
+            mainContent
         }
+        .errorAlert(error: $showError)
         .sheet(item: $presentedSheet) { destination in
             sheetView(destination: destination)
         }
@@ -89,6 +85,36 @@ public struct LogViewer: View {
     }
 }
 
+// MARK: - Main Content View
+private extension LogViewer {
+    var mainContent: some View {
+        List {
+            ForEach(filteredLogs) { entry in
+                LogEntryRow(entry: entry, displayState: $allExpanded)
+                    .equatable()
+            }
+        }
+        .searchable(text: $searchText, prompt: "Search logs...")
+        .task(id: searchText) {
+            // Skip debounce for empty string (immediate clear)
+            if searchText.isEmpty {
+                debouncedQuery = ""
+                return
+            }
+            // Debounce
+            try? await Task.sleep(for: .milliseconds(300))
+            if Task.isCancelled { return }
+            debouncedQuery = searchText
+        }
+        .navigationTitle("LogR Viewer")
+        .toolbar {
+            toolbarContent
+        }
+        .overlay {
+            overlayContent
+        }
+    }
+}
 // MARK: - Overlay
 private extension LogViewer {
     @ViewBuilder
@@ -145,16 +171,18 @@ private extension LogViewer {
                 presentedSheet = .filters
             }
             .disabled(logr.recentLogs.isEmpty)
-
+            
             Menu {
                 Button(allExpanded ? "Collapse All" : "Expand All") {
                     allExpanded.toggle()
                 }
                 .disabled(logr.recentLogs.isEmpty)
 
-                shareMenu
-
                 Divider()
+                
+                logAnalyzeMenu
+                
+                shareMenu
 
                 Button("Clear All Logs", role: .destructive) {
                     showingDeleteConfirmation = true
@@ -165,6 +193,41 @@ private extension LogViewer {
                 Image(systemName: "ellipsis.circle")
             }
             .disabled(logr.recentLogs.isEmpty)
+        }
+    }
+    
+    @ViewBuilder
+    var logAnalyzeMenu: some View {
+        if logr.canAnalyseLogs {
+            Menu {
+                Button {
+                } label: {
+                    Label {
+                        Text("Scan for Privacy Issues")
+                    } icon: {
+                        Image(systemName: "eye.trianglebadge.exclamationmark.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .red)
+                    }
+                }
+                .disabled(logr.recentLogs.isEmpty)
+                
+                Button {
+                } label: {
+                    Label {
+                        Text("Summarize Issues")
+                    } icon: {
+                        Image(systemName: "chart.bar.doc.horizontal.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.blue)
+                    }
+                }
+                .disabled(logr.recentLogs.isEmpty)
+            } label: {
+                Text("Analyze logs")
+            }
+            .disabled(logr.recentLogs.isEmpty)
+            Divider()
         }
     }
 
@@ -188,6 +251,7 @@ private extension LogViewer {
                     Label("Export to Files", systemImage: "folder.fill")
                 }
             }
+            Divider()
         }
     }
 }
@@ -208,7 +272,7 @@ private extension LogViewer {
             do {
                 try await logr.clearLogs()
             } catch {
-                print("Failed to clear logs: \(error)")
+                showError = error
             }
         }
     }

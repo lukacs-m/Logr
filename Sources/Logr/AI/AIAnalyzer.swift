@@ -359,10 +359,8 @@ public actor AIAnalyzer: LogAIAnalyzer {
 
     // MARK: - Availability Checking
 
-    public var isAvailable: Bool {
-        get async {
-            model.isAvailable
-        }
+    public nonisolated var isAvailable: Bool {
+        model.isAvailable
     }
 
     /// Gets detailed availability information
@@ -423,7 +421,8 @@ private extension AIAnalyzer {
             return existingSession
         }
 
-        let newSession = LanguageModelSession()
+        let newSession = LanguageModelSession(model: model,
+                                              instructions: "You are an expert software engineer analyzing application logs to identify issues, patterns and potential privacy log concerns.")
 
         // Prewarm if configured
         if configuration.prewarmModel {

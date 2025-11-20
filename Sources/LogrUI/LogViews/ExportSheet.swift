@@ -45,8 +45,6 @@ struct ExportSheet: View {
             }
             let fileURL = documentsPath.appendingPathComponent(fileName)
             try data.write(to: fileURL)
-
-            print("Logs exported to: \(fileURL.path)")
         } catch {
             print("Export failed: \(error)")
         }

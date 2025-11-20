@@ -10,6 +10,7 @@ import Foundation
 @MainActor
 public protocol LogRService: Observable, Sendable {
     var recentLogs: [LogEntry] { get }
+    var canAnalyseLogs: Bool { get }
 
     // Core logging methods
     func log(level: LogLevel,

@@ -26,36 +26,7 @@ struct LogEntryRow: View, @MainActor Equatable {
                 .foregroundStyle(.secondary)
             }
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    LogLevelBadge(level: entry.level)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(entry.category.displayName)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Spacer()
-
-                            Text(entry.timestamp, style: .time)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Text(entry.message)
-                            .fontWeight(.semibold)
-                            .lineLimit(isExpanded ? nil : 3)
-                    }
-
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isExpanded.toggle()
-                    }
-                }
-            }
+            mainRowContent
         }
         .onChange(of: displayState) { _, newGlobalState in
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -67,6 +38,41 @@ struct LogEntryRow: View, @MainActor Equatable {
     
     static func == (lhs: LogEntryRow, rhs: LogEntryRow) -> Bool {
         lhs.displayState == rhs.displayState && lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded
+    }
+}
+
+private extension LogEntryRow {
+    var mainRowContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                LogLevelBadge(level: entry.level)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(entry.category.displayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Text(entry.timestamp, style: .time)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    Text(entry.message)
+                        .fontWeight(.semibold)
+                        .lineLimit(isExpanded ? nil : 3)
+                }
+
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            }
+        }
     }
 }
 
