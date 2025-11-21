@@ -6,13 +6,43 @@ on:
   pull_request:
     branches: ["main", "develop"]
 
-jobs:
-  build:
-    runs-on: macos-latest
+#jobs:
+#  build:
+#    runs-on: macos-latest
+#
+#    steps:
+#      - uses: actions/checkout@v6
+#      - name: Build
+#        run: swift build -v
+#      - name: Run tests
+#        run: swift test -v
 
+jobs:
+  test-swift6_2:
+    name: Test Swift 6.2
+    runs-on: macos-15
+    
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+      
+      # Install Swift 6.2 toolchain
+      - name: Setup Swift 6.2
+        uses: swift-actions/setup-swift@v1
+        with:
+          swift-version: '6.2'
+      
+      # Or for nightly builds until 6.2 is officially released:
+      # - name: Setup Swift 6.2 Nightly
+      #   uses: swift-actions/setup-swift@v1
+      #   with:
+      #     swift-version: 'nightly-6.2'
+      
+      - name: Verify Swift version
+        run: swift --version
+      
       - name: Build
         run: swift build -v
-      - name: Run tests
+      
+      - name: Test
         run: swift test -v
+
