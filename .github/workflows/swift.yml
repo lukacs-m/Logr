@@ -65,7 +65,7 @@ jobs:
         run: swift --version
 
       - name: Build package (including tests)
-        run: swift build -v # --build-tests
+        run: swift build
 
       - name: Run tests
         run: swift test -v # --parallel
