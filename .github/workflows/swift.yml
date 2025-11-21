@@ -26,16 +26,16 @@ jobs:
       - uses: actions/checkout@v4
       
       # Install Swift 6.2 toolchain
-      - name: Setup Swift 6.2
+#      - name: Setup Swift 6.2
+#        uses: swift-actions/setup-swift@v1
+#        with:
+#          swift-version: '6.2'
+      
+       #Or for nightly builds until 6.2 is officially released:
+      - name: Setup Swift 6.2 Nightly
         uses: swift-actions/setup-swift@v1
         with:
-          swift-version: '6.2'
-      
-      # Or for nightly builds until 6.2 is officially released:
-      # - name: Setup Swift 6.2 Nightly
-      #   uses: swift-actions/setup-swift@v1
-      #   with:
-      #     swift-version: 'nightly-6.2'
+          swift-version: 'nightly-6.2'
       
       - name: Verify Swift version
         run: swift --version
