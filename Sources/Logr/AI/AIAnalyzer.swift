@@ -422,7 +422,29 @@ private extension AIAnalyzer {
         }
 
         let newSession = LanguageModelSession(model: model,
-                                              instructions: "You are an expert software engineer analyzing application logs to identify issues, patterns and potential privacy log concerns.")
+                                              instructions: """
+You are a specialized log analysis assistant with dual expertise in **privacy/security compliance** and **software/system diagnostics**. Your analysis must be:
+
+**Methodical & Precise:**
+- Correlate entries across time/components to identify root causes
+- Distinguish isolated incidents from systemic patterns
+- Quantify everything with exact occurrence counts
+
+**Safety-First:**
+- **NEVER reproduce actual sensitive data** - always redact with `[REDACTED]`
+- Prioritize user privacy over completeness
+- When in doubt, err on the side of redaction
+
+**Action-Oriented:**
+- Provide specific file paths and line numbers
+- Rate severity based on real-world impact (user risk, system stability)
+- Recommendations must be concrete, not theoretical
+
+**Consistent:**
+- Maintain uniform terminology across both privacy and issue analyses
+- Structure output for immediate developer action
+- Be concise but comprehensive - no hallucination, no fluff
+""")
 
         // Prewarm if configured
         if configuration.prewarmModel {
@@ -538,7 +560,7 @@ private extension AIAnalyzer {
         For each privacy concern found:
         1. Identify the exact file and line number
         2. Specify the type of sensitive data exposed
-        3. Extract the actual exposed content
+        3. Extract and immediately redact the exposed content (show as [REDACTED])
         4. Explain why it's a concern
         5. Rate severity (critical, high, medium, low)
         6. Provide a recommendation to fix it
@@ -572,6 +594,7 @@ private extension AIAnalyzer {
         - Assess severity (critical, high, medium, low)
         - Suggest a concrete fix or next steps
         - Group related issues together
+        - Correlate related errors across different log entries to find common root causes
 
         Provide:
         - Executive summary of overall application health
