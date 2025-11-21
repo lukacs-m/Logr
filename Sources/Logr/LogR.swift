@@ -96,7 +96,8 @@ public final class LogR: LogRService, Sendable {
         Task { [weak writer, cryptoService] in
             do {
                 let encryptedLogData = try cryptoService.symmetricEncrypt(object: entry)
-                let encryptedLogEntry = EncryptedLogEntry(id: entry.id, timestamp: entry.timestamp,
+                let encryptedLogEntry = EncryptedLogEntry(id: entry.id,
+                                                          timestamp: entry.timestamp,
                                                           data: encryptedLogData)
                 await writer?.enqueue(encryptedLogEntry)
             } catch {

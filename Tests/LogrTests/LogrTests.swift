@@ -210,25 +210,6 @@ struct LogrTests {
         #expect(filteredLogs.allSatisfy { $0.category == .system || $0.category == .network })
     }
 
-//    @Test("Test filtering by date range")
-//    func testFilteringByDateRange() async throws {
-//        let logr = LogR(cryptoService: cryptoService)
-//
-//        let now = Date()
-//        let oneHourAgo = now.addingTimeInterval(-3600)
-//        let twoHoursAgo = now.addingTimeInterval(-7200)
-//
-//        // Create logs with specific timestamps
-//        logr.log(level: .info, message: "Old message", category: .system)
-//        try? await Task.sleep(for: .milliseconds(10))
-//        logr.log(level: .info, message: "Recent message", category: .system)
-//
-//        // Filter logs from the last hour
-//        let recentLogs = try logr.getLogs(from: oneHourAgo)
-//
-//        #expect(recentLogs.count == 2) // All logs should be within the last hour
-//    }
-//    
     @Test("Test filtering by date range")
     func testFilteringByDateRange() async throws {
         let logr = LogR(cryptoService: cryptoService)
@@ -306,13 +287,13 @@ struct LogrTests {
     // MARK: - Export Tests
 
     @Test("Test export logs as JSON")
-    func testExportLogsAsJSON() async throws {
+    func testExportLogsAsJSON() throws {
         let logr = LogR(cryptoService: cryptoService)
 
         logr.info("Test message 1", category: .system)
         logr.error("Test message 2", category: .network)
 
-        let jsonData = try await logr.exportLogs(format: .json)
+        let jsonData = try #require(logr.exportLogs(format: .json))
 
         #expect(!jsonData.isEmpty)
 
@@ -325,13 +306,13 @@ struct LogrTests {
     }
 
     @Test("Test export logs as CSV")
-    func testExportLogsAsCSV() async throws {
+    func testExportLogsAsCSV() throws {
         let logr = LogR(cryptoService: cryptoService)
 
         logr.info("Test message 1", category: .system)
         logr.error("Test message 2", category: .network)
 
-        let csvData = try await logr.exportLogs(format: .csv)
+        let csvData = try #require(logr.exportLogs(format: .csv))
 
         #expect(!csvData.isEmpty)
 
@@ -350,7 +331,7 @@ struct LogrTests {
         logr.info("Test message 1", category: .system)
         logr.error("Test message 2", category: .network)
 
-        let txtData = try await logr.exportLogs(format: .txt)
+        let txtData = try #require(logr.exportLogs(format: .txt))
 
         #expect(!txtData.isEmpty)
 
@@ -363,13 +344,13 @@ struct LogrTests {
     }
 
     @Test("Test export with special characters in CSV")
-    func testExportWithSpecialCharactersInCSV() async throws {
+    func testExportWithSpecialCharactersInCSV() throws {
         let logr = LogR(cryptoService: cryptoService)
 
         logr.info("Message with \"quotes\"", category: .system)
         logr.info("Message with, commas", category: .system)
 
-        let csvData = try await logr.exportLogs(format: .csv)
+        let csvData =  try #require(logr.exportLogs(format: .csv))
         let csvString = String(data: csvData, encoding: .utf8)
 
         #expect(csvString != nil)
@@ -428,15 +409,12 @@ struct LogrTests {
     }
 
     @Test("Test export on empty logs")
-    func testExportOnEmptyLogs() async throws {
+    func testExportOnEmptyLogs() throws {
         let logr = LogR(cryptoService: cryptoService)
 
-        let jsonData = try await logr.exportLogs(format: .json)
+        let jsonData = logr.exportLogs(format: .json)
 
-        // Should be valid JSON representing an empty array
-        let decoder = JSONDecoder()
-        let logs = try decoder.decode([LogEntry].self, from: jsonData)
-        #expect(logs.isEmpty)
+        #expect(jsonData == nil)
     }
 
     // MARK: - Metadata Tests

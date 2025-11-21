@@ -138,22 +138,6 @@ struct ConcurrentLoggingTests {
                     }
                 }
             }
-
-//            // Reading thread
-//            group.addTask { @MainActor in
-//                for _ in 0..<10 {
-//                    _ = try? logr.getLogs()
-//                    try? await Task.sleep(for: .milliseconds(50))
-//                }
-//            }
-//
-//            // Filtering thread
-//            group.addTask { @MainActor in
-//                for _ in 0..<10 {
-//                    _ = try? logr.getLogs(levels: [.info])
-//                    try? await Task.sleep(for: .milliseconds(50))
-//                }
-//            }
         }
 
         // Wait for all operations to complete
@@ -188,12 +172,13 @@ struct ConcurrentLoggingTests {
 
         await withTaskGroup(of: Void.self) { group in
             for threadId in 0..<threadCount {
-                group.addTask { @MainActor in
+                group.addTask {
                     for i in 0..<logCount {
-                        logr.info("Thread \(threadId) - Message \(i)", category: .test)
+                        await logr.info("Thread \(threadId) - Message \(i)", category: .test)
                     }
                 }
             }
+            await group.waitForAll()
         }
 
         // Wait for all writes to complete
