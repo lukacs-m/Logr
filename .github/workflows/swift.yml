@@ -17,32 +17,55 @@ on:
 #      - name: Run tests
 #        run: swift test -v
 
-jobs:
-  test-swift6_2:
-    name: Test Swift 6.2
-    runs-on: macos-15
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      # Install Swift 6.2 toolchain
-#      - name: Setup Swift 6.2
+#jobs:
+#  test-swift6_2:
+#    name: Test Swift 6.2
+#    runs-on: macos-15
+#    
+#    steps:
+#      - uses: actions/checkout@v4
+#      
+#      # Install Swift 6.2 toolchain
+##      - name: Setup Swift 6.2
+##        uses: swift-actions/setup-swift@v1
+##        with:
+##          swift-version: '6.2'
+#      
+#       #Or for nightly builds until 6.2 is officially released:
+#      - name: Setup Swift 6.2 Nightly
 #        uses: swift-actions/setup-swift@v1
 #        with:
-#          swift-version: '6.2'
-      
-       #Or for nightly builds until 6.2 is officially released:
-      - name: Setup Swift 6.2 Nightly
-        uses: swift-actions/setup-swift@v1
-        with:
-          swift-version: 'nightly-6.2'
-      
-      - name: Verify Swift version
-        run: swift --version
-      
-      - name: Build
-        run: swift build -v
-      
-      - name: Test
-        run: swift test -v
+#          swift-version: 'nightly-6.2'
+#      
+#      - name: Verify Swift version
+#        run: swift --version
+#      
+#      - name: Build
+#        run: swift build -v
+#      
+#      - name: Test
+#        run: swift test -v
 
+jobs:
+  build:
+    name: Build & Test (macOS, Swift 6.2)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Swift toolchain 6.2
+        # You might use apple’s `swift-setup` action or a script
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2"
+
+      - name: Confirm Swift version
+        run: swift --version
+
+      - name: Build package (including tests)
+        run: swift build --build-tests
+
+      - name: Run tests
+        run: swift test --parallel
