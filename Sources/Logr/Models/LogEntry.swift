@@ -1,6 +1,13 @@
+//
+//  LogEntry.swift
+//  Logr
+//
+//  Created by martin on 02/11/2025.
+//
+
 import Foundation
 
-public struct LogEntry: Sendable, Codable, Identifiable, Hashable {
+public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     public let id: String
     public let timestamp: Date
     public let level: LogLevel

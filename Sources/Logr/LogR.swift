@@ -3,70 +3,20 @@ import Foundation
 import Observation
 import OSLog
 
-@MainActor
-public protocol LogRService: Observable {
-    var recentLogs: [LogEntry] { get }
-
-    // Core logging methods
-    func log(level: LogLevel,
-             message: String,
-             category: LogCategory,
-             file: String,
-             function: String,
-             line: Int)
-
-    func exportLogs(format: ExportFormat) async throws -> Data
-    func clearLogs() async throws
-}
-
-// MARK: - Helper functions
-
-public extension LogRService {
-    func debug(_ message: String,
-               category: LogCategory = .debug,
-               file: String = #file,
-               function: String = #function,
-               line: Int = #line) {
-        log(level: .debug, message: message, category: category, file: file, function: function, line: line)
-    }
-
-    func info(_ message: String,
-              category: LogCategory = .system,
-              file: String = #file,
-              function: String = #function,
-              line: Int = #line) {
-        log(level: .info, message: message, category: category, file: file, function: function, line: line)
-    }
-
-    func notice(_ message: String,
-                category: LogCategory = .system,
-                file: String = #file,
-                function: String = #function,
-                line: Int = #line) {
-        log(level: .notice, message: message, category: category, file: file, function: function, line: line)
-    }
-
-    func error(_ message: String,
-               category: LogCategory = .system,
-               file: String = #file,
-               function: String = #function,
-               line: Int = #line) {
-        log(level: .error, message: message, category: category, file: file, function: function, line: line)
-    }
-
-    func fault(_ message: String,
-               category: LogCategory = .system,
-               file: String = #file,
-               function: String = #function,
-               line: Int = #line) {
-        log(level: .fault, message: message, category: category, file: file, function: function, line: line)
-    }
-}
-
 @Observable
 @MainActor
 public final class LogR: LogRService, Sendable {
     public private(set) var recentLogs: [LogEntry] = []
+
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public var privacyAnalysisResult: PrivacyAnalysisResult? {
+        _privacyAnalysisResult as? PrivacyAnalysisResult
+    }
+
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public var logIssueSummary: LogIssueSummary? {
+        _logIssueSummary as? LogIssueSummary
+    }
 
     private let storage: LogRPersistence?
     private let configuration: LogrConfiguration
@@ -82,6 +32,21 @@ public final class LogR: LogRService, Sendable {
     @ObservationIgnored
     private let writer: LogWriterActor?
 
+    private var _logIssueSummary: (any SendableMetatype)?
+    private var _privacyAnalysisResult: (any SendableMetatype)?
+    private var _analyser: (any SendableMetatype)?
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    private var analyser: LogAIAnalyzer? {
+        _analyser as? LogAIAnalyzer
+    }
+
+    public var canAnalyseLogs: Bool {
+        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *), let analyser else {
+            return false
+        }
+        return analyser.isAvailable
+    }
+
     public init(storage: LogRPersistence? = nil,
                 cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
                 configuration: LogrConfiguration = .default) {
@@ -95,6 +60,15 @@ public final class LogR: LogRService, Sendable {
         }
 
         setup()
+    }
+
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public convenience init(storage: LogRPersistence? = nil,
+                            logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
+                            cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
+                            configuration: LogrConfiguration = .default) {
+        self.init(storage: storage, cryptoService: cryptoService, configuration: configuration)
+        _analyser = logAnalyser
     }
 
     deinit {
@@ -134,7 +108,8 @@ public final class LogR: LogRService, Sendable {
         Task { [weak writer, cryptoService] in
             do {
                 let encryptedLogData = try cryptoService.symmetricEncrypt(object: entry)
-                let encryptedLogEntry = EncryptedLogEntry(id: entry.id, timestamp: entry.timestamp,
+                let encryptedLogEntry = EncryptedLogEntry(id: entry.id,
+                                                          timestamp: entry.timestamp,
                                                           data: encryptedLogData)
                 await writer?.enqueue(encryptedLogEntry)
             } catch {
@@ -192,8 +167,49 @@ public extension LogR {
         recentLogs.removeAll()
     }
 
-    func exportLogs(format: ExportFormat = .json) async throws -> Data {
-        try format.encode(recentLogs)
+    func exportLogs(format: ExportFormat = .json) -> Data? {
+        encode(for: format)
+    }
+    
+    func flush() async {
+        guard let writer else {
+            return
+        }
+        
+        await writer.flush()
+    }
+}
+
+// MARK: - Logs analyzer
+
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+public extension LogR {
+    func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
+        guard let analyser else {
+            throw AIAnalyzerError.missingAnalyzer
+        }
+        let result = if recentLogs.isEmpty {
+            PrivacyAnalysisResult.empty
+        } else {
+            try await analyser.scanForPrivacyIssues(logs: recentLogs)
+        }
+
+        _privacyAnalysisResult = result
+        return result
+    }
+
+    func summarizeIssues() async throws -> LogIssueSummary {
+        guard let analyser else {
+            throw AIAnalyzerError.missingAnalyzer
+        }
+        let result = if recentLogs.isEmpty {
+            LogIssueSummary.empty
+        } else {
+            try await analyser.summarizeIssues(logs: recentLogs)
+        }
+
+        _logIssueSummary = result
+        return result
     }
 }
 
@@ -236,20 +252,18 @@ private extension LogR {
     }
 
     func performCleanup() {
+        let cutoffDate = Date().addingTimeInterval(-configuration.maxLogAge)
+        recentLogs = recentLogs.filter { $0.timestamp > cutoffDate }
         guard cleanupTask == nil else { return }
         cleanupTask = Task {
             defer { cleanupTask = nil }
-
             do {
-                let cutoffDate = Date().addingTimeInterval(-configuration.maxLogAge)
                 try await storage?.deleteEntries(olderThan: cutoffDate)
 
                 let currentCount = try await storage?.count() ?? 0
                 if currentCount > configuration.maxLogEntries {
                     try await storage?.deleteEntries(keepingLatest: configuration.maxLogEntries)
                 }
-
-                await loadRecentLogs()
             } catch {
                 getLogger(for: .system).error("Cleanup failed: \(error.localizedDescription)")
             }
@@ -274,45 +288,37 @@ private extension LogR {
             let encryptedLogs = try await storage?.fetchEntries()
             let logs: [LogEntry] = encryptedLogs?
                 .compactMap { try? cryptoService.symmetricDecrypt(encryptedData: $0.data) } ?? []
-            recentLogs = logs
+            recentLogs.append(contentsOf: logs)
         } catch {
             getLogger(for: .system).error("Failed to load recent logs: \(error.localizedDescription)")
         }
     }
 }
 
-public enum ExportFormat {
-    case json
-    case csv
-    case txt
+// MARK: - Export
 
-    public var fileExtension: String {
-        switch self {
-        case .json: "json"
-        case .csv: "csv"
-        case .txt: "txt"
-        }
-    }
-
-    public func encode(_ logs: [LogEntry]) throws -> Data {
-        switch self {
+private extension LogR {
+    // TODO: check other for export formatting
+    func encode(for exportFormat: ExportFormat) -> Data? {
+        guard !recentLogs.isEmpty else { return nil }
+        switch exportFormat {
         case .json:
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            return try encoder.encode(logs)
+            return try? encoder.encode(recentLogs)
 
         case .csv:
             var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line\n"
             let formatter = ISO8601DateFormatter()
 
-            for log in logs {
+            for log in recentLogs {
                 let timestamp = formatter.string(from: log.timestamp)
                 let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
                 csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line)\n"
             }
 
-            return csv.data(using: .utf8) ?? Data()
+            return csv.data(using: .utf8)
 
         case .txt:
             let formatter = DateFormatter()
@@ -320,11 +326,11 @@ public enum ExportFormat {
             formatter.timeStyle = .long
 
             var text = ""
-            for log in logs {
+            for log in recentLogs {
                 text += "[\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] \(log.message)\n"
             }
 
-            return text.data(using: .utf8) ?? Data()
+            return text.data(using: .utf8)
         }
     }
 }
@@ -351,7 +357,7 @@ actor LogWriterActor {
         }
     }
 
-    private func flush() async {
+    func flush() async {
         while !pending.isEmpty {
             let entry = pending.removeFirst()
             do {

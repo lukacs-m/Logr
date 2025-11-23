@@ -10,7 +10,7 @@ import os
 import Synchronization
 
 /// A type-erasing protocol for mutex implementations
-public protocol MutexProtected<Value>: Sendable {
+protocol MutexProtected<Value>: Sendable {
     associatedtype Value: Sendable
 
     var value: Value { get }
@@ -74,12 +74,12 @@ final class NativeMutex<Value: Sendable>: MutexProtected {
 }
 
 /// Factory that creates the appropriate mutex implementation based on availability
-public enum SafeMutex {
+enum SafeMutex {
     /// Creates a thread-safe mutex wrapper for the provided value
     /// using the most appropriate implementation based on platform availability.
     /// - Parameter value: The initial value to protect
     /// - Returns: A thread-safe wrapper conforming to MutexProtocol
-    public static func create<Value: Sendable>(_ value: Value) -> any MutexProtected<Value> {
+    static func create<Value: Sendable>(_ value: Value) -> any MutexProtected<Value> {
         if #available(iOS 18.0, macOS 15.0, watchOS 11.0, tvOS 18.0, *) {
             NativeMutex(value)
         } else {
