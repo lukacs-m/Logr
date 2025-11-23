@@ -95,11 +95,11 @@ struct ConcurrentLoggingTests {
 
         await withTaskGroup(of: Void.self) { group in
             for threadId in 0..<threadCount {
-                group.addTask { @MainActor in
+                group.addTask {
                     for i in 0..<logCount {
                         let level: LogLevel = [.debug, .info, .notice, .error, .fault].randomElement()!
                         let category: LogCategory = [.system, .network, .database, .ui, .test].randomElement()!
-                        logr.log(
+                        await logr.log(
                             level: level,
                             message: "Thread \(threadId) - Message \(i) - \(UUID().uuidString)",
                             category: category
