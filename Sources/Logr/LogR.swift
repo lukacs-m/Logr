@@ -170,6 +170,14 @@ public extension LogR {
     func exportLogs(format: ExportFormat = .json) -> Data? {
         encode(for: format)
     }
+    
+    func flush() async {
+        guard let writer else {
+            return
+        }
+        
+        await writer.flush()
+    }
 }
 
 // MARK: - Logs analyzer
@@ -244,20 +252,18 @@ private extension LogR {
     }
 
     func performCleanup() {
+        let cutoffDate = Date().addingTimeInterval(-configuration.maxLogAge)
+        recentLogs = recentLogs.filter { $0.timestamp > cutoffDate }
         guard cleanupTask == nil else { return }
         cleanupTask = Task {
             defer { cleanupTask = nil }
-
             do {
-                let cutoffDate = Date().addingTimeInterval(-configuration.maxLogAge)
                 try await storage?.deleteEntries(olderThan: cutoffDate)
 
                 let currentCount = try await storage?.count() ?? 0
                 if currentCount > configuration.maxLogEntries {
                     try await storage?.deleteEntries(keepingLatest: configuration.maxLogEntries)
                 }
-
-                await loadRecentLogs()
             } catch {
                 getLogger(for: .system).error("Cleanup failed: \(error.localizedDescription)")
             }
@@ -282,7 +288,7 @@ private extension LogR {
             let encryptedLogs = try await storage?.fetchEntries()
             let logs: [LogEntry] = encryptedLogs?
                 .compactMap { try? cryptoService.symmetricDecrypt(encryptedData: $0.data) } ?? []
-            recentLogs = logs
+            recentLogs.append(contentsOf: logs)
         } catch {
             getLogger(for: .system).error("Failed to load recent logs: \(error.localizedDescription)")
         }
@@ -351,7 +357,7 @@ actor LogWriterActor {
         }
     }
 
-    private func flush() async {
+    func flush() async {
         while !pending.isEmpty {
             let entry = pending.removeFirst()
             do {

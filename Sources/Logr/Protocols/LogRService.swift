@@ -26,6 +26,7 @@ public protocol LogRService: Observable, Sendable {
 
     func exportLogs(format: ExportFormat) -> Data?
     func clearLogs() async throws
+    func flush() async
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     @discardableResult func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult

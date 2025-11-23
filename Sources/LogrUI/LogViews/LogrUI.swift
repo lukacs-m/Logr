@@ -80,7 +80,7 @@ public struct LogViewer: View {
             FilterSheet(selectedLevels: $selectedLevels,
                         selectedCategories: $selectedCategories)
         case .privacyLogChecks:
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, macOS 26.0, *) {
                 NavigationStack {
                     PrivacyWarningsView()
                 }
@@ -88,7 +88,7 @@ public struct LogViewer: View {
                 NonAccessibleFeatureView()
             }
         case .issuesSummary:
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, macOS 26.0, *) {
                 NavigationStack {
                     IssueSummaryView()
                 }

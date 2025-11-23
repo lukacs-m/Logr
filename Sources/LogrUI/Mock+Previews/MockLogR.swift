@@ -55,6 +55,7 @@ public struct GenerationConfig {
 @Observable
 @MainActor
 public final class MockLogR: LogRService, Sendable {
+ 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public var privacyAnalysisResult: PrivacyAnalysisResult? {
         PrivacyAnalysisResult(warnings: [
@@ -293,6 +294,11 @@ public final class MockLogR: LogRService, Sendable {
             return text.data(using: .utf8)
         }
     }
+    
+    public func flush() async {
+        
+    }
+    
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
@@ -392,6 +398,7 @@ public final class MockLogR: LogRService, Sendable {
         mockLogs = entries
         recentLogs = entries
     }
+    
 
     // MARK: - Streaming Generation
 

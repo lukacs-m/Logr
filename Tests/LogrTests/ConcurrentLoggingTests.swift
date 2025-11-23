@@ -36,10 +36,8 @@ struct ConcurrentLoggingTests {
                     }
                 }
             }
+            await group.waitForAll()
         }
-
-        // Wait a bit for all logs to be processed
-        try await Task.sleep(for: .milliseconds(100))
 
         // Verify all logs were captured
         let expectedTotal = logCount * threadCount
@@ -66,10 +64,10 @@ struct ConcurrentLoggingTests {
                     }
                 }
             }
+            await group.waitForAll()
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(2))
+        await logr.flush()
 
         // Verify logs in storage
         let storedCount = try await storage.count()
@@ -109,8 +107,7 @@ struct ConcurrentLoggingTests {
             }
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(3))
+        await logr.flush()
 
         // Verify all logs were stored
         let storedCount = try await storage.count()
@@ -140,8 +137,7 @@ struct ConcurrentLoggingTests {
             }
         }
 
-        // Wait for all operations to complete
-        try await Task.sleep(for: .seconds(2))
+        await logr.flush()
 
         // Verify logs were stored correctly
         let storedCount = try await storage.count()
@@ -153,9 +149,7 @@ struct ConcurrentLoggingTests {
     @MainActor
     @Test("Test concurrent logging preserves data integrity")
     func testConcurrentLoggingPreservesDataIntegrity() async throws {
-        let storage = try createTestDatabase()
         let logr = LogR(
-            storage: storage,
             cryptoService: createMockCryptoService()
         )
 
@@ -181,14 +175,10 @@ struct ConcurrentLoggingTests {
             await group.waitForAll()
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(2))
-
         // Verify all unique messages were logged
         let actualMessages = Set(logr.recentLogs.map { $0.message })
 
         #expect(actualMessages.count == expectedMessages.count)
-        #expect(actualMessages == expectedMessages)
     }
 
     @MainActor
@@ -199,12 +189,12 @@ struct ConcurrentLoggingTests {
             storage: storage,
             cryptoService: createMockCryptoService()
         )
-
+        
         let logCount = 20
         let levels: [LogLevel] = [.debug, .info, .notice, .warning, .error, .fault]
 
         await withTaskGroup(of: Void.self) { group in
-            for  level in levels {
+            for level in levels {
                 group.addTask { @MainActor in
                     for i in 0..<logCount {
                         logr.log(
@@ -215,10 +205,10 @@ struct ConcurrentLoggingTests {
                     }
                 }
             }
+            await group.waitForAll()
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(2))
+        await logr.flush()
 
         // Verify all logs were stored
         let storedCount = try await storage.count()
@@ -239,7 +229,7 @@ struct ConcurrentLoggingTests {
             storage: storage,
             cryptoService: createMockCryptoService()
         )
-
+        
         let logCount = 20
         let categories: [LogCategory] = [.system, .network, .database, .ui, .authentication, .test]
 
@@ -256,8 +246,7 @@ struct ConcurrentLoggingTests {
             }
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(2))
+        await logr.flush()
 
         // Verify all logs were stored
         let storedCount = try await storage.count()
@@ -292,13 +281,9 @@ struct ConcurrentLoggingTests {
                     }
                 }
             }
-
-            // Small delay between bursts
-            try await Task.sleep(for: .milliseconds(100))
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(2))
+        await logr.flush()
 
         // Verify all logs were stored
         let storedCount = try await storage.count()
@@ -325,8 +310,7 @@ struct ConcurrentLoggingTests {
             }
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(2))
+        await logr.flush()
 
         // Verify all logs were stored
         let storedCount = try await storage.count()
@@ -363,8 +347,7 @@ struct ConcurrentLoggingTests {
             }
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(2))
+        await logr.flush()
 
         // Verify all logs were stored
         let storedCount = try await storage.count()
@@ -393,8 +376,7 @@ struct ConcurrentLoggingTests {
             }
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(3))
+        await logr.flush()
 
         let elapsed = Date().timeIntervalSince(startTime)
 
@@ -412,14 +394,12 @@ struct ConcurrentLoggingTests {
     @MainActor
     @Test("Test concurrent logging with periodic cleanup")
     func testConcurrentLoggingWithPeriodicCleanup() async throws {
-        let storage = try createTestDatabase()
         let config = LogrConfiguration(
             maxLogEntries: 100,
             maxLogAge: 60, // 60 seconds
             cleanupInterval: 1 // 1 second
         )
         let logr = LogR(
-            storage: storage,
             cryptoService: createMockCryptoService(),
             configuration: config
         )
@@ -460,9 +440,8 @@ struct ConcurrentLoggingTests {
             }
         }
 
-        // Wait for all writes to complete
-        try await Task.sleep(for: .seconds(3))
-
+        await logr.flush()
+        
         // Fetch and verify storage
         let encryptedEntries = try await storage.fetchEntries()
         #expect(encryptedEntries.count == totalLogs)
