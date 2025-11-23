@@ -6,9 +6,9 @@ public struct PrivacyWarningsView: View {
     @Environment(\.logService) var logr
     @State private var loading = false
     @State private var showError: Error?
-    
+
     public init() {}
-    
+
     public var body: some View {
         mainContent
             .navigationTitle("Privacy Warnings")
@@ -20,7 +20,7 @@ public struct PrivacyWarningsView: View {
             }
             .errorAlert(error: $showError)
     }
-    
+
     private func severityBadge(count: Int, severity: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Circle()
@@ -35,10 +35,10 @@ public struct PrivacyWarningsView: View {
         .background(color.opacity(0.1))
         .cornerRadius(8)
     }
-    
+
     private func loadData() async {
         defer { loading = false }
-        
+
         do {
             if logr.privacyAnalysisResult == nil {
                 loading = true
@@ -58,17 +58,18 @@ private extension PrivacyWarningsView {
             warningSections
         }
     }
-    
+
     @ViewBuilder
     var analysisSections: some View {
         if let privacyAnalysis = logr.privacyAnalysisResult {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Image(systemName: privacyAnalysis.isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                        .foregroundStyle(privacyAnalysis.isEmpty ? .green : .red)
-                        .font(.title2)
-                        
+                        Image(systemName: privacyAnalysis
+                            .isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                            .foregroundStyle(privacyAnalysis.isEmpty ? .green : .red)
+                            .font(.title2)
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Privacy Analysis")
                                 .font(.headline)
@@ -77,7 +78,7 @@ private extension PrivacyWarningsView {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    
+
                     if privacyAnalysis.criticalCount > 0 || privacyAnalysis.highCount > 0 {
                         HStack(spacing: 16) {
                             if privacyAnalysis.criticalCount > 0 {
@@ -98,7 +99,7 @@ private extension PrivacyWarningsView {
             }
         }
     }
-    
+
     @ViewBuilder
     var warningSections: some View {
         if let privacyAnalysis = logr.privacyAnalysisResult, !privacyAnalysis.warnings.isEmpty {
@@ -112,6 +113,7 @@ private extension PrivacyWarningsView {
 }
 
 // MARK: - Overlay
+
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 private extension PrivacyWarningsView {
     @ViewBuilder
@@ -149,13 +151,13 @@ private extension PrivacyWarningsView {
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 private struct PrivacyWarningRow: View {
     let warning: PrivacyWarning
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 severityIcon
                     .font(.title3)
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(warning.exposureType.capitalized)
                         .font(.headline)
@@ -164,26 +166,26 @@ private struct PrivacyWarningRow: View {
                         .foregroundStyle(.secondary)
                         .monospaced()
                 }
-                
+
                 Spacer()
             }
-            
+
             VStack(alignment: .leading, spacing: 8) {
                 PrivacyDetailRow(label: "Exposed", value: warning.exposedContent)
                     .font(.caption)
                     .padding(8)
                     .background(Color.red.opacity(0.05))
                     .cornerRadius(6)
-                
+
                 PrivacyDetailRow(label: "Explanation", value: warning.explanation)
-                
+
                 PrivacyDetailRow(label: "Recommendation", value: warning.recommendation)
                     .foregroundStyle(.blue)
             }
         }
         .padding(.vertical, 8)
     }
-    
+
     private var severityIcon: some View {
         switch warning.severity.lowercased() {
         case "critical":
@@ -205,7 +207,7 @@ private struct PrivacyWarningRow: View {
 struct PrivacyDetailRow: View {
     let label: String
     let value: String
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)

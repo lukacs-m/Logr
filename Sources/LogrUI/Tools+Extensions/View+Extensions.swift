@@ -1,4 +1,4 @@
-//  
+//
 //  View+Extensions.swift
 //  Logr
 //
@@ -13,6 +13,7 @@ struct LocalizedAlertError: LocalizedError {
     var errorDescription: String? {
         underlyingError.errorDescription
     }
+
     var recoverySuggestion: String? {
         underlyingError.recoverySuggestion
     }

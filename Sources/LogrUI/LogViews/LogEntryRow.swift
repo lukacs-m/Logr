@@ -35,7 +35,7 @@ struct LogEntryRow: View, @MainActor Equatable {
         }
 //        .disclosureGroupStyle(CustomDisclosureGroupStyle(button: Text("ok")))
     }
-    
+
     static func == (lhs: LogEntryRow, rhs: LogEntryRow) -> Bool {
         lhs.displayState == rhs.displayState && lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded
     }

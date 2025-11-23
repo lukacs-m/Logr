@@ -6,48 +6,48 @@ public struct AIAnalysisView: View {
     @Environment(\.logService) private var logr
     @State private var analysisState: AnalysisState = .idle
     @State private var showError: Error?
-    
+
     // MARK: - Analysis State
 
-   private enum AnalysisState: Equatable {
+    private enum AnalysisState: Equatable {
         case idle
         case analyzing
         case privacyComplete
         case issuesComplete
     }
-    
+
     private enum AIAnalysisViewError: LocalizedError {
         case analysisInitError
         case analysisError(String)
-        
+
         var errorDescription: String? {
             switch self {
             case .analysisInitError:
-                return  "Apple Intelligence is not available on this device. Requires iOS 26+, macOS 26+, or later."
+                "Apple Intelligence is not available on this device. Requires iOS 26+, macOS 26+, or later."
             case let .analysisError(message):
-                return message
+                message
             }
         }
-        
+
         var recoverySuggestion: String? {
             switch self {
-            case .analysisInitError, .analysisError:
-                return "Analysis Error"
+            case .analysisError, .analysisInitError:
+                "Analysis Error"
             }
         }
     }
-    
+
     public init() {}
 
     public var body: some View {
         mainContent
-        .navigationTitle("AI Analysis")
-        .errorAlert(error: $showError)
-        .task {
-            checkAvailability()
-        }
+            .navigationTitle("AI Analysis")
+            .errorAlert(error: $showError)
+            .task {
+                checkAvailability()
+            }
     }
-    
+
     @ViewBuilder
     var mainContent: some View {
         switch analysisState {
@@ -112,8 +112,6 @@ public struct AIAnalysisView: View {
         .padding()
     }
 
- 
-
     private func analyzeButton(title: String,
                                subtitle: String,
                                icon: String,
@@ -176,7 +174,7 @@ public struct AIAnalysisView: View {
     }
 
     private func summarizeIssues() async {
-        guard !logr.recentLogs.isEmpty  else { return }
+        guard !logr.recentLogs.isEmpty else { return }
 
         analysisState = .analyzing
 
@@ -219,11 +217,12 @@ struct AnalyzeProcessingView: View {
 }
 
 // MARK: - Preview
-//@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-//#Preview("Analyzing State") {
+
+// @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+// #Preview("Analyzing State") {
 //    @Previewable @State var mock = MockLogR()
 //    NavigationStack {
 //        AIAnalysisView()
 //            .environment(\.logService, mock)
 //    }
-//}
+// }

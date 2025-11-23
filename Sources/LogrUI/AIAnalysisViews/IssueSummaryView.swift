@@ -6,19 +6,19 @@ public struct IssueSummaryView: View {
     @Environment(\.logService) var logr
     @State private var loading = false
     @State private var showError: Error?
-    
+
     public init() {}
 
     public var body: some View {
-       mainContent
-        .navigationTitle("Issue Summary")
-        .overlay {
-            overlayContent
-        }
-        .task {
-            await loadData()
-        }
-        .errorAlert(error: $showError)
+        mainContent
+            .navigationTitle("Issue Summary")
+            .overlay {
+                overlayContent
+            }
+            .task {
+                await loadData()
+            }
+            .errorAlert(error: $showError)
     }
 
     private func priorityColor(for index: Int) -> Color {
@@ -29,8 +29,8 @@ public struct IssueSummaryView: View {
         default: .blue
         }
     }
-    
-   private func loadData() async {
+
+    private func loadData() async {
         defer { loading = false }
 
         do {
@@ -48,13 +48,13 @@ public struct IssueSummaryView: View {
 private extension IssueSummaryView {
     var mainContent: some View {
         List {
-           summaryView
+            summaryView
             actionView
             patternView
             issuesView
         }
     }
-    
+
     @ViewBuilder
     var summaryView: some View {
         if let summary = logr.logIssueSummary {
@@ -64,15 +64,15 @@ private extension IssueSummaryView {
                         Image(systemName: "chart.bar.doc.horizontal")
                             .foregroundStyle(.blue)
                             .font(.title2)
-                        
+
                         Text("Executive Summary")
                             .font(.headline)
                     }
-                    
+
                     Text(summary.executiveSummary)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    
+
                     HStack(spacing: 16) {
                         StatBadgeView(count: summary.totalErrors, label: "Errors", color: .red)
                         StatBadgeView(count: summary.totalWarnings, label: "Warnings", color: .orange)
@@ -83,7 +83,7 @@ private extension IssueSummaryView {
             }
         }
     }
-    
+
     @ViewBuilder
     var actionView: some View {
         if let summary = logr.logIssueSummary, !summary.priorityActions.isEmpty {
@@ -97,7 +97,7 @@ private extension IssueSummaryView {
                             .frame(width: 24, height: 24)
                             .background(priorityColor(for: index))
                             .clipShape(Circle())
-                        
+
                         Text(action)
                             .font(.subheadline)
                     }
@@ -105,7 +105,7 @@ private extension IssueSummaryView {
             }
         }
     }
-    
+
     @ViewBuilder
     var patternView: some View {
         if let summary = logr.logIssueSummary, !summary.patterns.isEmpty {
@@ -121,7 +121,7 @@ private extension IssueSummaryView {
             }
         }
     }
-    
+
     @ViewBuilder
     var issuesView: some View {
         if let summary = logr.logIssueSummary, !summary.issues.isEmpty {
@@ -135,6 +135,7 @@ private extension IssueSummaryView {
 }
 
 // MARK: - Overlay
+
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 private extension IssueSummaryView {
     @ViewBuilder
@@ -175,7 +176,6 @@ struct IssueRow: View {
     @State private var isExpanded = false
 
     var body: some View {
-        
         DisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 12) {
                 IssueDetailRow(label: "Description", value: issue.description)
@@ -190,7 +190,7 @@ struct IssueRow: View {
             mainContent
         }
     }
-    
+
     var mainContent: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -293,7 +293,7 @@ struct StatBadgeView: View {
     let count: Int
     let label: String
     let color: Color
-    
+
     var body: some View {
         VStack(spacing: 4) {
             Text("\(count)")

@@ -21,28 +21,30 @@ public struct LogViewer: View {
     @State private var searchText = ""
     @State private var debouncedQuery = ""
     @State private var showError: Error?
-    
+
     enum SheetDestination: Identifiable {
         case filters
         case export
+        case privacyLogChecks
+        case issuesSummary
 
         var id: Self { self }
     }
-    
+
     enum LogViewerError: LocalizedError {
         case failedLogClearing
 
         var errorDescription: String? {
             switch self {
             case .failedLogClearing:
-                return "Failed to clear logs"
+                "Failed to clear logs"
             }
         }
 
         var recoverySuggestion: String? {
             switch self {
             case .failedLogClearing:
-                return "Article publishing failed due to missing title"
+                "Article publishing failed due to missing title"
             }
         }
     }
@@ -77,15 +79,32 @@ public struct LogViewer: View {
         case .filters:
             FilterSheet(selectedLevels: $selectedLevels,
                         selectedCategories: $selectedCategories)
+        case .privacyLogChecks:
+            if #available(iOS 26.0, *) {
+                NavigationStack {
+                    PrivacyWarningsView()
+                }
+            } else {
+                NonAccessibleFeatureView()
+            }
+        case .issuesSummary:
+            if #available(iOS 26.0, *) {
+                NavigationStack {
+                    IssueSummaryView()
+                }
+            } else {
+                NonAccessibleFeatureView()
+            }
         }
     }
-    
+
     private var filteredLogs: [LogEntry] {
         filterData()
     }
 }
 
 // MARK: - Main Content View
+
 private extension LogViewer {
     var mainContent: some View {
         List {
@@ -115,11 +134,13 @@ private extension LogViewer {
         }
     }
 }
+
 // MARK: - Overlay
+
 private extension LogViewer {
     @ViewBuilder
     var overlayContent: some View {
-        if filteredLogs.isEmpty && !searchText.isEmpty {
+        if filteredLogs.isEmpty, !searchText.isEmpty {
             VStack(spacing: 20) {
                 Spacer()
                 Text("Couldn't find any logs corresponding to your search criteria \"\(searchText)\"")
@@ -135,7 +156,7 @@ private extension LogViewer {
             }
             .frame(maxHeight: .infinity)
             .padding(.horizontal)
-        } else if filteredLogs.isEmpty && debouncedQuery.isEmpty {
+        } else if filteredLogs.isEmpty, debouncedQuery.isEmpty {
             ContentUnavailableView {
                 Image(systemName: "text.page.badge.magnifyingglass")
                     .resizable()
@@ -164,6 +185,7 @@ private extension LogViewer {
 }
 
 // MARK: - Toolbar actions
+
 private extension LogViewer {
     var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
@@ -171,7 +193,7 @@ private extension LogViewer {
                 presentedSheet = .filters
             }
             .disabled(logr.recentLogs.isEmpty)
-            
+
             Menu {
                 Button(allExpanded ? "Collapse All" : "Expand All") {
                     allExpanded.toggle()
@@ -179,9 +201,9 @@ private extension LogViewer {
                 .disabled(logr.recentLogs.isEmpty)
 
                 Divider()
-                
+
                 logAnalyzeMenu
-                
+
                 shareMenu
 
                 Button("Clear All Logs", role: .destructive) {
@@ -195,12 +217,13 @@ private extension LogViewer {
             .disabled(logr.recentLogs.isEmpty)
         }
     }
-    
+
     @ViewBuilder
     var logAnalyzeMenu: some View {
         if logr.canAnalyseLogs {
             Menu {
                 Button {
+                    presentedSheet = .privacyLogChecks
                 } label: {
                     Label {
                         Text("Scan for Privacy Issues")
@@ -211,8 +234,9 @@ private extension LogViewer {
                     }
                 }
                 .disabled(logr.recentLogs.isEmpty)
-                
+
                 Button {
+                    presentedSheet = .issuesSummary
                 } label: {
                     Label {
                         Text("Summarize Issues")
@@ -257,6 +281,7 @@ private extension LogViewer {
 }
 
 // MARK: - Logic actions
+
 private extension LogViewer {
     func prepareShareItem(format: ExportFormat, fileName: String) -> ShareItem {
         guard let data = logr.exportLogs(format: format) else {
@@ -265,7 +290,7 @@ private extension LogViewer {
 
         return ShareItem(data: data, fileName: fileName, contentType: format.contentType)
     }
-    
+
     func clearAllLogs() {
         Task {
             do {
@@ -275,23 +300,38 @@ private extension LogViewer {
             }
         }
     }
-    
-    
+
     func filterData() -> [LogEntry] {
         logr.recentLogs.filter { entry in
             guard selectedLevels.contains(entry.level) else { return false }
-            
-            if !selectedCategories.isEmpty && !selectedCategories.contains(entry.category) {
+
+            if !selectedCategories.isEmpty, !selectedCategories.contains(entry.category) {
                 return false
             }
-            
+
             if !debouncedQuery.isEmpty {
                 return entry.message.localizedCaseInsensitiveContains(debouncedQuery) ||
-                       entry.category.rawValue.localizedCaseInsensitiveContains(debouncedQuery) ||
-                       entry.category.displayName.localizedCaseInsensitiveContains(debouncedQuery)
+                    entry.category.rawValue.localizedCaseInsensitiveContains(debouncedQuery) ||
+                    entry.category.displayName.localizedCaseInsensitiveContains(debouncedQuery)
             }
-            
+
             return true
+        }
+    }
+}
+
+private struct NonAccessibleFeatureView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 8) {
+                Text("Missing Feature")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                Text("AI Intelligence tool are only available on from iOS 26 and above.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

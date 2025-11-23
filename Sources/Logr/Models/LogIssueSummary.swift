@@ -37,8 +37,14 @@ public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
     @Guide(description: "Suggested solution or next steps to resolve the issue")
     public var suggestedFix: String
 
-    public init(category: String, title: String, description: String, file: String, line: Int, occurrences: Int,
-                severity: String, suggestedFix: String) {
+    public init(category: String,
+                title: String,
+                description: String,
+                file: String,
+                line: Int,
+                occurrences: Int,
+                severity: String,
+                suggestedFix: String) {
         self.category = category
         self.title = title
         self.description = description
@@ -89,11 +95,11 @@ public struct LogIssueSummary: Sendable, Equatable {
         self.patterns = patterns
         self.priorityActions = priorityActions
     }
-    
+
     public var isEmpty: Bool {
         issues.isEmpty && totalErrors == 0 && totalWarnings == 0 && totalFaults == 0
     }
-    
+
     public static var empty: LogIssueSummary {
         LogIssueSummary(executiveSummary: "",
                         issues: [],
