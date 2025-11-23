@@ -74,8 +74,13 @@ public struct LogIssueSummary: Sendable, Equatable {
     @Guide(description: "Recommended priority actions to improve application stability")
     public var priorityActions: [String]
 
-    public init(executiveSummary: String, issues: [LogIssue], totalErrors: Int, totalWarnings: Int,
-                totalFaults: Int, patterns: [String], priorityActions: [String]) {
+    public init(executiveSummary: String,
+                issues: [LogIssue],
+                totalErrors: Int,
+                totalWarnings: Int,
+                totalFaults: Int,
+                patterns: [String],
+                priorityActions: [String]) {
         self.executiveSummary = executiveSummary
         self.issues = issues
         self.totalErrors = totalErrors
@@ -83,5 +88,19 @@ public struct LogIssueSummary: Sendable, Equatable {
         self.totalFaults = totalFaults
         self.patterns = patterns
         self.priorityActions = priorityActions
+    }
+    
+    public var isEmpty: Bool {
+        issues.isEmpty && totalErrors == 0 && totalWarnings == 0 && totalFaults == 0
+    }
+    
+    public static var empty: LogIssueSummary {
+        LogIssueSummary(executiveSummary: "",
+                        issues: [],
+                        totalErrors: 0,
+                        totalWarnings: 0,
+                        totalFaults: 0,
+                        patterns: [],
+                        priorityActions: [])
     }
 }

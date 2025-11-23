@@ -3,57 +3,24 @@ import SwiftUI
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 public struct PrivacyWarningsView: View {
-    let result: PrivacyAnalysisResult
-
-    public init(result: PrivacyAnalysisResult) {
-        self.result = result
-    }
-
+    @Environment(\.logService) var logr
+    @State private var loading = false
+    @State private var showError: Error?
+    
+    public init() {}
+    
     public var body: some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: result.warnings
-                            .isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                            .foregroundStyle(result.warnings.isEmpty ? .green : .red)
-                            .font(.title2)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Privacy Analysis")
-                                .font(.headline)
-                            Text(result.summary)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if result.criticalCount > 0 || result.highCount > 0 {
-                        HStack(spacing: 16) {
-                            if result.criticalCount > 0 {
-                                severityBadge(count: result.criticalCount, severity: "Critical", color: .red)
-                            }
-                            if result.highCount > 0 {
-                                severityBadge(count: result.highCount, severity: "High", color: .orange)
-                            }
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-                .padding(.vertical, 8)
+        mainContent
+            .navigationTitle("Privacy Warnings")
+            .overlay {
+                overlayContent
             }
-
-            if !result.warnings.isEmpty {
-                ForEach(result.warnings) { warning in
-                    Section {
-                        PrivacyWarningRow(warning: warning)
-                    }
-                }
+            .task {
+                await loadData()
             }
-        }
-        .navigationTitle("Privacy Warnings")
+            .errorAlert(error: $showError)
     }
-
+    
     private func severityBadge(count: Int, severity: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Circle()
@@ -68,18 +35,127 @@ public struct PrivacyWarningsView: View {
         .background(color.opacity(0.1))
         .cornerRadius(8)
     }
+    
+    private func loadData() async {
+        defer { loading = false }
+        
+        do {
+            if logr.privacyAnalysisResult == nil {
+                loading = true
+            }
+            try await logr.scanForPrivacyIssues()
+        } catch {
+            showError = error
+        }
+    }
 }
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-struct PrivacyWarningRow: View {
-    let warning: PrivacyWarning
+private extension PrivacyWarningsView {
+    var mainContent: some View {
+        List {
+            analysisSections
+            warningSections
+        }
+    }
+    
+    @ViewBuilder
+    var analysisSections: some View {
+        if let privacyAnalysis = logr.privacyAnalysisResult {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: privacyAnalysis.isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                        .foregroundStyle(privacyAnalysis.isEmpty ? .green : .red)
+                        .font(.title2)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Privacy Analysis")
+                                .font(.headline)
+                            Text(privacyAnalysis.summary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    if privacyAnalysis.criticalCount > 0 || privacyAnalysis.highCount > 0 {
+                        HStack(spacing: 16) {
+                            if privacyAnalysis.criticalCount > 0 {
+                                severityBadge(count: privacyAnalysis.criticalCount,
+                                              severity: "Critical",
+                                              color: .red)
+                            }
+                            if privacyAnalysis.highCount > 0 {
+                                severityBadge(count: privacyAnalysis.highCount,
+                                              severity: "High",
+                                              color: .orange)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    var warningSections: some View {
+        if let privacyAnalysis = logr.privacyAnalysisResult, !privacyAnalysis.warnings.isEmpty {
+            ForEach(privacyAnalysis.warnings) { warning in
+                Section {
+                    PrivacyWarningRow(warning: warning)
+                }
+            }
+        }
+    }
+}
 
+// MARK: - Overlay
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+private extension PrivacyWarningsView {
+    @ViewBuilder
+    var overlayContent: some View {
+        if loading {
+            AnalyzeProcessingView()
+        } else if let privacyAnalysis = logr.privacyAnalysisResult, privacyAnalysis.isEmpty {
+            ContentUnavailableView {
+                Image(systemName: "text.page.badge.magnifyingglass")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 210, height: 120)
+                    .padding(.bottom, 16)
+            } description: {
+                VStack(spacing: 8) {
+                    Text("No Privacy issues found in your logs")
+                        .font(.title2)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .opacity(0.9)
+                    Text("Nothing to report here. It seems your are not exposing any sensitive user information.")
+                        .font(.title3)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 32)
+                }
+                .padding(.horizontal, 16)
+            } actions: {}
+        }
+    }
+}
+
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+private struct PrivacyWarningRow: View {
+    let warning: PrivacyWarning
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 severityIcon
                     .font(.title3)
-
+                
                 VStack(alignment: .leading, spacing: 2) {
                     Text(warning.exposureType.capitalized)
                         .font(.headline)
@@ -88,42 +164,40 @@ struct PrivacyWarningRow: View {
                         .foregroundStyle(.secondary)
                         .monospaced()
                 }
-
+                
                 Spacer()
             }
-
+            
             VStack(alignment: .leading, spacing: 8) {
                 PrivacyDetailRow(label: "Exposed", value: warning.exposedContent)
                     .font(.caption)
                     .padding(8)
                     .background(Color.red.opacity(0.05))
                     .cornerRadius(6)
-
+                
                 PrivacyDetailRow(label: "Explanation", value: warning.explanation)
-
+                
                 PrivacyDetailRow(label: "Recommendation", value: warning.recommendation)
                     .foregroundStyle(.blue)
             }
         }
         .padding(.vertical, 8)
     }
-
+    
     private var severityIcon: some View {
-        Group {
-            switch warning.severity.lowercased() {
-            case "critical":
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-            case "high":
-                Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(.orange)
-            case "medium":
-                Image(systemName: "exclamationmark.circle")
-                    .foregroundStyle(.yellow)
-            default:
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.blue)
-            }
+        switch warning.severity.lowercased() {
+        case "critical":
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+        case "high":
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.orange)
+        case "medium":
+            Image(systemName: "exclamationmark.circle")
+                .foregroundStyle(.yellow)
+        default:
+            Image(systemName: "info.circle")
+                .foregroundStyle(.blue)
         }
     }
 }
@@ -131,7 +205,7 @@ struct PrivacyWarningRow: View {
 struct PrivacyDetailRow: View {
     let label: String
     let value: String
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
@@ -146,25 +220,9 @@ struct PrivacyDetailRow: View {
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 #Preview {
+    @Previewable @State var mock = MockLogR()
     NavigationStack {
-        PrivacyWarningsView(result: PrivacyAnalysisResult(warnings: [
-                PrivacyWarning(file: "LoginViewController.swift",
-                               line: 42,
-                               exposureType: "email",
-                               exposedContent: "user@example.com",
-                               explanation: "Email address is being logged in plain text, which could expose user identity.",
-                               severity: "high",
-                               recommendation: "Remove email logging or use hashed/redacted versions."),
-                PrivacyWarning(file: "PaymentService.swift",
-                               line: 158,
-                               exposureType: "credit card",
-                               exposedContent: "4532-1234-5678-1234",
-                               explanation: "Full credit card number detected in logs - severe PCI compliance violation.",
-                               severity: "critical",
-                               recommendation: "Never log credit card numbers. Implement PCI-DSS compliant logging.")
-            ],
-            summary: "Found 2 potential privacy exposures: 1 critical, 1 high severity.",
-            criticalCount: 1,
-            highCount: 1))
+        PrivacyWarningsView()
     }
+    .environment(\.logService, mock)
 }

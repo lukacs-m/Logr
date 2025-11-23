@@ -7,7 +7,17 @@ import OSLog
 @MainActor
 public final class LogR: LogRService, Sendable {
     public private(set) var recentLogs: [LogEntry] = []
-
+    
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public var privacyAnalysisResult: PrivacyAnalysisResult? {
+        _privacyAnalysisResult as? PrivacyAnalysisResult
+    }
+    
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public var logIssueSummary: LogIssueSummary? {
+        _logIssueSummary as? LogIssueSummary
+    }
+    
     private let storage: LogRPersistence?
     private let configuration: LogrConfiguration
     private let cryptoService: any LoggerCryptoServicing
@@ -22,6 +32,8 @@ public final class LogR: LogRService, Sendable {
     @ObservationIgnored
     private let writer: LogWriterActor?
     
+    private var _logIssueSummary: (any SendableMetatype)?
+    private var _privacyAnalysisResult: (any SendableMetatype)?
     private var _analyser: (any SendableMetatype)?
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     private var analyser: LogAIAnalyzer? {
@@ -157,6 +169,38 @@ public extension LogR {
 
     func exportLogs(format: ExportFormat = .json) -> Data? {
         encode(for: format)
+    }
+}
+
+// MARK: - Logs analyzer
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+public extension LogR {
+    func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
+        guard let analyser else {
+            throw AIAnalyzerError.missingAnalyzer
+        }
+        let result = if recentLogs.isEmpty {
+            PrivacyAnalysisResult.empty
+        } else {
+            try await analyser.scanForPrivacyIssues(logs: recentLogs)
+        }
+        
+        _privacyAnalysisResult = result
+        return result
+    }
+
+    func summarizeIssues() async throws -> LogIssueSummary {
+        guard let analyser else {
+            throw  AIAnalyzerError.missingAnalyzer
+        }
+        let result = if recentLogs.isEmpty {
+            LogIssueSummary.empty
+        } else {
+            try await analyser.summarizeIssues(logs: recentLogs)
+        }
+        
+        _logIssueSummary = result
+        return result
     }
 }
 

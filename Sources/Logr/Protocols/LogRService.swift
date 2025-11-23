@@ -11,7 +11,11 @@ import Foundation
 public protocol LogRService: Observable, Sendable {
     var recentLogs: [LogEntry] { get }
     var canAnalyseLogs: Bool { get }
-
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    var privacyAnalysisResult: PrivacyAnalysisResult? { get }
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    var logIssueSummary: LogIssueSummary? { get }
+    
     // Core logging methods
     func log(level: LogLevel,
              message: String,
@@ -22,6 +26,11 @@ public protocol LogRService: Observable, Sendable {
 
     func exportLogs(format: ExportFormat) -> Data?
     func clearLogs() async throws
+    
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @discardableResult func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @discardableResult func summarizeIssues() async throws -> LogIssueSummary
 }
 
 // MARK: - Helper functions

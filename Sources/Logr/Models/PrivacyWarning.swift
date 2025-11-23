@@ -67,4 +67,10 @@ public struct PrivacyAnalysisResult: Sendable, Equatable {
         self.criticalCount = criticalCount
         self.highCount = highCount
     }
+    
+    public var isEmpty: Bool { warnings.isEmpty }
+    
+    public static var empty: PrivacyAnalysisResult {
+        PrivacyAnalysisResult(warnings: [], summary: "", criticalCount: 0, highCount: 0)
+    }
 }

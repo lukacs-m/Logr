@@ -258,7 +258,6 @@ private extension LogViewer {
 
 // MARK: - Logic actions
 private extension LogViewer {
-    
     func prepareShareItem(format: ExportFormat, fileName: String) -> ShareItem {
         guard let data = logr.exportLogs(format: format) else {
             return .empty

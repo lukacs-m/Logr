@@ -15,6 +15,7 @@ public enum AIAnalyzerError: Error, LocalizedError, Sendable {
     case noLogsToAnalyze
     case systemError(Error)
     case mergeError
+    case missingAnalyzer
 
     public var errorDescription: String? {
         switch self {
@@ -32,6 +33,8 @@ public enum AIAnalyzerError: Error, LocalizedError, Sendable {
             "System error: \(error.localizedDescription)"
         case .mergeError:
             "Something went wrong while merging the analysis results. Please try again."
+        case .missingAnalyzer:
+            "No analyzer is configured for this app."
         }
     }
 }

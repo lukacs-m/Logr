@@ -1,42 +1,64 @@
 import Logr
 import SwiftUI
 
-// TODO: get env key for logr
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 public struct AIAnalysisView: View {
-    let logs: [LogEntry]
-    let analyzer: LogAIAnalyzer
-
+    @Environment(\.logService) private var logr
     @State private var analysisState: AnalysisState = .idle
-    @State private var showError: Bool = false
-    @State private var errorMessage: String = ""
+    @State private var showError: Error?
+    
+    // MARK: - Analysis State
 
-    public init(logs: [LogEntry], analyzer: LogAIAnalyzer = AIAnalyzer()) {
-        self.logs = logs
-        self.analyzer = analyzer
+   private enum AnalysisState: Equatable {
+        case idle
+        case analyzing
+        case privacyComplete
+        case issuesComplete
     }
-
-    public var body: some View {
-        Group {
-            switch analysisState {
-            case .idle:
-                idleView
-            case .analyzing:
-                analyzingView
-            case let .privacyComplete(result):
-                PrivacyWarningsView(result: result)
-            case let .issuesComplete(summary):
-                IssueSummaryView(summary: summary)
+    
+    private enum AIAnalysisViewError: LocalizedError {
+        case analysisInitError
+        case analysisError(String)
+        
+        var errorDescription: String? {
+            switch self {
+            case .analysisInitError:
+                return  "Apple Intelligence is not available on this device. Requires iOS 26+, macOS 26+, or later."
+            case let .analysisError(message):
+                return message
             }
         }
-        .navigationTitle("AI Analysis")
-        .alert("Analysis Error", isPresented: $showError) {
-            Button("OK") { analysisState = .idle }
-        } message: {
-            Text(errorMessage)
+        
+        var recoverySuggestion: String? {
+            switch self {
+            case .analysisInitError, .analysisError:
+                return "Analysis Error"
+            }
         }
+    }
+    
+    public init() {}
+
+    public var body: some View {
+        mainContent
+        .navigationTitle("AI Analysis")
+        .errorAlert(error: $showError)
         .task {
             checkAvailability()
+        }
+    }
+    
+    @ViewBuilder
+    var mainContent: some View {
+        switch analysisState {
+        case .idle:
+            idleView
+        case .analyzing:
+            AnalyzeProcessingView()
+        case .privacyComplete:
+            PrivacyWarningsView()
+        case .issuesComplete:
+            IssueSummaryView()
         }
     }
 
@@ -75,13 +97,13 @@ public struct AIAnalysisView: View {
             }
             .padding(.horizontal)
 
-            if logs.isEmpty {
+            if logr.recentLogs.isEmpty {
                 Text("No logs available to analyze")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top)
             } else {
-                Text("\(logs.count) log entries ready for analysis")
+                Text("\(logr.recentLogs.count) log entries ready for analysis")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top)
@@ -90,22 +112,7 @@ public struct AIAnalysisView: View {
         .padding()
     }
 
-    private var analyzingView: some View {
-        VStack(spacing: 24) {
-            ProgressView()
-                .scaleEffect(1.5)
-
-            VStack(spacing: 8) {
-                Text("Analyzing Logs")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-
-                Text("Apple Intelligence is processing your logs...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
+ 
 
     private func analyzeButton(title: String,
                                subtitle: String,
@@ -144,91 +151,79 @@ public struct AIAnalysisView: View {
             .cornerRadius(12)
         }
         .buttonStyle(.plain)
-        .disabled(logs.isEmpty || analysisState == .analyzing)
+        .disabled(logr.recentLogs.isEmpty || analysisState == .analyzing)
     }
 
     // MARK: - Analysis Actions
 
     private func checkAvailability() {
-        let available = analyzer.isAvailable
-        if !available {
-            errorMessage = "Apple Intelligence is not available on this device. Requires iOS 18+, macOS 15+, or later."
-            showError = true
+        if !logr.canAnalyseLogs {
+            showError = AIAnalysisViewError.analysisInitError
         }
     }
 
     private func scanPrivacy() async {
-        guard !logs.isEmpty else { return }
+        guard !logr.recentLogs.isEmpty else { return }
 
         analysisState = .analyzing
 
         do {
-            let result = try await analyzer.scanForPrivacyIssues(logs: logs)
-            analysisState = .privacyComplete(result)
+            try await logr.scanForPrivacyIssues()
+            analysisState = .privacyComplete
         } catch {
             handleError(error)
         }
     }
 
     private func summarizeIssues() async {
-        guard !logs.isEmpty else { return }
+        guard !logr.recentLogs.isEmpty  else { return }
 
         analysisState = .analyzing
 
         do {
-            let summary = try await analyzer.summarizeIssues(logs: logs)
-            analysisState = .issuesComplete(summary)
+            try await logr.summarizeIssues()
+            analysisState = .issuesComplete
         } catch {
             handleError(error)
         }
     }
 
     private func handleError(_ error: Error) {
-        if let aiError = error as? AIAnalyzerError {
-            errorMessage = aiError.localizedDescription
+        let errorMessage = if let error = error as? AIAnalyzerError {
+            error.localizedDescription
         } else {
-            errorMessage = "An unexpected error occurred: \(error.localizedDescription)"
+            "An unexpected error occurred: \(error.localizedDescription)"
         }
-        showError = true
+        showError = AIAnalysisViewError.analysisError(errorMessage)
         analysisState = .idle
     }
 }
 
-// MARK: - Analysis State
+struct AnalyzeProcessingView: View {
+    var body: some View {
+        VStack(spacing: 24) {
+            ProgressView()
+                .scaleEffect(1.5)
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-enum AnalysisState: Equatable {
-    case idle
-    case analyzing
-    case privacyComplete(PrivacyAnalysisResult)
-    case issuesComplete(LogIssueSummary)
+            VStack(spacing: 8) {
+                Text("Analyzing Logs")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+
+                Text("AI Intelligence tool is processing your logs...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
 }
 
 // MARK: - Preview
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-#Preview("Idle State") {
-    NavigationStack {
-        AIAnalysisView(logs: [
-            LogEntry(level: .error,
-                     category: .system,
-                     subsystem: "com.example.app",
-                     message: "User email: user@example.com failed to authenticate",
-                     file: "LoginViewController.swift",
-                     line: 42),
-            LogEntry(level: .error,
-                     category: .network,
-                     subsystem: "com.example.app",
-                     message: "Network request timeout",
-                     file: "NetworkManager.swift",
-                     line: 156)
-        ])
-    }
-}
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-#Preview("Analyzing State") {
-    NavigationStack {
-        AIAnalysisView(logs: [])
-    }
-}
+//@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+//#Preview("Analyzing State") {
+//    @Previewable @State var mock = MockLogR()
+//    NavigationStack {
+//        AIAnalysisView()
+//            .environment(\.logService, mock)
+//    }
+//}
