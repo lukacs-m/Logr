@@ -7,12 +7,12 @@ struct ConcurrentLoggingTests {
 
     // MARK: - Helper to create test database
 
-    func createTestDatabase() throws -> LogRepository {
+    func createTestDatabase() throws -> SQLiteStorage {
         let tempDir = FileManager.default.temporaryDirectory
         let testDBPath = tempDir
             .appendingPathComponent("concurrent_test_\(UUID().uuidString).sqlite")
             .path
-        return try LogRepository(databasePath: testDBPath)
+        return try SQLiteStorage(databasePath: testDBPath)
     }
 
     func createMockCryptoService() -> LoggerCryptoService {

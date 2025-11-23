@@ -10,6 +10,90 @@ import Logr
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// A comprehensive SwiftUI view for displaying, filtering, and analyzing logs.
+///
+/// `LogViewer` provides a full-featured log viewing interface with:
+/// - Real-time log display with automatic updates
+/// - Advanced filtering by level, category, and search text
+/// - Export and sharing in multiple formats (JSON, CSV, TXT)
+/// - AI-powered privacy scanning and issue summarization (iOS 26+)
+/// - Expandable/collapsible log entries
+/// - Clear all logs functionality
+///
+/// ## Overview
+///
+/// The log viewer automatically connects to the LogR service through the SwiftUI
+/// environment and displays logs in real-time as they're created.
+///
+/// ## Basic Usage
+///
+/// ```swift
+/// import SwiftUI
+/// import LogrUI
+///
+/// struct ContentView: View {
+///     var body: some View {
+///         NavigationStack {
+///             LogViewer()
+///         }
+///     }
+/// }
+/// ```
+///
+/// ## Features
+///
+/// **Filtering**
+/// - Filter by log levels (debug, info, notice, warning, error, fault)
+/// - Filter by categories (network, ui, database, etc.)
+/// - Full-text search across messages and categories
+///
+/// **Actions**
+/// - Expand/collapse all log entries
+/// - Export logs in JSON, CSV, or plain text format
+/// - Share logs via system share sheet
+/// - Clear all logs with confirmation
+///
+/// **AI Analysis** (iOS 26+)
+/// - Scan for privacy issues and PII exposure
+/// - Summarize critical issues and patterns
+///
+/// ## Complete Example
+///
+/// ```swift
+/// import SwiftUI
+/// import Logr
+/// import LogrUI
+///
+/// @main
+/// struct MyApp: App {
+///     let logger = LogR(storage: SQLiteStorage())
+///
+///     var body: some Scene {
+///         WindowGroup {
+///             TabView {
+///                 ContentView()
+///                     .tabItem { Label("Home", systemImage: "house") }
+///
+///                 NavigationStack {
+///                     LogViewer()
+///                 }
+///                 .tabItem { Label("Logs", systemImage: "list.bullet") }
+///             }
+///             .environment(\.logService, logger)
+///         }
+///     }
+/// }
+/// ```
+///
+/// ## Requirements
+///
+/// - iOS 17.0+, macOS 14.0+, tvOS 17.0+, watchOS 10.0+
+/// - AI features require iOS 26.0+, macOS 26.0+, tvOS 26.0+, watchOS 12.0+
+///
+/// ## Topics
+///
+/// ### Initializers
+/// - ``init()``
 public struct LogViewer: View {
     @Environment(\.logService) private var logr
     @State private var showingDeleteConfirmation = false
@@ -49,6 +133,33 @@ public struct LogViewer: View {
         }
     }
 
+    /// Creates a new log viewer instance.
+    ///
+    /// The log viewer automatically connects to the LogR service from the SwiftUI environment.
+    /// Ensure you've configured a LogR instance using `.logRService(_:)` modifier higher
+    /// in your view hierarchy.
+    ///
+    /// ## Example
+    ///
+    /// ```swift
+    /// import SwiftUI
+    /// import Logr
+    /// import LogrUI
+    ///
+    /// @main
+    /// struct MyApp: App {
+    ///     let logger = LogR()
+    ///
+    ///     var body: some Scene {
+    ///         WindowGroup {
+    ///             NavigationStack {
+    ///                 LogViewer()
+    ///             }
+    ///             .environment(\.logService, logger)
+    ///         }
+    ///     }
+    /// }
+    /// ```
     public init() {}
 
     public var body: some View {

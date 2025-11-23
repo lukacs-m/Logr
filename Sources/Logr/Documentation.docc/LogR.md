@@ -1,52 +1,50 @@
-# ``LogR``
+# ``Logr``
 
-A powerful, persistent logging library for Apple platforms that leverages OSLog while providing persistent storage and SwiftUI visualization.
+A powerful, persistent logging library for Apple platforms that leverages OSLog while providing encrypted persistent storage, AI-powered analysis, and beautiful SwiftUI visualization.
 
 ## Overview
 
-LogR is a comprehensive logging solution that combines the power of Apple's OSLog framework with persistent storage capabilities. It provides:
+LogR is a comprehensive logging solution that combines the power of Apple's OSLog framework with persistent storage capabilities, encryption, and AI-powered analysis. It's designed to be simple to use, highly configurable, and production-ready.
 
-- **Persistent Logging**: Unlike standard OSLog entries that are cleared between sessions, LogR maintains logs persistently
-- **SwiftUI Integration**: Built-in log viewer with filtering, search, and export capabilities
-- **Privacy-Aware**: Full support for Apple's privacy operators for sensitive data
-- **Configurable**: Flexible configuration for log retention, levels, and cleanup
-- **Swift 6.2 Compatible**: Built with the latest Swift concurrency and safety features
+### Key Features
 
-## Quick Start
+- **Persistent Logging**: Unlike standard OSLog entries that are cleared between sessions, LogR maintains logs persistently with optional encrypted storage
+- **AI-Powered Analysis** (iOS 26+): Automatic privacy issue detection and intelligent log issue summarization using Apple Intelligence
+- **Encryption**: Built-in ChaCha20-Poly1305 encryption for sensitive log data using secure Keychain storage
+- **SwiftUI Integration**: Beautiful, built-in log viewer (`LogViewer`) with filtering, search, sharing, and AI analysis
+- **Privacy-First**: Apple privacy system integration with automatic redaction of sensitive data in OSLog
+- **Configurable**: Flexible configuration for log retention, levels, cleanup intervals, and verbosity
+- **Modular Architecture**: Separate `Logr` core and `LogrUI` modules for flexibility
+- **47+ Categories**: Comprehensive enum-based categories organized into 9 logical groups
+- **Testing Ready**: Full `MockLogR` implementation for SwiftUI previews and unit testing
+- **Storage Options**: FileSystem and SQLite storage implementations with custom storage protocol
+- **Swift 6 Compatible**: Built with latest Swift concurrency, sendability, and safety features
+- **Performance Optimized**: Background log writing with actor-based concurrency
 
-### Basic Usage
-
-```swift
-import LogR
-
-// Use the shared instance
-await LogR.shared.info("Application started")
-await LogR.shared.error("Failed to load user data")
-
-// Or create your own instance
-let logger = LogR()
-await logger.debug("Debug information", category: "network")
-```
-
-### Privacy-Aware Logging
+### Quick Start
 
 ```swift
-let userToken = PrivateString("abc123token", privacy: .sensitive)
-await LogR.shared.info("User authenticated", privateData: userToken)
-// Logs: "User authenticated <sensitive>" to persistent storage
-// Logs: "User authenticated abc123token" to OSLog with proper privacy
-```
-
-### SwiftUI Integration
-
-```swift
+import Logr
 import SwiftUI
-import LogR
+
+@main
+struct MyApp: App {
+    @State private var logger = LogR(storage: SQLiteStorage())
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .logRService(logger)
+        }
+    }
+}
 
 struct ContentView: View {
+    @Environment(\.logr) private var logger
+
     var body: some View {
-        NavigationView {
-            LogViewer()
+        Button("Test") {
+            logger.info("Button tapped", category: .ui)
         }
     }
 }
@@ -54,111 +52,63 @@ struct ContentView: View {
 
 ## Topics
 
-### Essentials
+### Getting Started
+
+- <doc:GettingStarted>
+- <doc:Architecture>
+
+### Core Types
 
 - ``LogR``
+- ``LogRService``
 - ``LogEntry``
 - ``LogLevel``
+- ``LogCategory``
 - ``LogrConfiguration``
-
-### Privacy and Security
-
-- ``PrivateString``
-- ``PrivacyLevel``
+- ``LogVerbosity``
 
 ### Storage
 
-- ``PersistentStorage``
+- <doc:StorageAndPersistence>
+- ``LogRPersistence``
 - ``FileSystemStorage``
+- ``SQLiteStorage``
+- ``EncryptedLogEntry``
 
-### SwiftUI Components
+### Privacy & Security
 
+- <doc:PrivacyAndSecurity>
+- ``LoggerCryptoServicing``
+- ``LoggerCryptoService``
+- ``LoggerCryptoError``
+- ``KeychainStore``
+
+### AI Analysis (iOS 26+)
+
+- <doc:AIAnalysis>
+- ``LogAIAnalyzer``
+- ``AIAnalyzer``
+- ``PrivacyAnalysisResult``
+- ``PrivacyWarning``
+- ``PrivacySeverity``
+- ``LogIssueSummary``
+- ``AIAnalyzerError``
+
+### SwiftUI Integration
+
+- <doc:SwiftUIIntegration>
 - ``LogViewer``
-
-### Configuration Management
-
-- ``ConfigurationManager``
 - ``ExportFormat``
 
-## Installation
+### Testing & Mocking
 
-Add LogR to your Swift Package Manager dependencies:
+- <doc:TestingAndMocking>
+- ``MockLogR``
 
-```swift
-dependencies: [
-    .package(url: "https://github.com/yourorg/logr", from: "1.0.0")
-]
-```
+### Models & Errors
 
-## Configuration
-
-### Custom Configuration
-
-```swift
-let config = LogrConfiguration(
-    maxLogEntries: 5000,
-    maxLogAge: 24 * 60 * 60, // 1 day
-    enabledLevels: [.info, .error, .fault],
-    subsystem: "com.myapp.logging",
-    cleanupInterval: 30 * 60 // 30 minutes
-)
-
-let logger = LogR(configuration: config)
-```
-
-### Custom Storage
-
-```swift
-class MyCustomStorage: PersistentStorage {
-    // Implement your custom storage logic
-    func store(_ entry: LogEntry) async throws {
-        // Custom storage implementation
-    }
-    
-    // ... other required methods
-}
-
-let logger = LogR(storage: MyCustomStorage())
-```
-
-## Export Options
-
-LogR supports multiple export formats:
-
-```swift
-// Export as JSON
-let jsonData = try await logger.exportLogs(format: .json)
-
-// Export as CSV for spreadsheet analysis
-let csvData = try await logger.exportLogs(format: .csv)
-
-// Export as plain text for easy reading
-let textData = try await logger.exportLogs(format: .txt)
-```
-
-## Best Practices
-
-1. **Use appropriate log levels**: Reserve `.fault` for critical errors, `.error` for recoverable errors, and `.debug` for development information.
-
-2. **Leverage categories**: Organize logs by feature or system component:
-   ```swift
-   await logger.info("Request completed", category: "networking")
-   await logger.debug("UI updated", category: "interface")
-   ```
-
-3. **Handle sensitive data**: Always use `PrivateString` for sensitive information:
-   ```swift
-   let sensitiveData = PrivateString(userPassword, privacy: .sensitive)
-   await logger.debug("Authentication attempt", privateData: sensitiveData)
-   ```
-
-4. **Configure cleanup appropriately**: Balance storage usage with log retention needs:
-   ```swift
-   let config = LogrConfiguration(
-       maxLogEntries: 1000,  // Keep last 1000 entries
-       maxLogAge: 7 * 24 * 60 * 60  // Keep logs for 7 days
-   )
-   ```
+- ``LogrErrors``
+- ``ExportFormat``
 
 ## Platform Support
 
@@ -167,13 +117,157 @@ let textData = try await logger.exportLogs(format: .txt)
 - tvOS 17.0+
 - watchOS 10.0+
 
-## Thread Safety
+**AI Features** require:
+- iOS 26.0+
+- macOS 26.0+
+- tvOS 26.0+
+- watchOS 12.0+
 
-LogR is built with Swift 6.2 and full concurrency support. All methods are actor-isolated and thread-safe. The `@Observable` conformance ensures SwiftUI updates happen on the main actor.
+## Installation
+
+### Swift Package Manager
+
+Add LogR to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/lukacs-m/logr", from: "1.0.0")
+]
+```
+
+Or add via Xcode:
+1. File → Add Package Dependencies
+2. Enter: `https://github.com/lukacs-m/logr`
+3. Select version and add to target
+
+## Architecture
+
+LogR uses a clean, modular architecture:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                        LogR                             │
+│  @Observable @MainActor                                 │
+│  - Manages logging lifecycle                            │
+│  - Coordinates with storage and OSLog                   │
+│  - Maintains in-memory cache (recentLogs)               │
+└────────────┬────────────────────────────────────────────┘
+             │
+             ├──→ LogRService Protocol
+             │    - Public API for logging operations
+             │
+             ├──→ LogWriterActor
+             │    - Background actor for async storage writes
+             │    - Queues and batches log entries
+             │
+             ├──→ LogRPersistence Protocol
+             │    ├── FileSystemStorage
+             │    ├── SQLiteStorage (GRDB)
+             │    └── Custom implementations
+             │
+             ├──→ LoggerCryptoServicing Protocol
+             │    └── LoggerCryptoService (ChaCha20-Poly1305 + Keychain)
+             │
+             └──→ LogAIAnalyzer Protocol (iOS 26+)
+                  └── AIAnalyzer
+                       - Privacy issue detection
+                       - Issue summarization
+```
+
+### Key Design Decisions
+
+1. **Actor-Based Concurrency**: Background `LogWriterActor` ensures logging never blocks the main thread
+2. **Observable Pattern**: SwiftUI-friendly with `@Observable` for reactive updates
+3. **Protocol-Oriented**: Easy to extend and mock
+4. **Encryption by Default**: All persistent storage is automatically encrypted
+5. **Modular**: Separate `Logr` and `LogrUI` packages
+6. **Swift 6 Ready**: Full sendability and concurrency safety
+
+## Best Practices
+
+### Log Levels
+
+- Use `.debug` for detailed troubleshooting information (disable in production)
+- Use `.info` for tracking normal app flow and operations
+- Use `.notice` for significant but expected events
+- Use `.warning` for unexpected but recoverable conditions
+- Use `.error` for failures that affect specific features
+- Use `.fault` for critical errors that may cause instability
+
+### Categories
+
+Organize logs by system area using the 47+ predefined categories:
+
+```swift
+logger.info("User logged in", category: .authentication)
+logger.error("Request failed", category: .network)
+logger.debug("Cache hit", category: .cache)
+logger.fault("Database error", category: .database)
+```
+
+### Configuration
+
+Balance performance and storage:
+
+```swift
+// Development
+let devConfig = LogrConfiguration(
+    maxLogEntries: 10_000,
+    maxLogAge: 7 * 24 * 60 * 60,
+    enabledLevels: Set(LogLevel.allCases),
+    logVerbosity: .verbose
+)
+
+// Production
+let prodConfig = LogrConfiguration(
+    maxLogEntries: 5_000,
+    maxLogAge: 24 * 60 * 60,
+    enabledLevels: [.info, .warning, .error, .fault],
+    logVerbosity: .normal
+)
+```
+
+### Privacy
+
+Never log sensitive data directly:
+
+```swift
+// ❌ Bad - logs sensitive data
+logger.info("User password: \(password)", category: .authentication)
+
+// ✅ Good - logs safely
+logger.info("User authentication successful", category: .authentication)
+```
+
+With storage encryption enabled, all logs are automatically encrypted before persistence.
 
 ## Performance Considerations
 
-- Log entries are stored asynchronously to avoid blocking the calling thread
-- Automatic cleanup runs at configurable intervals to manage storage usage
-- In-memory caching of recent logs for fast UI updates
-- Efficient filtering and querying capabilities for large log sets
+- **Logging**: O(1) - immediate return, async storage
+- **In-Memory Cache**: O(1) insert, O(n) for filtering
+- **Storage Write**: Batched and queued for efficiency
+- **Cleanup**: Automatic, configurable interval
+- **Query**: O(n) with optimized filtering
+
+LogR is optimized for minimal performance impact:
+- Background actor prevents main thread blocking
+- Lazy message evaluation with `@autoclosure`
+- Efficient in-memory cache with size limits
+- Automatic cleanup prevents unbounded growth
+
+## License
+
+LogR is released under the MIT License.
+
+## Support
+
+- **Documentation**: [Full DocC Documentation](https://docs.example.com/logr)
+- **Issues**: [GitHub Issues](https://github.com/lukacs-m/logr/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/lukacs-m/logr/discussions)
+
+## Acknowledgments
+
+Built with:
+- [GRDB.swift](https://github.com/groue/GRDB.swift) - SQLite toolkit
+- [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) - Keychain wrapper
+- [SQLiteData](https://github.com/pointfreeco/sqlite-data) - SQLite Data models

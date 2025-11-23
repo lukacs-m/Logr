@@ -8,7 +8,7 @@
 import Foundation
 import SQLiteData
 
-public final class LogRepository: LogRPersistence {
+public final class SQLiteStorage: LogRPersistence {
     private let database: any DatabaseWriter
 
     public enum DatabaseError: Error {
@@ -74,11 +74,21 @@ public final class LogRepository: LogRPersistence {
 
 // MARK: - LogRPersistence Implementation / CRUD actions
 
-public extension LogRepository {
+public extension SQLiteStorage {
     func store(_ entry: EncryptedLogEntry) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO.insert {
                 entry.toEncryptedLogEntryDAO
+            }
+            .execute(db)
+        }
+    }
+    
+    func store(_ entries: [EncryptedLogEntry]) async throws {
+        let daos: [EncryptedLogEntryDAO] = entries.map(\.toEncryptedLogEntryDAO)
+        try await database.write { db in
+            try EncryptedLogEntryDAO.insert {
+                daos
             }
             .execute(db)
         }

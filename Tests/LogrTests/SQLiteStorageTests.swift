@@ -7,12 +7,12 @@ struct SQLiteStorageTests {
 
     // MARK: - Helper to create test database
 
-    func createTestDatabase() throws -> LogRepository {
+    func createTestDatabase() throws -> SQLiteStorage {
         let tempDir = FileManager.default.temporaryDirectory
         let testDBPath = tempDir
             .appendingPathComponent("test_\(UUID().uuidString).sqlite")
             .path
-        return try LogRepository(databasePath: testDBPath)
+        return try SQLiteStorage(databasePath: testDBPath)
     }
 
     // MARK: - Initialization Tests
@@ -29,10 +29,10 @@ struct SQLiteStorageTests {
         // This might fail if bundle identifier is not available in test context
         // but we'll test it anyway
         do {
-            _ = try LogRepository()
+            _ = try SQLiteStorage()
         } catch {
             // Expected to possibly fail in test environment
-            #expect(error is LogRepository.DatabaseError)
+            #expect(error is SQLiteStorage.DatabaseError)
         }
     }
 
@@ -42,7 +42,7 @@ struct SQLiteStorageTests {
         let testDir = tempDir.appendingPathComponent("testdir_\(UUID().uuidString)")
         let testDBPath = testDir.appendingPathComponent("test.sqlite").path
 
-        let repository = try LogRepository(databasePath: testDBPath)
+        let repository = try SQLiteStorage(databasePath: testDBPath)
         let count = try await repository.count()
 
         #expect(count == 0)
@@ -85,6 +85,23 @@ struct SQLiteStorageTests {
 
         let count = try await repository.count()
         #expect(count == 10)
+    }
+    
+    @Test("Test store multiple entries in batch")
+    func testStoreBatchEntries() async throws {
+        let repository = try createTestDatabase()
+
+        let entries = (1...1000).map(\.description).map { id in
+            EncryptedLogEntry(
+                id: "entry-\(id)",
+                timestamp: Date(),
+                data: Data("encrypted data \(id)".utf8)
+            )
+        }
+
+        try await repository.store(entries)
+        let count = try await repository.count()
+        #expect(count == 1000)
     }
 
     @Test("Test store entry with large data")

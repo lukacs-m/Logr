@@ -32,6 +32,14 @@ public actor FileSystemStorage: LogRPersistence {
         entries.sort { $0.timestamp > $1.timestamp }
         try await saveEntries(entries)
     }
+    
+    public func store(_ entries: [EncryptedLogEntry]) async throws {
+        var entries = try await fetchEntries()
+        entries.append(contentsOf: entries)
+
+        entries.sort { $0.timestamp > $1.timestamp }
+        try await saveEntries(entries)
+    }
 
     public func fetchEntries() async throws -> [EncryptedLogEntry] {
         let data = try Data(contentsOf: fileURL)
