@@ -7,75 +7,280 @@
 
 import Foundation
 
+/// Comprehensive category system for organizing and filtering logs.
+///
+/// `LogCategory` provides 47 predefined categories organized into logical groups,
+/// plus support for custom project-specific categories.
+///
+/// ## Overview
+///
+/// Categories help organize logs by system area, making it easier to filter, search,
+/// and analyze logs from specific parts of your application. Each category maps to
+/// an OSLog category and is Codable for persistence.
+///
+/// ## Predefined Categories
+///
+/// The categories are organized into nine main groups:
+///
+/// **System & Core**: `.system`, `.lifecycle`, `.initialization`, `.configuration`
+///
+/// **Networking**: `.network`, `.api`, `.http`, `.websocket`, `.ssl`
+///
+/// **User Interface**: `.ui`, `.navigation`, `.animation`, `.layout`, `.gesture`
+///
+/// **Data & Storage**: `.database`, `.coreData`, `.fileSystem`, `.cache`, `.persistence`, `.sync`
+///
+/// **Security & Authentication**: `.authentication`, `.authorization`, `.security`, `.encryption`, `.keychain`, `.biometrics`
+///
+/// **Performance & Monitoring**: `.performance`, `.memory`, `.cpu`, `.battery`, `.analytics`, `.crash`, `.profiling`
+///
+/// **External Services**: `.push`, `.location`, `.camera`, `.microphone`, `.contacts`, `.calendar`, `.photos`
+///
+/// **Business Logic**: `.payment`, `.subscription`, `.purchase`, `.user`, `.content`, `.search`
+///
+/// **Development & Testing**: `.debug`, `.test`, `.mock`
+///
+/// ## Custom Categories
+///
+/// For project-specific needs, use `.custom(String)`:
+///
+/// ```swift
+/// logger.info("Inventory updated", category: .custom("inventory"))
+/// logger.debug("Feature flag toggled", category: .custom("feature-flags"))
+/// ```
+///
+/// ## Usage Examples
+///
+/// ```swift
+/// // Networking
+/// logger.info("API request started", category: .network)
+/// logger.error("Request failed", category: .api)
+///
+/// // UI Events
+/// logger.debug("View appeared", category: .ui)
+/// logger.info("Navigation completed", category: .navigation)
+///
+/// // Performance
+/// logger.notice("Memory usage: 45MB", category: .performance)
+/// logger.debug("CPU usage: 12%", category: .cpu)
+///
+/// // Security
+/// logger.error("Authentication failed", category: .authentication)
+/// logger.fault("Security breach detected", category: .security)
+/// ```
+///
+/// ## Topics
+///
+/// ### System & Core
+/// - ``system``
+/// - ``lifecycle``
+/// - ``initialization``
+/// - ``configuration``
+///
+/// ### Networking
+/// - ``network``
+/// - ``api``
+/// - ``http``
+/// - ``websocket``
+/// - ``ssl``
+///
+/// ### User Interface
+/// - ``ui``
+/// - ``navigation``
+/// - ``animation``
+/// - ``layout``
+/// - ``gesture``
+///
+/// ### Data & Storage
+/// - ``database``
+/// - ``coreData``
+/// - ``fileSystem``
+/// - ``cache``
+/// - ``persistence``
+/// - ``sync``
+///
+/// ### Security & Authentication
+/// - ``authentication``
+/// - ``authorization``
+/// - ``security``
+/// - ``encryption``
+/// - ``keychain``
+/// - ``biometrics``
+///
+/// ### Performance & Monitoring
+/// - ``performance``
+/// - ``memory``
+/// - ``cpu``
+/// - ``battery``
+/// - ``analytics``
+/// - ``crash``
+/// - ``profiling``
+///
+/// ### External Services
+/// - ``push``
+/// - ``location``
+/// - ``camera``
+/// - ``microphone``
+/// - ``contacts``
+/// - ``calendar``
+/// - ``photos``
+///
+/// ### Business Logic
+/// - ``payment``
+/// - ``subscription``
+/// - ``purchase``
+/// - ``user``
+/// - ``content``
+/// - ``search``
+///
+/// ### Development & Testing
+/// - ``debug``
+/// - ``test``
+/// - ``mock``
+///
+/// ### Custom
+/// - ``custom(_:)``
+///
+/// ### Properties
+/// - ``rawValue``
+/// - ``displayName``
+/// - ``common``
+/// - ``predefined``
 public enum LogCategory: Sendable, Codable, Hashable, Equatable {
-    // System & Core
+    // MARK: - System & Core
+
+    /// General system-level logs.
     case system
+    /// App lifecycle events (launch, terminate, background, foreground).
     case lifecycle
+    /// Initialization and setup operations.
     case initialization
+    /// Configuration changes and updates.
     case configuration
 
-    // Networking
+    // MARK: - Networking
+
+    /// General networking operations.
     case network
+    /// API requests and responses.
     case api
+    /// HTTP-specific operations.
     case http
+    /// WebSocket connections and messages.
     case websocket
+    /// SSL/TLS certificate and encryption issues.
     case ssl
 
-    // User Interface
+    // MARK: - User Interface
+
+    /// User interface events and updates.
     case ui
+    /// Navigation and routing operations.
     case navigation
+    /// Animation-related logs.
     case animation
+    /// Layout calculations and constraints.
     case layout
+    /// Gesture recognition and handling.
     case gesture
 
-    // Data & Storage
+    // MARK: - Data & Storage
+
+    /// Database operations (SQLite, Core Data, etc.).
     case database
+    /// Core Data specific operations.
     case coreData
+    /// File system read/write operations.
     case fileSystem
+    /// Cache operations and management.
     case cache
+    /// General persistence operations.
     case persistence
+    /// Data synchronization operations.
     case sync
 
-    // Security & Authentication
+    // MARK: - Security & Authentication
+
+    /// User authentication operations.
     case authentication
+    /// Authorization and permissions.
     case authorization
+    /// General security-related logs.
     case security
+    /// Encryption and decryption operations.
     case encryption
+    /// Keychain access and operations.
     case keychain
+    /// Biometric authentication (Face ID, Touch ID).
     case biometrics
 
-    // Performance & Monitoring
+    // MARK: - Performance & Monitoring
+
+    /// Performance measurements and benchmarks.
     case performance
+    /// Memory usage and management.
     case memory
+    /// CPU usage and profiling.
     case cpu
+    /// Battery usage and power management.
     case battery
+    /// Analytics tracking and reporting.
     case analytics
+    /// Crash reports and diagnostics.
     case crash
+    /// Performance profiling operations.
     case profiling
 
-    // External Services
+    // MARK: - External Services
+
+    /// Push notification operations.
     case push
+    /// Location services and tracking.
     case location
+    /// Camera access and operations.
     case camera
+    /// Microphone access and recording.
     case microphone
+    /// Contacts access and operations.
     case contacts
+    /// Calendar access and operations.
     case calendar
+    /// Photo library access and operations.
     case photos
 
-    // Business Logic
+    // MARK: - Business Logic
+
+    /// Payment processing operations.
     case payment
+    /// Subscription management.
     case subscription
+    /// In-app purchase operations.
     case purchase
+    /// User account and profile operations.
     case user
+    /// Content management operations.
     case content
+    /// Search operations and indexing.
     case search
 
-    // Development & Testing
+    // MARK: - Development & Testing
+
+    /// Debug-specific logs for development.
     case debug
+    /// Test execution and results.
     case test
+    /// Mock data and services.
     case mock
 
-    // Custom category for project-specific needs
+    // MARK: - Custom
+
+    /// Custom category for project-specific needs.
+    ///
+    /// Use this for specialized categories unique to your project:
+    ///
+    /// ```swift
+    /// logger.info("Inventory updated", category: .custom("inventory"))
+    /// ```
     case custom(String)
 
     public var rawValue: String {

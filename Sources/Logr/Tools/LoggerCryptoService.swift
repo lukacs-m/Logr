@@ -12,9 +12,29 @@ import Synchronization
 
 // MARK: - Protocol: KeychainStore
 
+/// Protocol for secure keychain storage operations.
+///
+/// Abstracts keychain operations to allow for testing and custom implementations.
 public protocol KeychainStore: Sendable {
+    /// Retrieves data from the keychain.
+    ///
+    /// - Parameter key: The keychain key.
+    /// - Returns: The stored data, or `nil` if not found.
+    /// - Throws: Keychain access errors.
     func data(forKey key: String) throws -> Data?
+
+    /// Stores data in the keychain.
+    ///
+    /// - Parameters:
+    ///   - data: The data to store.
+    ///   - key: The keychain key.
+    /// - Throws: Keychain access errors.
     func set(_ data: Data, forKey key: String) throws
+
+    /// Removes data from the keychain.
+    ///
+    /// - Parameter key: The keychain key.
+    /// - Throws: Keychain access errors.
     func remove(forKey key: String) throws
 }
 
@@ -48,11 +68,21 @@ public struct KeychainAccessStore: KeychainStore {
 
 // MARK: - LoggerCryptoError
 
+/// Errors that can occur during encryption/decryption operations.
 public enum LoggerCryptoError: Error {
+    /// The encryption key for the specified version was not found.
     case keyNotFound(version: Int)
+
+    /// A keychain operation failed.
     case keychainFailure(String)
+
+    /// Encryption operation failed.
     case encryptionFailed
+
+    /// Decryption operation failed.
     case decryptionFailed
+
+    /// The encrypted data envelope is invalid or corrupted.
     case invalidEnvelope
 }
 
@@ -67,8 +97,66 @@ public struct KeyVersion: Codable, Sendable, Hashable {
     }
 }
 
+/// Protocol for encrypting and decrypting log entries.
+///
+/// `LoggerCryptoServicing` defines the interface for secure log encryption.
+/// The default implementation uses ChaCha20-Poly1305 encryption with keys stored
+/// in the Keychain.
+///
+/// ## Overview
+///
+/// All log entries are automatically encrypted before persistent storage.
+/// Encryption keys are:
+/// - Generated automatically on first use
+/// - Stored securely in the Keychain
+/// - Versioned to support key rotation
+/// - Never exposed outside the crypto service
+///
+/// ## Example Custom Implementation
+///
+/// ```swift
+/// class MyCustomCrypto: LoggerCryptoServicing {
+///     func symmetricEncrypt<T: Codable>(object: T) throws -> Data {
+///         // Your custom encryption
+///         return encryptedData
+///     }
+///
+///     func symmetricDecrypt<T: Codable>(encryptedData: Data) throws -> T {
+///         // Your custom decryption
+///         return decryptedObject
+///     }
+/// }
+///
+/// let logger = LogR(
+///     storage: SQLiteStorage(),
+///     cryptoService: MyCustomCrypto()
+/// )
+/// ```
+///
+/// ## Topics
+///
+/// ### Encryption Operations
+/// - ``symmetricEncrypt(object:)``
+/// - ``symmetricDecrypt(encryptedData:)``
 public protocol LoggerCryptoServicing: Sendable {
+    /// Encrypts a codable object for secure storage.
+    ///
+    /// The object is first encoded to JSON, then encrypted using ChaCha20-Poly1305.
+    /// The result includes a versioned envelope for key rotation support.
+    ///
+    /// - Parameter object: The object to encrypt.
+    /// - Returns: Encrypted data ready for storage.
+    /// - Throws: ``LoggerCryptoError`` if encryption fails.
     func symmetricEncrypt(object: some Codable & Sendable) throws -> Data
+
+    /// Decrypts encrypted data back to the original object.
+    ///
+    /// Supports multiple key versions for seamless key rotation. The encrypted
+    /// data includes the key version used for encryption.
+    ///
+    /// - Parameter encryptedData: The encrypted data.
+    /// - Returns: The decrypted object.
+    /// - Throws: ``LoggerCryptoError`` if decryption fails or the key is not found.
     func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T
 }
 

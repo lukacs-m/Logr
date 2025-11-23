@@ -344,9 +344,11 @@ actor LogWriterActor {
     private let logger: Logger
     private var pending: [EncryptedLogEntry] = []
     private var isWritingTask: Task<Void, Never>?
+    private let batchSize: Int
 
-    init(storage: LogRPersistence, configuration: LogrConfiguration) {
+    init(storage: LogRPersistence, configuration: LogrConfiguration, batchSize: Int = 50) {
         self.storage = storage
+        self.batchSize = batchSize
         logger = Logger(subsystem: configuration.subsystem, category: LogCategory.persistence.rawValue)
     }
 
@@ -361,9 +363,10 @@ actor LogWriterActor {
 
     func flush() async {
         while !pending.isEmpty {
-            let entry = pending.removeFirst()
+            let batch = Array(pending.prefix(batchSize))
+            pending.removeFirst(batch.count)
             do {
-                try await storage.store(entry)
+                try await storage.store(batch)
             } catch {
                 logger.error("Failed to store log entry: \(error.localizedDescription)")
             }
