@@ -76,12 +76,14 @@ public final class LogR: LogRService, Sendable {
     }
 
     public func log(level: LogLevel,
-                    message: String,
+                    message: @autoclosure () -> String,
                     category: LogCategory,
                     file: String = #file,
                     function: String = #function,
                     line: Int = #line) {
         guard shouldLog(level: level) else { return }
+
+        let message = message()
 
         let entry = LogEntry(level: level,
                              category: category,

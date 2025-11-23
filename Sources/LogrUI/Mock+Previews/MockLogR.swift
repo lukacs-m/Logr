@@ -149,7 +149,7 @@ public final class MockLogR: LogRService, Sendable {
     // MARK: - LogRService Implementation
 
     public func log(level: LogLevel,
-                    message: String,
+                    message: @autoclosure () -> String,
                     category: LogCategory,
                     file: String = #file,
                     function: String = #function,
@@ -157,7 +157,7 @@ public final class MockLogR: LogRService, Sendable {
         let entry = LogEntry(level: level,
                              category: category,
                              subsystem: "com.logr.mock",
-                             message: message,
+                             message: message(),
                              file: file,
                              function: function,
                              line: line)
@@ -172,46 +172,6 @@ public final class MockLogR: LogRService, Sendable {
         if recentLogs.count > 100 {
             recentLogs.removeLast()
         }
-    }
-
-    public func debug(_ message: String,
-                      category: LogCategory,
-                      file: String = #file,
-                      function: String = #function,
-                      line: Int = #line) async {
-        log(level: .debug, message: message, category: category, file: file, function: function, line: line)
-    }
-
-    public func info(_ message: String,
-                     category: LogCategory,
-                     file: String = #file,
-                     function: String = #function,
-                     line: Int = #line) async {
-        log(level: .info, message: message, category: category, file: file, function: function, line: line)
-    }
-
-    public func notice(_ message: String,
-                       category: LogCategory,
-                       file: String = #file,
-                       function: String = #function,
-                       line: Int = #line) async {
-        log(level: .notice, message: message, category: category, file: file, function: function, line: line)
-    }
-
-    public func error(_ message: String,
-                      category: LogCategory,
-                      file: String = #file,
-                      function: String = #function,
-                      line: Int = #line) async {
-        log(level: .error, message: message, category: category, file: file, function: function, line: line)
-    }
-
-    public func fault(_ message: String,
-                      category: LogCategory,
-                      file: String = #file,
-                      function: String = #function,
-                      line: Int = #line) async {
-        log(level: .fault, message: message, category: category, file: file, function: function, line: line)
     }
 
     public func getLogs(levels: Set<LogLevel>? = nil,
