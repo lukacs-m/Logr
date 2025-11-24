@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Collections
 
 /// The main logging service protocol that defines all logging operations.
 ///
@@ -80,7 +81,7 @@ public protocol LogRService: Observable, Sendable {
     /// The logs are automatically updated as new entries are added and old entries are cleaned up.
     ///
     /// - Note: This is an in-memory cache. For persistent storage, configure a storage backend.
-    var recentLogs: [LogEntry] { get }
+    var recentLogs: Deque<LogEntry> { get }
 
     /// Indicates whether AI analysis features are available.
     ///
@@ -209,6 +210,34 @@ public protocol LogRService: Observable, Sendable {
     /// ```
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     @discardableResult func summarizeIssues() async throws -> LogIssueSummary
+}
+
+// MARK: - Utils 
+
+public extension LogRService {
+    func getLogs(levels: Set<LogLevel>? = nil,
+                 categories: Set<LogCategory>? = nil,
+                 subsystems: Set<String>? = nil,
+                 from startDate: Date? = nil,
+                 to endDate: Date? = nil,
+                 limit: Int? = nil) throws -> [LogEntry] {
+        guard !recentLogs.isEmpty else {
+            return []
+        }
+        
+        let filteredLogs = recentLogs.lazy.filter { entry in
+            if let levels, !levels.contains(entry.level) { return false }
+            if let categories, !categories.contains(entry.category) { return false }
+            if let subsystems, !subsystems.contains(entry.subsystem) { return false }
+            if let startDate, entry.timestamp < startDate { return false }
+            if let endDate, entry.timestamp > endDate { return false }
+            return true
+        }
+        if let limit {
+            return Array(filteredLogs.prefix(limit))
+        }
+        return Array(filteredLogs)
+    }
 }
 
 // MARK: - Convenience Logging Methods

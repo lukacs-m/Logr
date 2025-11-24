@@ -7,6 +7,7 @@
 
 import Foundation
 import Logr
+import Collections
 
 // MARK: - Mock Implementation
 
@@ -125,10 +126,10 @@ public final class MockLogR: LogRService, Sendable {
 
     public var canAnalyseLogs: Bool = true
 
-    public private(set) var recentLogs: [LogEntry] = []
+    public private(set) var recentLogs = Deque<LogEntry>()
     public private(set) var isCleanupRunning = false
 
-    private var mockLogs: [LogEntry] = []
+    private var mockLogs = Deque<LogEntry>()
 
     public init(empty: Bool = false,
                 config: GenerationConfig = GenerationConfig(),
@@ -172,43 +173,6 @@ public final class MockLogR: LogRService, Sendable {
         if recentLogs.count > 100 {
             recentLogs.removeLast()
         }
-    }
-
-    public func getLogs(levels: Set<LogLevel>? = nil,
-                        categories: Set<LogCategory>? = nil,
-                        subsystems: Set<String>? = nil,
-                        from startDate: Date? = nil,
-                        to endDate: Date? = nil,
-                        limit: Int? = nil) async throws -> [LogEntry] {
-        var filtered = mockLogs
-
-        if let levels {
-            filtered = filtered.filter { levels.contains($0.level) }
-        }
-
-        if let categories {
-            filtered = filtered.filter { categories.contains($0.category) }
-        }
-
-        if let subsystems {
-            filtered = filtered.filter { subsystems.contains($0.subsystem) }
-        }
-
-        if let startDate {
-            filtered = filtered.filter { $0.timestamp >= startDate }
-        }
-
-        if let endDate {
-            filtered = filtered.filter { $0.timestamp <= endDate }
-        }
-
-        filtered.sort { $0.timestamp > $1.timestamp }
-
-        if let limit {
-            filtered = Array(filtered.prefix(limit))
-        }
-
-        return filtered
     }
 
     public func clearLogs() async throws {
@@ -334,7 +298,7 @@ public final class MockLogR: LogRService, Sendable {
         let totalProbability = config.levelDistribution.values.reduce(0, +)
 
         // Pre-allocate array for better performance
-        var entries: [LogEntry] = []
+        var entries = Deque<LogEntry>()
         entries.reserveCapacity(config.totalEntries)
 
         for i in 0..<config.totalEntries {
