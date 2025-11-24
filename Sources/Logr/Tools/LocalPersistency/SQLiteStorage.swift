@@ -83,7 +83,7 @@ public extension SQLiteStorage {
             .execute(db)
         }
     }
-    
+
     func store(_ entries: [EncryptedLogEntry]) async throws {
         let daos: [EncryptedLogEntryDAO] = entries.map(\.toEncryptedLogEntryDAO)
         try await database.write { db in

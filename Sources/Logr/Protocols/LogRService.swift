@@ -5,8 +5,8 @@
 //  Created by Martin Lukacs on 16/11/2025.
 //
 
-import Foundation
 import Collections
+import Foundation
 
 /// The main logging service protocol that defines all logging operations.
 ///
@@ -212,7 +212,7 @@ public protocol LogRService: Observable, Sendable {
     @discardableResult func summarizeIssues() async throws -> LogIssueSummary
 }
 
-// MARK: - Utils 
+// MARK: - Utils
 
 public extension LogRService {
     func getLogs(levels: Set<LogLevel>? = nil,
@@ -224,7 +224,7 @@ public extension LogRService {
         guard !recentLogs.isEmpty else {
             return []
         }
-        
+
         let filteredLogs = recentLogs.lazy.filter { entry in
             if let levels, !levels.contains(entry.level) { return false }
             if let categories, !categories.contains(entry.category) { return false }

@@ -1,8 +1,8 @@
+import Collections
 import Combine
 import Foundation
 import Observation
 import OSLog
-import Collections
 
 @Observable
 @MainActor
@@ -51,7 +51,7 @@ public final class LogR: LogRService, Sendable {
     public init(storage: LogRPersistence? = nil,
                 cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
                 configuration: LogrConfiguration = .default) {
-        self.recentLogs = Deque()
+        recentLogs = Deque()
         self.storage = storage
         self.configuration = configuration
         self.cryptoService = cryptoService
@@ -107,7 +107,6 @@ public final class LogR: LogRService, Sendable {
             _ = recentLogs.popLast()
         }
         recentLogs.prepend(entry)
-       
 
         Task { [weak writer, cryptoService] in
             do {
@@ -134,12 +133,12 @@ public extension LogR {
     func exportLogs(format: ExportFormat = .json) -> Data? {
         encode(for: format)
     }
-    
+
     func flush() async {
         guard let writer else {
             return
         }
-        
+
         await writer.flush()
     }
 }
@@ -182,7 +181,7 @@ public extension LogR {
 private extension LogR {
     func setup() {
         recentLogs.reserveCapacity(configuration.maxLogEntries)
-        
+
         setupCategoryLoggers()
         startCleanupTimer()
         Task {
@@ -339,7 +338,7 @@ actor LogWriterActor {
 }
 
 private extension Deque {
-     var toArray: [Element] {
+    var toArray: [Element] {
         Array(self)
     }
 }

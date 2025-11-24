@@ -30,9 +30,11 @@ import Foundation
 ///
 /// **Data & Storage**: `.database`, `.coreData`, `.fileSystem`, `.cache`, `.persistence`, `.sync`
 ///
-/// **Security & Authentication**: `.authentication`, `.authorization`, `.security`, `.encryption`, `.keychain`, `.biometrics`
+/// **Security & Authentication**: `.authentication`, `.authorization`, `.security`, `.encryption`, `.keychain`,
+/// `.biometrics`
 ///
-/// **Performance & Monitoring**: `.performance`, `.memory`, `.cpu`, `.battery`, `.analytics`, `.crash`, `.profiling`
+/// **Performance & Monitoring**: `.performance`, `.memory`, `.cpu`, `.battery`, `.analytics`, `.crash`,
+/// `.profiling`
 ///
 /// **External Services**: `.push`, `.location`, `.camera`, `.microphone`, `.contacts`, `.calendar`, `.photos`
 ///
