@@ -5,6 +5,7 @@
 //  Created by Martin Lukacs on 16/11/2025.
 //
 
+import Collections
 import Foundation
 import Logr
 
@@ -55,7 +56,6 @@ public struct GenerationConfig {
 @Observable
 @MainActor
 public final class MockLogR: LogRService, Sendable {
- 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public var privacyAnalysisResult: PrivacyAnalysisResult? {
         PrivacyAnalysisResult(warnings: [
@@ -125,10 +125,10 @@ public final class MockLogR: LogRService, Sendable {
 
     public var canAnalyseLogs: Bool = true
 
-    public private(set) var recentLogs: [LogEntry] = []
+    public private(set) var recentLogs = Deque<LogEntry>()
     public private(set) var isCleanupRunning = false
 
-    private var mockLogs: [LogEntry] = []
+    private var mockLogs = Deque<LogEntry>()
 
     public init(empty: Bool = false,
                 config: GenerationConfig = GenerationConfig(),
@@ -174,43 +174,6 @@ public final class MockLogR: LogRService, Sendable {
         }
     }
 
-    public func getLogs(levels: Set<LogLevel>? = nil,
-                        categories: Set<LogCategory>? = nil,
-                        subsystems: Set<String>? = nil,
-                        from startDate: Date? = nil,
-                        to endDate: Date? = nil,
-                        limit: Int? = nil) async throws -> [LogEntry] {
-        var filtered = mockLogs
-
-        if let levels {
-            filtered = filtered.filter { levels.contains($0.level) }
-        }
-
-        if let categories {
-            filtered = filtered.filter { categories.contains($0.category) }
-        }
-
-        if let subsystems {
-            filtered = filtered.filter { subsystems.contains($0.subsystem) }
-        }
-
-        if let startDate {
-            filtered = filtered.filter { $0.timestamp >= startDate }
-        }
-
-        if let endDate {
-            filtered = filtered.filter { $0.timestamp <= endDate }
-        }
-
-        filtered.sort { $0.timestamp > $1.timestamp }
-
-        if let limit {
-            filtered = Array(filtered.prefix(limit))
-        }
-
-        return filtered
-    }
-
     public func clearLogs() async throws {
         mockLogs.removeAll()
         recentLogs.removeAll()
@@ -254,11 +217,8 @@ public final class MockLogR: LogRService, Sendable {
             return text.data(using: .utf8)
         }
     }
-    
-    public func flush() async {
-        
-    }
-    
+
+    public func flush() async {}
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
@@ -334,7 +294,7 @@ public final class MockLogR: LogRService, Sendable {
         let totalProbability = config.levelDistribution.values.reduce(0, +)
 
         // Pre-allocate array for better performance
-        var entries: [LogEntry] = []
+        var entries = Deque<LogEntry>()
         entries.reserveCapacity(config.totalEntries)
 
         for i in 0..<config.totalEntries {
@@ -358,7 +318,6 @@ public final class MockLogR: LogRService, Sendable {
         mockLogs = entries
         recentLogs = entries
     }
-    
 
     // MARK: - Streaming Generation
 

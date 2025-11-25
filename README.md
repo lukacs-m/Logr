@@ -804,14 +804,6 @@ LogR is built with a clean, modular architecture:
 - Encryption happens off main thread
 - OSLog calls are thread-safe by design
 
-### Performance Characteristics
-
-- **Logging**: O(1) - immediate return, async storage
-- **In-Memory Cache**: O(1) insert, O(n) for filtering
-- **Storage Write**: Batched and queued for efficiency
-- **Cleanup**: Automatic, configurable interval
-- **Query**: O(n) with optimized filtering
-
 ## Contributing
 
 Contributions are welcome! Please:

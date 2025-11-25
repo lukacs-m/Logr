@@ -241,14 +241,6 @@ logger.info("User authentication successful", category: .authentication)
 
 With storage encryption enabled, all logs are automatically encrypted before persistence.
 
-## Performance Considerations
-
-- **Logging**: O(1) - immediate return, async storage
-- **In-Memory Cache**: O(1) insert, O(n) for filtering
-- **Storage Write**: Batched and queued for efficiency
-- **Cleanup**: Automatic, configurable interval
-- **Query**: O(n) with optimized filtering
-
 LogR is optimized for minimal performance impact:
 - Background actor prevents main thread blocking
 - Lazy message evaluation with `@autoclosure`

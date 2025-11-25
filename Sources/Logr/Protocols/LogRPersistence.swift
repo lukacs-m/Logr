@@ -77,7 +77,7 @@ public protocol LogRPersistence: Sendable {
     /// - Should be performant (called frequently)
     /// - Should handle concurrent calls safely
     func store(_ entry: EncryptedLogEntry) async throws
-    
+
     /// Stores batch of encrypted log entries.
     ///
     /// This method is called by the background writer actor for eachbatch of logs.

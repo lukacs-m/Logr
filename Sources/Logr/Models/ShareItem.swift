@@ -1,4 +1,4 @@
-//  
+//
 //  ShareItem.swift
 //  Logr
 //
@@ -7,7 +7,6 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
-
 
 // MARK: - Share Item
 
@@ -37,4 +36,3 @@ public struct ShareItem: Transferable {
         .init(data: Data(), fileName: "empty", contentType: .data)
     }
 }
-

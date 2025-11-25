@@ -1,3 +1,4 @@
+import Collections
 import Combine
 import Foundation
 import Observation
@@ -6,7 +7,7 @@ import OSLog
 @Observable
 @MainActor
 public final class LogR: LogRService, Sendable {
-    public private(set) var recentLogs: [LogEntry] = []
+    public private(set) var recentLogs: Deque<LogEntry>
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public var privacyAnalysisResult: PrivacyAnalysisResult? {
@@ -50,6 +51,7 @@ public final class LogR: LogRService, Sendable {
     public init(storage: LogRPersistence? = nil,
                 cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
                 configuration: LogrConfiguration = .default) {
+        recentLogs = Deque()
         self.storage = storage
         self.configuration = configuration
         self.cryptoService = cryptoService
@@ -58,7 +60,6 @@ public final class LogR: LogRService, Sendable {
         } else {
             nil
         }
-
         setup()
     }
 
@@ -102,10 +103,10 @@ public final class LogR: LogRService, Sendable {
             categoryLogger.log(level: level.osLogType, "\(message)")
         }
 
-        recentLogs.insert(entry, at: 0)
-        if recentLogs.count > configuration.maxLogEntries {
-            recentLogs.removeLast()
+        if recentLogs.count >= configuration.maxLogEntries {
+            _ = recentLogs.popLast()
         }
+        recentLogs.prepend(entry)
 
         Task { [weak writer, cryptoService] in
             do {
@@ -124,46 +125,6 @@ public final class LogR: LogRService, Sendable {
 // MARK: - Other util functions
 
 public extension LogR {
-    func getLogs(levels: Set<LogLevel>? = nil,
-                 categories: Set<LogCategory>? = nil,
-                 subsystems: Set<String>? = nil,
-                 from startDate: Date? = nil,
-                 to endDate: Date? = nil,
-                 limit: Int? = nil) throws -> [LogEntry] {
-        guard !recentLogs.isEmpty else {
-            return []
-        }
-        var filteredEntries = recentLogs
-
-        if let levels {
-            filteredEntries = filteredEntries.filter { levels.contains($0.level) }
-        }
-
-        if let categories {
-            filteredEntries = filteredEntries.filter { categories.contains($0.category) }
-        }
-
-        if let subsystems {
-            filteredEntries = filteredEntries.filter { subsystems.contains($0.subsystem) }
-        }
-
-        if let startDate {
-            filteredEntries = filteredEntries.filter { $0.timestamp >= startDate }
-        }
-
-        if let endDate {
-            filteredEntries = filteredEntries.filter { $0.timestamp <= endDate }
-        }
-
-        filteredEntries.sort { $0.timestamp > $1.timestamp }
-
-        if let limit {
-            filteredEntries = Array(filteredEntries.prefix(limit))
-        }
-
-        return filteredEntries
-    }
-
     func clearLogs() async throws {
         try await storage?.clear()
         recentLogs.removeAll()
@@ -172,12 +133,12 @@ public extension LogR {
     func exportLogs(format: ExportFormat = .json) -> Data? {
         encode(for: format)
     }
-    
+
     func flush() async {
         guard let writer else {
             return
         }
-        
+
         await writer.flush()
     }
 }
@@ -193,7 +154,7 @@ public extension LogR {
         let result = if recentLogs.isEmpty {
             PrivacyAnalysisResult.empty
         } else {
-            try await analyser.scanForPrivacyIssues(logs: recentLogs)
+            try await analyser.scanForPrivacyIssues(logs: recentLogs.toArray)
         }
 
         _privacyAnalysisResult = result
@@ -207,7 +168,7 @@ public extension LogR {
         let result = if recentLogs.isEmpty {
             LogIssueSummary.empty
         } else {
-            try await analyser.summarizeIssues(logs: recentLogs)
+            try await analyser.summarizeIssues(logs: recentLogs.toArray)
         }
 
         _logIssueSummary = result
@@ -219,6 +180,8 @@ public extension LogR {
 
 private extension LogR {
     func setup() {
+        recentLogs.reserveCapacity(configuration.maxLogEntries)
+
         setupCategoryLoggers()
         startCleanupTimer()
         Task {
@@ -371,5 +334,11 @@ actor LogWriterActor {
                 logger.error("Failed to store log entry: \(error.localizedDescription)")
             }
         }
+    }
+}
+
+private extension Deque {
+    var toArray: [Element] {
+        Array(self)
     }
 }

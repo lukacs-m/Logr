@@ -23,6 +23,7 @@ let package = Package(
         .package(url: "https://github.com/kishikawakatsumi/KeychainAccess", .upToNextMajor(from: "4.2.2")),
         .package(url: "https://github.com/pointfreeco/sqlite-data", .upToNextMajor(from: "1.3.0")),
         .package(url: "https://github.com/nicklockwood/SwiftFormat", from: "0.58.6"),
+        .package(url: "https://github.com/apple/swift-collections.git", .upToNextMajor(from: "1.3.0"))
     ],
     targets: [
         .target(
@@ -30,6 +31,7 @@ let package = Package(
             dependencies: [
                 .product(name: "KeychainAccess", package: "KeychainAccess"),
                 .product(name: "SQLiteData", package: "sqlite-data"),
+                .product(name: "Collections", package: "swift-collections")
             ],
             swiftSettings: [
               .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
