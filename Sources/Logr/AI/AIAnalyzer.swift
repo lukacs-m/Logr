@@ -26,15 +26,29 @@ public enum SeverityLevel: String, Sendable, CaseIterable {
 
 /// Configuration for the analyzer
 public struct AnalyzerConfiguration: Sendable {
+    /// Maximum number of log entries per model request.
+    /// Foundation models have limited context, so smaller batches are more reliable.
     public let maxLogsPerRequest: Int
+
+    /// Enable parallel processing of chunks.
+    /// When disabled, chunks are processed sequentially which is slower but uses fewer resources.
     public let enableParallelProcessing: Bool
+
+    /// Maximum number of concurrent chunk requests when parallel processing is enabled.
+    /// Foundation models have limited resources, so this prevents overwhelming the model.
+    /// A value of 2-3 is recommended for most devices.
+    public let maxConcurrentChunks: Int
+
+    /// Pre-warm the model before first request.
     public let prewarmModel: Bool
 
     public init(maxLogsPerRequest: Int = 20,
                 enableParallelProcessing: Bool = true,
+                maxConcurrentChunks: Int = 5,
                 prewarmModel: Bool = true) {
         self.maxLogsPerRequest = maxLogsPerRequest
         self.enableParallelProcessing = enableParallelProcessing
+        self.maxConcurrentChunks = max(1, maxConcurrentChunks)
         self.prewarmModel = prewarmModel
     }
 
@@ -231,29 +245,53 @@ private extension AIAnalyzer {
         totalLogs: Int,
         onProgress: @escaping @Sendable (AnalysisProgress) -> Void
     ) async throws -> [T] {
-        try await withThrowingTaskGroup(of: (Int, T).self) { [weak self] group in
+        let maxConcurrent = configuration.maxConcurrentChunks
+
+        return try await withThrowingTaskGroup(of: (Int, Int, T).self) { [weak self] group in
             guard let self else {
                 return []
             }
 
-            for chunk in chunks {
-                let session = await getSession()
+            var results: [T?] = Array(repeating: nil, count: chunks.count)
+            var analyzedCount = 0
+            var nextChunkIndex = 0
+
+            // Start initial batch of tasks up to maxConcurrent
+            while nextChunkIndex < min(maxConcurrent, chunks.count) {
+                let chunk = chunks[nextChunkIndex]
+                let chunkIndex = nextChunkIndex
                 let chunkSize = chunk.count
+                let session = await getSession()
+
                 group.addTask {
                     let result: T = try await self.analyzeChunk(chunk, with: session, type: type)
-                    return (chunkSize, result)
+                    return (chunkIndex, chunkSize, result)
+                }
+                nextChunkIndex += 1
+            }
+
+            // Process results and add new tasks as slots become available
+            for try await (chunkIndex, chunkSize, result) in group {
+                results[chunkIndex] = result
+                analyzedCount += chunkSize
+                onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: analyzedCount))
+
+                // Add next chunk if available
+                if nextChunkIndex < chunks.count {
+                    let chunk = chunks[nextChunkIndex]
+                    let chunkIndex = nextChunkIndex
+                    let chunkSize = chunk.count
+                    let session = await getSession()
+
+                    group.addTask {
+                        let result: T = try await self.analyzeChunk(chunk, with: session, type: type)
+                        return (chunkIndex, chunkSize, result)
+                    }
+                    nextChunkIndex += 1
                 }
             }
 
-            var results: [T] = []
-            var analyzedCount = 0
-            for try await (chunkSize, result) in group {
-                results.append(result)
-                analyzedCount += chunkSize
-                onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: analyzedCount))
-            }
-
-            return results
+            return results.compactMap { $0 }
         }
     }
 
