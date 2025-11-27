@@ -29,9 +29,7 @@ struct LogEntryRow: View, @MainActor Equatable {
             mainRowContent
         }
         .onChange(of: displayState) { _, newGlobalState in
-            withAnimation(.easeInOut(duration: 0.2)) {
                 isExpanded = newGlobalState
-            }
         }
 //        .disclosureGroupStyle(CustomDisclosureGroupStyle(button: Text("ok")))
     }
@@ -68,9 +66,7 @@ private extension LogEntryRow {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.2)) {
                     isExpanded.toggle()
-                }
             }
         }
     }

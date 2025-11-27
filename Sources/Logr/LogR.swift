@@ -20,7 +20,7 @@ public final class LogR: LogRService, Sendable {
     }
 
     private let storage: LogRPersistence?
-    private let configuration: LogrConfiguration
+    public let configuration: LogrConfiguration
     private let cryptoService: any LoggerCryptoServicing
 
     @ObservationIgnored
