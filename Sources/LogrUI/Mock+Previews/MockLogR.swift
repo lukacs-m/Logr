@@ -123,6 +123,11 @@ public final class MockLogR: LogRService, Sendable {
                         ])
     }
 
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public var analysisProgress: AnalysisProgress? {
+        nil
+    }
+
     public var canAnalyseLogs: Bool = true
 
     public private(set) var recentLogs = Deque<LogEntry>()

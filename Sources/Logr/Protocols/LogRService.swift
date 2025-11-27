@@ -107,6 +107,15 @@ public protocol LogRService: Observable, Sendable {
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     var logIssueSummary: LogIssueSummary? { get }
 
+    /// The current progress of an ongoing AI analysis operation (iOS 26+).
+    ///
+    /// This property is updated in real-time during analysis operations and can be
+    /// observed in SwiftUI views to display progress indicators.
+    ///
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    var analysisProgress: AnalysisProgress? { get }
+
     /// Logs a message with the specified level, category, and source information.
     ///
     /// This is the core logging method that all convenience methods delegate to.

@@ -79,6 +79,8 @@ import Foundation
 /// ### Analysis Operations
 /// - ``scanForPrivacyIssues(logs:)``
 /// - ``summarizeIssues(logs:)``
+/// - ``scanForPrivacyIssues(logs:onProgress:)``
+/// - ``summarizeIssues(logs:onProgress:)``
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 public protocol LogAIAnalyzer: Sendable {
     /// Indicates whether Apple Intelligence is available on the current device.
@@ -171,4 +173,28 @@ public protocol LogAIAnalyzer: Sendable {
     /// }
     /// ```
     func summarizeIssues(logs: [LogEntry]) async throws -> LogIssueSummary
+
+    /// Scans log entries for privacy issues with progress reporting.
+    ///
+    /// - Parameters:
+    ///   - logs: Array of log entries to analyze.
+    ///   - onProgress: A closure called with progress updates during analysis.
+    /// - Returns: A ``PrivacyAnalysisResult`` with warnings, privacy score, and recommendations.
+    /// - Throws: ``AIAnalyzerError`` if AI is unavailable or analysis fails.
+    func scanForPrivacyIssues(
+        logs: [LogEntry],
+        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
+    ) async throws -> PrivacyAnalysisResult
+
+    /// Analyzes logs to identify issues with progress reporting.
+    ///
+    /// - Parameters:
+    ///   - logs: Array of log entries to analyze.
+    ///   - onProgress: A closure called with progress updates during analysis.
+    /// - Returns: A ``LogIssueSummary`` with key issues, recommendations, and affected categories.
+    /// - Throws: ``AIAnalyzerError`` if AI is unavailable or analysis fails.
+    func summarizeIssues(
+        logs: [LogEntry],
+        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
+    ) async throws -> LogIssueSummary
 }

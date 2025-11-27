@@ -86,23 +86,37 @@ public actor AIAnalyzer: LogAIAnalyzer {
     // MARK: - Privacy Scanning
 
     public func scanForPrivacyIssues(logs: [LogEntry]) async throws -> PrivacyAnalysisResult {
+        try await scanForPrivacyIssues(logs: logs, onProgress: { _ in })
+    }
+
+    public func scanForPrivacyIssues(
+        logs: [LogEntry],
+        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
+    ) async throws -> PrivacyAnalysisResult {
         guard !logs.isEmpty else {
             throw AIAnalyzerError.noLogsToAnalyze
         }
 
         try ensureAvailable()
-        return try await processInChunks(logs: logs, analysisType: .privacy)
+        return try await processInChunks(logs: logs, analysisType: .privacy, onProgress: onProgress)
     }
 
     // MARK: - Issue Summarization
 
     public func summarizeIssues(logs: [LogEntry]) async throws -> LogIssueSummary {
+        try await summarizeIssues(logs: logs, onProgress: { _ in })
+    }
+
+    public func summarizeIssues(
+        logs: [LogEntry],
+        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
+    ) async throws -> LogIssueSummary {
         guard !logs.isEmpty else {
             throw AIAnalyzerError.noLogsToAnalyze
         }
 
         try ensureAvailable()
-        return try await processInChunks(logs: logs, analysisType: .issues)
+        return try await processInChunks(logs: logs, analysisType: .issues, onProgress: onProgress)
     }
 
     // MARK: - Cleanup
@@ -165,61 +179,99 @@ private extension AIAnalyzer {
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 private extension AIAnalyzer {
-    func processInChunks<T: Generable & Sendable>(logs: [LogEntry],
-                                                  analysisType: AnalysisType) async throws -> T {
+    func processInChunks<T: Generable & Sendable>(
+        logs: [LogEntry],
+        analysisType: AnalysisType,
+        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
+    ) async throws -> T {
         let chunks = logs.chunked(into: configuration.maxLogsPerRequest)
+        let totalLogs = logs.count
+
+        // Report initial progress
+        onProgress(AnalysisProgress.starting(totalLogs: totalLogs))
 
         // Fast path for single chunk
         guard chunks.count > 1 else {
             let session = getSession()
-            return try await analyzeChunk(chunks[0], with: session, type: analysisType)
+            let result: T = try await analyzeChunk(chunks[0], with: session, type: analysisType)
+            onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: totalLogs))
+            return result
         }
 
         // Process multiple chunks
         let results: [T] = if configuration.enableParallelProcessing {
-            try await processChunksParallel(chunks, type: analysisType)
+            try await processChunksParallel(
+                chunks,
+                type: analysisType,
+                totalLogs: totalLogs,
+                onProgress: onProgress
+            )
         } else {
-            try await processChunksSequential(chunks, type: analysisType)
+            try await processChunksSequential(
+                chunks,
+                type: analysisType,
+                totalLogs: totalLogs,
+                onProgress: onProgress
+            )
         }
 
         // Merge results
         guard let result = mergeResults(results, type: analysisType) else {
             throw AIAnalyzerError.mergeError
         }
+
+        // Report completion
+        onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: totalLogs))
         return result
     }
 
-    func processChunksParallel<T: Generable & Sendable>(_ chunks: [[LogEntry]],
-                                                        type: AnalysisType) async throws -> [T] {
-        try await withThrowingTaskGroup(of: T.self) { [weak self] group in
+    func processChunksParallel<T: Generable & Sendable>(
+        _ chunks: [[LogEntry]],
+        type: AnalysisType,
+        totalLogs: Int,
+        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
+    ) async throws -> [T] {
+        try await withThrowingTaskGroup(of: (Int, T).self) { [weak self] group in
             guard let self else {
                 return []
             }
 
             for chunk in chunks {
                 let session = await getSession()
+                let chunkSize = chunk.count
                 group.addTask {
-                    try await self.analyzeChunk(chunk, with: session, type: type)
+                    let result: T = try await self.analyzeChunk(chunk, with: session, type: type)
+                    return (chunkSize, result)
                 }
             }
 
             var results: [T] = []
-            for try await result in group {
+            var analyzedCount = 0
+            for try await (chunkSize, result) in group {
                 results.append(result)
+                analyzedCount += chunkSize
+                onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: analyzedCount))
             }
 
             return results
         }
     }
 
-    func processChunksSequential<T: Generable & Sendable>(_ chunks: [[LogEntry]],
-                                                          type: AnalysisType) async throws -> [T] {
+    func processChunksSequential<T: Generable & Sendable>(
+        _ chunks: [[LogEntry]],
+        type: AnalysisType,
+        totalLogs: Int,
+        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
+    ) async throws -> [T] {
         var results: [T] = []
+        var analyzedCount = 0
 
         for chunk in chunks {
             let session = getSession()
             let result: T = try await analyzeChunk(chunk, with: session, type: type)
             results.append(result)
+            analyzedCount += chunk.count
+            onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: analyzedCount))
         }
 
         return results

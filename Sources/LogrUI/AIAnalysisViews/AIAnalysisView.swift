@@ -197,21 +197,52 @@ public struct AIAnalysisView: View {
     }
 }
 
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 struct AnalyzeProcessingView: View {
+    @Environment(\.logService) private var logr
+
+    private var progress: AnalysisProgress? {
+        logr.analysisProgress
+    }
+
     var body: some View {
         VStack(spacing: 24) {
-            ProgressView()
-                .scaleEffect(1.5)
+            progressIndicator
 
             VStack(spacing: 8) {
                 Text("Analyzing Logs")
                     .font(.title3)
                     .fontWeight(.semibold)
 
-                Text("AI Intelligence tool is processing your logs...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if let progress {
+                    Text("\(progress.analyzedLogs) of \(progress.totalLogs) logs analyzed")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+
+                    Text("\(progress.percentComplete)%")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .contentTransition(.numericText())
+                } else {
+                    Text("AI Intelligence tool is processing your logs...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
+        }
+        .animation(.easeInOut(duration: 0.2), value: progress)
+    }
+
+    @ViewBuilder
+    private var progressIndicator: some View {
+        if let progress {
+            ProgressView(value: progress.progress)
+                .progressViewStyle(.circular)
+                .scaleEffect(1.5)
+        } else {
+            ProgressView()
+                .scaleEffect(1.5)
         }
     }
 }

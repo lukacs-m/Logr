@@ -8,6 +8,7 @@ import OSLog
 @MainActor
 public final class LogR: LogRService, Sendable {
     public private(set) var recentLogs: Deque<LogEntry>
+    public let configuration: LogrConfiguration
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public var privacyAnalysisResult: PrivacyAnalysisResult? {
@@ -19,8 +20,19 @@ public final class LogR: LogRService, Sendable {
         _logIssueSummary as? LogIssueSummary
     }
 
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public var analysisProgress: AnalysisProgress? {
+        _analysisProgress as? AnalysisProgress
+    }
+    
+    public var canAnalyseLogs: Bool {
+        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *), let analyser else {
+            return false
+        }
+        return analyser.isAvailable
+    }
+
     private let storage: LogRPersistence?
-    public let configuration: LogrConfiguration
     private let cryptoService: any LoggerCryptoServicing
 
     @ObservationIgnored
@@ -35,19 +47,16 @@ public final class LogR: LogRService, Sendable {
 
     private var _logIssueSummary: (any SendableMetatype)?
     private var _privacyAnalysisResult: (any SendableMetatype)?
+    private var _analysisProgress: (any SendableMetatype)?
     private var _analyser: (any SendableMetatype)?
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     private var analyser: LogAIAnalyzer? {
         _analyser as? LogAIAnalyzer
     }
 
-    public var canAnalyseLogs: Bool {
-        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *), let analyser else {
-            return false
-        }
-        return analyser.isAvailable
-    }
-
+    @ObservationIgnored
+    private nonisolated(unsafe) var progressTask: Task<Void, Never>?
+  
     public init(storage: LogRPersistence? = nil,
                 cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
                 configuration: LogrConfiguration = .default) {
@@ -151,12 +160,21 @@ public extension LogR {
         guard let analyser else {
             throw AIAnalyzerError.missingAnalyzer
         }
-        let result = if recentLogs.isEmpty {
-            PrivacyAnalysisResult.empty
+
+        // Reset progress at start
+        _analysisProgress = AnalysisProgress.starting(totalLogs: recentLogs.count)
+
+        let result: PrivacyAnalysisResult
+        if recentLogs.isEmpty {
+            result = PrivacyAnalysisResult.empty
         } else {
-            try await analyser.scanForPrivacyIssues(logs: recentLogs.toArray)
+            result = try await analyser.scanForPrivacyIssues(logs: recentLogs.toArray) { [weak self] progress in
+                    self?.updateProgress(progress: progress)
+            }
         }
 
+        // Clear progress when complete
+        _analysisProgress = nil
         _privacyAnalysisResult = result
         return result
     }
@@ -165,12 +183,21 @@ public extension LogR {
         guard let analyser else {
             throw AIAnalyzerError.missingAnalyzer
         }
-        let result = if recentLogs.isEmpty {
-            LogIssueSummary.empty
+
+        // Reset progress at start
+        _analysisProgress = AnalysisProgress.starting(totalLogs: recentLogs.count)
+
+        let result: LogIssueSummary
+        if recentLogs.isEmpty {
+            result = LogIssueSummary.empty
         } else {
-            try await analyser.summarizeIssues(logs: recentLogs.toArray)
+            result = try await analyser.summarizeIssues(logs: recentLogs.toArray) { [weak self] progress in
+                self?.updateProgress(progress: progress)
+            }
         }
 
+        // Clear progress when complete
+        _analysisProgress = nil
         _logIssueSummary = result
         return result
     }
@@ -242,6 +269,14 @@ private extension LogR {
 
     func shouldLog(level: LogLevel) -> Bool {
         configuration.enabledLevels.contains(level)
+    }
+    
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+   nonisolated func updateProgress(progress: AnalysisProgress) {
+       progressTask?.cancel()
+       progressTask =  Task { @MainActor in
+           _analysisProgress = progress
+       }
     }
 }
 
