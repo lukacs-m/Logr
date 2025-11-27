@@ -35,7 +35,7 @@ struct LogEntryRow: View, @MainActor Equatable {
     }
 
     static func == (lhs: LogEntryRow, rhs: LogEntryRow) -> Bool {
-        lhs.displayState == rhs.displayState && lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded
+         lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded && lhs.displayState == rhs.displayState
     }
 }
 

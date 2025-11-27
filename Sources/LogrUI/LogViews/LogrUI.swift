@@ -220,8 +220,14 @@ private extension LogViewer {
     var mainContent: some View {
         List {
             ForEach(filteredLogs) { entry in
+
+#if os(macOS)
+                LogEntryRow(entry: entry, displayState: $allExpanded)
+#else
                 LogEntryRow(entry: entry, displayState: $allExpanded)
                     .equatable()
+#endif
+
             }
         }
         .searchable(text: $searchText, prompt: "Search logs...")

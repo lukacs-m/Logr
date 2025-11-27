@@ -24,7 +24,11 @@ struct LogRExampleApp: App {
                 cleanupInterval: 60 * 60,
                 logVerbosity: .verbose
             )
-            _logger = State(initialValue: LogR(storage: storage, logAnalyser: AIAnalyzer(), configuration: config))
+            if #available(macOS 26.0, *) {
+                _logger = State(initialValue: LogR(storage: storage, logAnalyser: AIAnalyzer(), configuration: config))
+            } else {
+                _logger = State(initialValue: LogR(storage: storage, configuration: config))
+            }
         } catch {
             _logger = State(initialValue: LogR())
         }
