@@ -44,7 +44,7 @@ public struct AnalyzerConfiguration: Sendable {
 
     public init(maxLogsPerRequest: Int = 20,
                 enableParallelProcessing: Bool = true,
-                maxConcurrentChunks: Int = 5,
+                maxConcurrentChunks: Int = 20,
                 prewarmModel: Bool = true) {
         self.maxLogsPerRequest = maxLogsPerRequest
         self.enableParallelProcessing = enableParallelProcessing

@@ -57,13 +57,13 @@ import Foundation
 /// - ``logIssueSummary``
 ///
 /// ### Core Logging
-/// - ``log(level:message:category:file:function:line:)``
-/// - ``debug(_:category:file:function:line:)``
-/// - ``info(_:category:file:function:line:)``
-/// - ``notice(_:category:file:function:line:)``
-/// - ``warning(_:category:file:function:line:)``
-/// - ``error(_:category:file:function:line:)``
-/// - ``fault(_:category:file:function:line:)``
+/// - ``log(level:message:category:file:function:line:metadata:)``
+/// - ``debug(_:category:file:function:line:metadata:)``
+/// - ``info(_:category:file:function:line:metadata:)``
+/// - ``notice(_:category:file:function:line:metadata:)``
+/// - ``warning(_:category:file:function:line:metadata:)``
+/// - ``error(_:category:file:function:line:metadata:)``
+/// - ``fault(_:category:file:function:line:metadata:)``
 ///
 /// ### Log Management
 /// - ``exportLogs(format:)``
@@ -88,7 +88,7 @@ public protocol LogRService: Observable, Sendable {
     /// This property returns `true` when running on iOS 26+ or macOS 26+ with an AI analyzer configured.
     /// When `false`, calling `scanForPrivacyIssues()` or `summarizeIssues()` will throw an error.
     var canAnalyseLogs: Bool { get }
-
+    
     /// The most recent privacy analysis result (iOS 26+).
     ///
     /// Contains warnings about potential privacy issues detected in logs, along with
@@ -128,6 +128,7 @@ public protocol LogRService: Observable, Sendable {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// - Note: The message is only evaluated if the log level is enabled in the configuration.
     func log(level: LogLevel,
@@ -135,7 +136,8 @@ public protocol LogRService: Observable, Sendable {
              category: LogCategory,
              file: String,
              function: String,
-             line: Int)
+             line: Int,
+             metadata: [String: LogMetadataValue]?)
 
     /// Exports all recent logs in the specified format.
     ///
@@ -149,6 +151,9 @@ public protocol LogRService: Observable, Sendable {
     /// }
     /// ```
     func exportLogs(format: ExportFormat) -> Data?
+
+    
+    func logStatistics() -> LogStatistics
 
     /// Clears all logs from both memory and persistent storage.
     ///
@@ -221,9 +226,19 @@ public protocol LogRService: Observable, Sendable {
     @discardableResult func summarizeIssues() async throws -> LogIssueSummary
 }
 
-// MARK: - Utils
+// MARK: - Utils implementations
 
 public extension LogRService {
+    func log(level: LogLevel,
+             message: @autoclosure () -> String,
+             category: LogCategory,
+             file: String = #file,
+             function: String = #function,
+             line: Int = #line,
+             metadata: [String: LogMetadataValue]? = nil) {
+        log(level: level, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
+    }
+    
     func getLogs(levels: Set<LogLevel>? = nil,
                  categories: Set<LogCategory>? = nil,
                  subsystems: Set<String>? = nil,
@@ -247,6 +262,101 @@ public extension LogRService {
         }
         return Array(filteredLogs)
     }
+    
+    func exportLogs(format: ExportFormat = .json) -> Data? {
+        guard !recentLogs.isEmpty else { return nil }
+
+        // Get the base format data first
+        let baseData: Data?
+        switch format {
+        case .json:
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            baseData = try? encoder.encode(recentLogs)
+
+        case .csv:
+            var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata\n"
+            let formatter = ISO8601DateFormatter()
+
+            for log in recentLogs {
+                let timestamp = formatter.string(from: log.timestamp)
+                let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
+                let metadataStr = log.metadata?.map { "\($0.key)=\($0.value.stringValue)" }.joined(separator: "; ") ?? ""
+                let escapedMetadata = metadataStr.replacingOccurrences(of: "\"", with: "\"\"")
+                csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line),\"\(escapedMetadata)\"\n"
+            }
+
+            baseData = csv.data(using: .utf8)
+        case .txt:
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .long
+
+            var text = ""
+            for log in recentLogs {
+                var line = "[\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] \(log.message)"
+                if let metadata = log.metadata, !metadata.isEmpty {
+                    let metadataStr = metadata.map { "\($0.key)=\($0.value.stringValue)" }.joined(separator: ", ")
+                    line += " {\(metadataStr)}"
+                }
+                text += line + "\n"
+            }
+
+            baseData = text.data(using: .utf8)
+        }
+
+        guard let data = baseData else { return nil }
+
+        return data
+    }
+    
+    func logStatistics() -> LogStatistics {
+        guard !recentLogs.isEmpty else {
+            return .empty
+        }
+        
+        let calendar = Calendar.current
+        var countByLevel: [LogLevel: Int] = [:]
+        var countByCategory: [LogCategory: Int] = [:]
+        var hourlyDistribution: [Int: Int] = [:]
+        var dailyDistribution: [Date: Int] = [:]
+        var minDate: Date?
+        var maxDate: Date?
+        
+        for log in recentLogs {
+            countByLevel[log.level, default: 0] += 1
+            countByCategory[log.category, default: 0] += 1
+            
+            let hour = calendar.component(.hour, from: log.timestamp)
+            hourlyDistribution[hour, default: 0] += 1
+            
+            let dayStart = calendar.startOfDay(for: log.timestamp)
+            dailyDistribution[dayStart, default: 0] += 1
+            
+            minDate = min(minDate ?? log.timestamp, log.timestamp)
+            maxDate = max(maxDate ?? log.timestamp, log.timestamp)
+        }
+        
+        let peakHour = hourlyDistribution.max { $0.value < $1.value }?.key
+        
+        let dateRange: ClosedRange<Date>?
+        if let minDate, let maxDate {
+            dateRange = minDate...maxDate
+        } else {
+            dateRange = nil
+        }
+        
+        return LogStatistics(
+            totalCount: recentLogs.count,
+            countByLevel: countByLevel,
+            countByCategory: countByCategory,
+            hourlyDistribution: hourlyDistribution,
+            dailyDistribution: dailyDistribution,
+            peakHour: peakHour,
+            dateRange: dateRange
+        )
+    }
 }
 
 // MARK: - Convenience Logging Methods
@@ -264,18 +374,20 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// ## Example
     /// ```swift
     /// logger.debug("Cache hit for key: \(key)", category: .cache)
-    /// logger.debug("User profile loaded", category: .user)
+    /// logger.debug("User profile loaded", category: .user, metadata: ["userId": .string("123")])
     /// ```
     func debug(_ message: @autoclosure () -> String,
                category: LogCategory = .debug,
                file: String = #file,
                function: String = #function,
-               line: Int = #line) {
-        log(level: .debug, message: message(), category: category, file: file, function: function, line: line)
+               line: Int = #line,
+               metadata: [String: LogMetadataValue]? = nil) {
+        log(level: .debug, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
     }
 
     /// Logs an informational message.
@@ -289,18 +401,20 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// ## Example
     /// ```swift
-    /// logger.info("User logged in successfully", category: .authentication)
+    /// logger.info("User logged in successfully", category: .authentication, metadata: ["method": "oauth"])
     /// logger.info("Data sync completed", category: .sync)
     /// ```
     func info(_ message: @autoclosure () -> String,
               category: LogCategory = .system,
               file: String = #file,
               function: String = #function,
-              line: Int = #line) {
-        log(level: .info, message: message(), category: category, file: file, function: function, line: line)
+              line: Int = #line,
+              metadata: [String: LogMetadataValue]? = nil) {
+        log(level: .info, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
     }
 
     /// Logs a notice-level message.
@@ -314,18 +428,20 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// ## Example
     /// ```swift
-    /// logger.notice("Payment processed successfully", category: .payment)
+    /// logger.notice("Payment processed successfully", category: .payment, metadata: ["amount": .double(99.99)])
     /// logger.notice("Configuration updated", category: .configuration)
     /// ```
     func notice(_ message: @autoclosure () -> String,
                 category: LogCategory = .system,
                 file: String = #file,
                 function: String = #function,
-                line: Int = #line) {
-        log(level: .notice, message: message(), category: category, file: file, function: function, line: line)
+                line: Int = #line,
+                metadata: [String: LogMetadataValue]? = nil) {
+        log(level: .notice, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
     }
 
     /// Logs a warning-level message.
@@ -339,18 +455,20 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// ## Example
     /// ```swift
-    /// logger.warning("API response slow: 3.2s", category: .network)
+    /// logger.warning("API response slow: 3.2s", category: .network, metadata: ["endpoint": "/api/users"])
     /// logger.warning("Low memory warning received", category: .memory)
     /// ```
     func warning(_ message: @autoclosure () -> String,
                  category: LogCategory = .system,
                  file: String = #file,
                  function: String = #function,
-                 line: Int = #line) {
-        log(level: .warning, message: message(), category: category, file: file, function: function, line: line)
+                 line: Int = #line,
+                 metadata: [String: LogMetadataValue]? = nil) {
+        log(level: .warning, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
     }
 
     /// Logs an error-level message.
@@ -364,18 +482,20 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// ## Example
     /// ```swift
-    /// logger.error("Failed to load user data: \(error)", category: .database)
+    /// logger.error("Failed to load user data: \(error)", category: .database, metadata: ["errorCode": .int(500)])
     /// logger.error("Network request failed", category: .network)
     /// ```
     func error(_ message: @autoclosure () -> String,
                category: LogCategory = .system,
                file: String = #file,
                function: String = #function,
-               line: Int = #line) {
-        log(level: .error, message: message(), category: category, file: file, function: function, line: line)
+               line: Int = #line,
+               metadata: [String: LogMetadataValue]? = nil) {
+        log(level: .error, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
     }
 
     /// Logs a fault-level message.
@@ -389,17 +509,19 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// ## Example
     /// ```swift
-    /// logger.fault("Database connection lost", category: .database)
+    /// logger.fault("Database connection lost", category: .database, metadata: ["retryCount": .int(3)])
     /// logger.fault("Invariant violation detected", category: .system)
     /// ```
     func fault(_ message: @autoclosure () -> String,
                category: LogCategory = .system,
                file: String = #file,
                function: String = #function,
-               line: Int = #line) {
-        log(level: .fault, message: message(), category: category, file: file, function: function, line: line)
+               line: Int = #line,
+               metadata: [String: LogMetadataValue]? = nil) {
+        log(level: .fault, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
     }
 }

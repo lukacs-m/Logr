@@ -90,8 +90,9 @@ public final class LogR: LogRService, Sendable {
                     category: LogCategory,
                     file: String = #file,
                     function: String = #function,
-                    line: Int = #line) {
-        guard shouldLog(level: level) else { return }
+                    line: Int = #line,
+                    metadata: [String: LogMetadataValue]? = nil) {
+        guard shouldLog(level: level, category: category) else { return }
 
         let message = message()
 
@@ -101,7 +102,8 @@ public final class LogR: LogRService, Sendable {
                              message: message,
                              file: file,
                              function: function,
-                             line: line)
+                             line: line,
+                             metadata: metadata)
 
         let categoryLogger = getLogger(for: category)
 
@@ -122,6 +124,8 @@ public final class LogR: LogRService, Sendable {
                 let encryptedLogData = try cryptoService.symmetricEncrypt(object: entry)
                 let encryptedLogEntry = EncryptedLogEntry(id: entry.id,
                                                           timestamp: entry.timestamp,
+                                                          level: entry.level,
+                                                          category: entry.category,
                                                           data: encryptedLogData)
                 await writer?.enqueue(encryptedLogEntry)
             } catch {
@@ -137,10 +141,6 @@ public extension LogR {
     func clearLogs() async throws {
         try await storage?.clear()
         recentLogs.removeAll()
-    }
-
-    func exportLogs(format: ExportFormat = .json) -> Data? {
-        encode(for: format)
     }
 
     func flush() async {
@@ -267,8 +267,13 @@ private extension LogR {
         cleanupTimer = nil
     }
 
-    func shouldLog(level: LogLevel) -> Bool {
-        configuration.enabledLevels.contains(level)
+    func shouldLog(level: LogLevel, category: LogCategory) -> Bool {
+        // Check category-specific minimum level override first
+        if let minLevel = configuration.categoryLevelOverrides?[category] {
+            return level.priority >= minLevel.priority
+        }
+        // Fall back to global enabled levels
+        return configuration.enabledLevels.contains(level)
     }
     
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
@@ -291,46 +296,6 @@ private extension LogR {
             recentLogs.append(contentsOf: logs)
         } catch {
             getLogger(for: .system).error("Failed to load recent logs: \(error.localizedDescription)")
-        }
-    }
-}
-
-// MARK: - Export
-
-private extension LogR {
-    // TODO: check other for export formatting
-    func encode(for exportFormat: ExportFormat) -> Data? {
-        guard !recentLogs.isEmpty else { return nil }
-        switch exportFormat {
-        case .json:
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            return try? encoder.encode(recentLogs)
-
-        case .csv:
-            var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line\n"
-            let formatter = ISO8601DateFormatter()
-
-            for log in recentLogs {
-                let timestamp = formatter.string(from: log.timestamp)
-                let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
-                csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line)\n"
-            }
-
-            return csv.data(using: .utf8)
-
-        case .txt:
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .long
-
-            var text = ""
-            for log in recentLogs {
-                text += "[\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] \(log.message)\n"
-            }
-
-            return text.data(using: .utf8)
         }
     }
 }

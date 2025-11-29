@@ -160,7 +160,7 @@ struct SettingsView: View {
         Section {
             Picker("Export Format", selection: $selectedExportFormat) {
                 ForEach(ExportFormat.allCases, id: \.self) { format in
-                    Text(formatDisplayName(format)).tag(format)
+                    Text(format.formatName).tag(format)
                 }
             }
 
@@ -194,14 +194,6 @@ struct SettingsView: View {
             Text("Export")
         } footer: {
             Text("Export logs in JSON (structured), CSV (spreadsheet), or TXT (readable) format.")
-        }
-    }
-
-    private func formatDisplayName(_ format: ExportFormat) -> String {
-        switch format {
-        case .json: "JSON (Structured)"
-        case .csv: "CSV (Spreadsheet)"
-        case .txt: "Plain Text"
         }
     }
 

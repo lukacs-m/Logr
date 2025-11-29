@@ -9,12 +9,16 @@ import Foundation
 import UniformTypeIdentifiers
 
 public enum ExportFormat: CaseIterable, Identifiable {
+    /// Standard JSON format.
     case json
+    /// Comma-separated values format.
     case csv
+    /// Plain text format.
     case txt
 
     public var id: Self { self }
 
+    /// The file extension for this format.
     public var fileExtension: String {
         switch self {
         case .json: "json"
@@ -23,6 +27,7 @@ public enum ExportFormat: CaseIterable, Identifiable {
         }
     }
 
+    /// Human-readable format name.
     public var formatName: String {
         switch self {
         case .json: "JSON"
@@ -31,6 +36,7 @@ public enum ExportFormat: CaseIterable, Identifiable {
         }
     }
 
+    /// The UTType content type for this format.
     public var contentType: UTType {
         switch self {
         case .json: .json
@@ -39,6 +45,7 @@ public enum ExportFormat: CaseIterable, Identifiable {
         }
     }
 
+    /// Description of the format and its use case.
     public var formatDescription: String {
         switch self {
         case .json: "Structured data format, preserves all fields"

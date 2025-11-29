@@ -43,6 +43,7 @@ import Foundation
 /// - ``file``
 /// - ``function``
 /// - ``line``
+/// - ``metadata``
 public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     /// Unique identifier for this log entry.
     public let id: String
@@ -71,6 +72,18 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     /// The line number where this log was created.
     public let line: Int
 
+    /// Optional structured metadata attached to this log entry.
+    ///
+    /// Use metadata to attach key-value pairs for structured logging:
+    ///
+    /// ```swift
+    /// logger.info("Request completed",
+    ///             metadata: ["url": .string("/api/users"),
+    ///                        "status": .int(200),
+    ///                        "duration": .double(0.5)])
+    /// ```
+    public let metadata: [String: LogMetadataValue]?
+
     /// Creates a new log entry.
     ///
     /// - Parameters:
@@ -83,6 +96,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     ///   - file: Source file (automatically captured).
     ///   - function: Function name (automatically captured).
     ///   - line: Line number (automatically captured).
+    ///   - metadata: Optional structured metadata key-value pairs.
     public init(id: String = UUID().uuidString,
                 timestamp: Date = Date(),
                 level: LogLevel,
@@ -91,7 +105,8 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
                 message: String,
                 file: String = #file,
                 function: String = #function,
-                line: Int = #line) {
+                line: Int = #line,
+                metadata: [String: LogMetadataValue]? = nil) {
         self.id = id
         self.timestamp = timestamp
         self.level = level
@@ -101,6 +116,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
         self.file = file
         self.function = function
         self.line = line
+        self.metadata = metadata
     }
 
     public static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
@@ -109,7 +125,8 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
             lhs.level == rhs.level &&
             lhs.category == rhs.category &&
             lhs.subsystem == rhs.subsystem &&
-            lhs.message == rhs.message
+            lhs.message == rhs.message &&
+            lhs.metadata == rhs.metadata
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -119,6 +136,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
         hasher.combine(category)
         hasher.combine(subsystem)
         hasher.combine(message)
+        hasher.combine(metadata)
     }
 }
 

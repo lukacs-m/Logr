@@ -158,14 +158,16 @@ public final class MockLogR: LogRService, Sendable {
                     category: LogCategory,
                     file: String = #file,
                     function: String = #function,
-                    line: Int = #line) {
+                    line: Int = #line,
+                    metadata: [String: LogMetadataValue]? = nil) {
         let entry = LogEntry(level: level,
                              category: category,
                              subsystem: "com.logr.mock",
                              message: message(),
                              file: file,
                              function: function,
-                             line: line)
+                             line: line,
+                             metadata: metadata)
 
         mockLogs.insert(entry, at: 0)
         recentLogs.insert(entry, at: 0)
@@ -182,45 +184,6 @@ public final class MockLogR: LogRService, Sendable {
     public func clearLogs() async throws {
         mockLogs.removeAll()
         recentLogs.removeAll()
-    }
-
-    public func exportLogs(format: ExportFormat = .json) -> Data? {
-        encode(for: format)
-    }
-
-    func encode(for exportFormat: ExportFormat) -> Data? {
-        guard !mockLogs.isEmpty else { return nil }
-        switch exportFormat {
-        case .json:
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            return try? encoder.encode(recentLogs)
-
-        case .csv:
-            var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line\n"
-            let formatter = ISO8601DateFormatter()
-
-            for log in recentLogs {
-                let timestamp = formatter.string(from: log.timestamp)
-                let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
-                csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line)\n"
-            }
-
-            return csv.data(using: .utf8)
-
-        case .txt:
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .long
-
-            var text = ""
-            for log in recentLogs {
-                text += "[\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] \(log.message)\n"
-            }
-
-            return text.data(using: .utf8)
-        }
     }
 
     public func flush() async {}

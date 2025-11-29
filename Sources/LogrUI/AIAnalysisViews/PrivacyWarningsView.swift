@@ -40,7 +40,7 @@ public struct PrivacyWarningsView: View {
     }
 
     private func loadData(reload: Bool = false) async {
-        guard (reload || logr.logIssueSummary == nil) else {
+        guard (reload || logr.privacyAnalysisResult == nil) else {
             return
         }
         defer { loading = false }
@@ -156,7 +156,7 @@ private extension PrivacyWarningsView {
 private extension PrivacyWarningsView {
     var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            if logr.logIssueSummary != nil {
+            if logr.privacyAnalysisResult != nil {
                 Button("ReScan") {
                     Task {
                         await loadData(reload: true)

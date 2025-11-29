@@ -96,23 +96,29 @@ import UniformTypeIdentifiers
 /// - ``init()``
 public struct LogViewer: View {
     @Environment(\.logService) private var logr
+    @State private var logFilterPreferences = LogFilterPreferences()
     @State private var showingDeleteConfirmation = false
     @State private var shareItem: ShareItem?
     @State private var presentedSheet: SheetDestination?
-    @State private var selectedLevels: Set<LogLevel> = Set(LogLevel.allCases)
-    @State private var selectedCategories: Set<LogCategory> = []
-    @State private var allExpanded = false
     @State private var searchText = ""
     @State private var debouncedQuery = ""
     @State private var showError: Error?
-
+    @State private var functionalityFilter = Set(LogViewer.Functionalities.allCases)
+    
     enum SheetDestination: Identifiable {
         case filters
         case export
         case privacyLogChecks
         case issuesSummary
+        case statistics
 
         var id: Self { self }
+    }
+    
+    public enum Functionalities: Equatable, CaseIterable {
+        case analyser
+        case sharing
+        case statistics
     }
 
     enum LogViewerError: LocalizedError {
@@ -160,7 +166,9 @@ public struct LogViewer: View {
     ///     }
     /// }
     /// ```
-    public init() {}
+    public init(functionalityFilter: [LogViewer.Functionalities] = LogViewer.Functionalities.allCases) {
+        self.functionalityFilter = Set(functionalityFilter)
+    }
 
     public var body: some View {
         NavigationStack {
@@ -188,8 +196,8 @@ public struct LogViewer: View {
         case .export:
             ExportSheet()
         case .filters:
-            FilterSheet(selectedLevels: $selectedLevels,
-                        selectedCategories: $selectedCategories)
+            FilterSheet()
+            .environment(logFilterPreferences)
         case .privacyLogChecks:
             if #available(iOS 26.0, macOS 26.0, *) {
                 NavigationStack {
@@ -206,6 +214,10 @@ public struct LogViewer: View {
             } else {
                 NonAccessibleFeatureView()
             }
+        case .statistics:
+            NavigationStack {
+                LogStatisticsView()
+            }
         }
     }
 
@@ -219,15 +231,34 @@ public struct LogViewer: View {
 private extension LogViewer {
     var mainContent: some View {
         List {
-            ForEach(filteredLogs) { entry in
+            // Statistics panel (collapsible)
+            if logFilterPreferences.showStatisticsPanel, !filteredLogs.isEmpty {
+                Section {
+                    CompactLogStatisticsView(statistics: logr.logStatistics())
+                }
+            }
 
-#if os(macOS)
-                LogEntryRow(entry: entry, displayState: $allExpanded)
-#else
-                LogEntryRow(entry: entry, displayState: $allExpanded)
-                    .equatable()
-#endif
-
+            // Log entries with optional grouping
+            if logFilterPreferences.timeGrouping == .none {
+                ForEach(filteredLogs) { entry in
+                    logEntryRow(entry)
+                }
+            } else {
+                ForEach(filteredLogs.grouped(by: logFilterPreferences.timeGrouping)) { group in
+                    Section {
+                        ForEach(group.logs) { entry in
+                            logEntryRow(entry)
+                        }
+                    } header: {
+                        HStack {
+                            Text(group.title)
+                            Spacer()
+                            Text("\(group.logs.count)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
         }
         .searchable(text: $searchText, prompt: "Search logs...")
@@ -249,6 +280,16 @@ private extension LogViewer {
         .overlay {
             overlayContent
         }
+    }
+
+    @ViewBuilder
+    private func logEntryRow(_ entry: LogEntry) -> some View {
+        #if os(macOS)
+        LogEntryRow(entry: entry, displayState: $logFilterPreferences.allExpanded)
+        #else
+        LogEntryRow(entry: entry, displayState: $logFilterPreferences.allExpanded)
+            .equatable()
+        #endif
     }
 }
 
@@ -312,16 +353,26 @@ private extension LogViewer {
             .disabled(logr.recentLogs.isEmpty)
 
             Menu {
-                Button(allExpanded ? "Collapse All" : "Expand All") {
-                    allExpanded.toggle()
+                Button(logFilterPreferences.allExpanded ? "Collapse All" : "Expand All") {
+                    logFilterPreferences.allExpanded.toggle()
                 }
                 .disabled(logr.recentLogs.isEmpty)
-
+              
+                if functionalityFilter.contains(.statistics) {
+                    Button("Logs statistics") {
+                        presentedSheet = .statistics
+                    }
+                    .disabled(logr.recentLogs.isEmpty)
+                }
+                
                 Divider()
-
-                logAnalyzeMenu
-
-                shareMenu
+                if functionalityFilter.contains(.analyser) {
+                    logAnalyzeMenu
+                }
+                
+                if functionalityFilter.contains(.sharing) {
+                    shareMenu
+                }
 
                 Button("Clear All Logs", role: .destructive) {
                     showingDeleteConfirmation = true
@@ -420,9 +471,9 @@ private extension LogViewer {
 
     func filterData() -> [LogEntry] {
         logr.recentLogs.filter { entry in
-            guard selectedLevels.contains(entry.level) else { return false }
+            guard logFilterPreferences.selectedLevels.contains(entry.level) else { return false }
 
-            if !selectedCategories.isEmpty, !selectedCategories.contains(entry.category) {
+            if !logFilterPreferences.selectedCategories.isEmpty, !logFilterPreferences.selectedCategories.contains(entry.category) {
                 return false
             }
 
