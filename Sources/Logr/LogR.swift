@@ -24,7 +24,7 @@ public final class LogR: LogRService, Sendable {
     public var analysisProgress: AnalysisProgress? {
         _analysisProgress as? AnalysisProgress
     }
-    
+
     public var canAnalyseLogs: Bool {
         guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *), let analyser else {
             return false
@@ -56,7 +56,7 @@ public final class LogR: LogRService, Sendable {
 
     @ObservationIgnored
     private nonisolated(unsafe) var progressTask: Task<Void, Never>?
-  
+
     public init(storage: LogRPersistence? = nil,
                 cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
                 configuration: LogrConfiguration = .default) {
@@ -162,12 +162,11 @@ public extension LogR {
         // Reset progress at start
         _analysisProgress = AnalysisProgress.starting(totalLogs: recentLogs.count)
 
-        let result: PrivacyAnalysisResult
-        if recentLogs.isEmpty {
-            result = PrivacyAnalysisResult.empty
+        let result: PrivacyAnalysisResult = if recentLogs.isEmpty {
+            PrivacyAnalysisResult.empty
         } else {
-            result = try await analyser.scanForPrivacyIssues(logs: recentLogs.toArray) { [weak self] progress in
-                    self?.updateProgress(progress: progress)
+            try await analyser.scanForPrivacyIssues(logs: recentLogs.toArray) { [weak self] progress in
+                self?.updateProgress(progress: progress)
             }
         }
 
@@ -185,11 +184,10 @@ public extension LogR {
         // Reset progress at start
         _analysisProgress = AnalysisProgress.starting(totalLogs: recentLogs.count)
 
-        let result: LogIssueSummary
-        if recentLogs.isEmpty {
-            result = LogIssueSummary.empty
+        let result: LogIssueSummary = if recentLogs.isEmpty {
+            LogIssueSummary.empty
         } else {
-            result = try await analyser.summarizeIssues(logs: recentLogs.toArray) { [weak self] progress in
+            try await analyser.summarizeIssues(logs: recentLogs.toArray) { [weak self] progress in
                 self?.updateProgress(progress: progress)
             }
         }
@@ -273,13 +271,13 @@ private extension LogR {
         // Fall back to global enabled levels
         return configuration.enabledLevels.contains(level)
     }
-    
+
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-   nonisolated func updateProgress(progress: AnalysisProgress) {
-       progressTask?.cancel()
-       progressTask =  Task { @MainActor in
-           _analysisProgress = progress
-       }
+    nonisolated func updateProgress(progress: AnalysisProgress) {
+        progressTask?.cancel()
+        progressTask = Task { @MainActor in
+            _analysisProgress = progress
+        }
     }
 }
 

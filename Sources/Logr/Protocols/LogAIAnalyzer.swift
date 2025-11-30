@@ -181,10 +181,9 @@ public protocol LogAIAnalyzer: Sendable {
     ///   - onProgress: A closure called with progress updates during analysis.
     /// - Returns: A ``PrivacyAnalysisResult`` with warnings, privacy score, and recommendations.
     /// - Throws: ``AIAnalyzerError`` if AI is unavailable or analysis fails.
-    func scanForPrivacyIssues(
-        logs: [LogEntry],
-        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
-    ) async throws -> PrivacyAnalysisResult
+    func scanForPrivacyIssues(logs: [LogEntry],
+                              onProgress: @escaping @Sendable (AnalysisProgress) -> Void) async throws
+        -> PrivacyAnalysisResult
 
     /// Analyzes logs to identify issues with progress reporting.
     ///
@@ -193,8 +192,7 @@ public protocol LogAIAnalyzer: Sendable {
     ///   - onProgress: A closure called with progress updates during analysis.
     /// - Returns: A ``LogIssueSummary`` with key issues, recommendations, and affected categories.
     /// - Throws: ``AIAnalyzerError`` if AI is unavailable or analysis fails.
-    func summarizeIssues(
-        logs: [LogEntry],
-        onProgress: @escaping @Sendable (AnalysisProgress) -> Void
-    ) async throws -> LogIssueSummary
+    func summarizeIssues(logs: [LogEntry],
+                         onProgress: @escaping @Sendable (AnalysisProgress) -> Void) async throws
+        -> LogIssueSummary
 }

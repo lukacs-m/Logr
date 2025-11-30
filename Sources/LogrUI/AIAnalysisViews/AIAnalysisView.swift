@@ -197,13 +197,13 @@ public struct AIAnalysisView: View {
     }
 }
 
- // MARK: - Preview
+// MARK: - Preview
 
- @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
- #Preview("Analyzing State") {
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+#Preview("Analyzing State") {
     @Previewable @State var mock = MockLogR()
     NavigationStack {
         AIAnalysisView()
             .environment(\.logService, mock)
     }
- }
+}

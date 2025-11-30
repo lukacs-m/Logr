@@ -31,7 +31,7 @@ struct SettingsView: View {
         .confirmationDialog("Clear All Logs", isPresented: $showClearConfirmation) {
             Button("Clear All", role: .destructive) {
                 Task {
-                   try? await logger.clearLogs()
+                    try? await logger.clearLogs()
                     logger.info("All logs cleared by user", category: .system)
                 }
             }
@@ -59,31 +59,29 @@ struct SettingsView: View {
     @ViewBuilder
     private var configurationSection: some View {
         if let logr = logger as? LogR {
-            
-            
             Section {
                 LabeledContent("Subsystem") {
                     Text(logr.configuration.subsystem)
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
-                
+
                 LabeledContent("Max Log Entries") {
                     Text("\(logr.configuration.maxLogEntries.formatted())")
                 }
-                
+
                 LabeledContent("Max Log Age") {
                     Text(formatDuration(logr.configuration.maxLogAge))
                 }
-                
+
                 LabeledContent("Cleanup Interval") {
                     Text(formatDuration(logr.configuration.cleanupInterval))
                 }
-                
+
                 LabeledContent("Verbosity") {
                     Text(logr.configuration.logVerbosity == .verbose ? "Verbose" : "Normal")
                 }
-                
+
                 DisclosureGroup("Enabled Levels (\(logr.configuration.enabledLevels.count))") {
                     ForEach(LogLevel.allCases) { level in
                         HStack {
@@ -151,7 +149,7 @@ struct SettingsView: View {
     }
 
     private func countLogs(level: LogLevel) -> Int {
-        logger.recentLogs.filter { $0.level == level }.count
+        logger.recentLogs.count(where: { $0.level == level })
     }
 
     // MARK: - Export
@@ -203,11 +201,10 @@ struct SettingsView: View {
             return
         }
 
-        let fileExtension: String
-        switch selectedExportFormat {
-        case .json: fileExtension = "json"
-        case .csv: fileExtension = "csv"
-        case .txt: fileExtension = "txt"
+        let fileExtension = switch selectedExportFormat {
+        case .json: "json"
+        case .csv: "csv"
+        case .txt: "txt"
         }
 
         let filename = "logr_export_\(Date().ISO8601Format()).\(fileExtension)"
@@ -277,8 +274,8 @@ struct SettingsView: View {
     // MARK: - Helpers
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
-        let hours = Int(seconds) / 3600
-        let minutes = (Int(seconds) % 3600) / 60
+        let hours = Int(seconds) / 3_600
+        let minutes = (Int(seconds) % 3_600) / 60
 
         if hours >= 24 {
             let days = hours / 24

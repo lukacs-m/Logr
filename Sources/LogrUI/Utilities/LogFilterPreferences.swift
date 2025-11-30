@@ -27,15 +27,6 @@ import Logr
 /// let categories = prefs.loadSelectedCategories()
 /// ```
 ///
-
-//@State private var selectedLevels: Set<LogLevel> = Set(LogLevel.allCases)
-//@State private var selectedCategories: Set<LogCategory> = []
-//@State private var allExpanded = false
-//
-//@State private var timeGrouping: LogTimeGrouping = .none
-//@State private var showStatisticsPanel = false
-//
-
 @MainActor
 @Observable
 public final class LogFilterPreferences {
@@ -158,8 +149,6 @@ private extension LogFilterPreferences {
     }
 }
 
-
-
 // MARK: - Time Grouping
 
 /// Time-based grouping options for log entries.
@@ -202,21 +191,21 @@ public struct LogTimeGroup: Identifiable, Sendable {
 
 // MARK: - Grouping Logic
 
-extension [LogEntry]/*Array where Element == LogEntry*/ {
+extension [LogEntry] {
     /// Groups log entries by the specified time grouping.
     func grouped(by grouping: LogTimeGrouping) -> [LogTimeGroup] {
         switch grouping {
         case .none:
-            return [LogTimeGroup(id: "all", title: "All Logs", logs: self)]
+            [LogTimeGroup(id: "all", title: "All Logs", logs: self)]
 
         case .relative:
-            return groupedByRelativeTime()
+            groupedByRelativeTime()
 
         case .daily:
-            return groupedByDay()
+            groupedByDay()
 
         case .hourly:
-            return groupedByHour()
+            groupedByHour()
         }
     }
 
@@ -225,7 +214,8 @@ extension [LogEntry]/*Array where Element == LogEntry*/ {
         let now = Date()
         let todayStart = calendar.startOfDay(for: now)
         let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart)!
-        let thisWeekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+        let thisWeekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear],
+                                                                        from: now))!
         let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart)!
         let thisMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
 
@@ -233,19 +223,18 @@ extension [LogEntry]/*Array where Element == LogEntry*/ {
         let order = ["today", "yesterday", "thisWeek", "lastWeek", "thisMonth", "older"]
 
         for entry in self {
-            let key: String
-            if entry.timestamp >= todayStart {
-                key = "today"
+            let key = if entry.timestamp >= todayStart {
+                "today"
             } else if entry.timestamp >= yesterdayStart {
-                key = "yesterday"
+                "yesterday"
             } else if entry.timestamp >= thisWeekStart {
-                key = "thisWeek"
+                "thisWeek"
             } else if entry.timestamp >= lastWeekStart {
-                key = "lastWeek"
+                "lastWeek"
             } else if entry.timestamp >= thisMonthStart {
-                key = "thisMonth"
+                "thisMonth"
             } else {
-                key = "older"
+                "older"
             }
             groups[key, default: []].append(entry)
         }
@@ -280,7 +269,9 @@ extension [LogEntry]/*Array where Element == LogEntry*/ {
 
         return groups
             .sorted { $0.key > $1.key }
-            .map { LogTimeGroup(id: $0.key.ISO8601Format(), title: formatter.string(from: $0.key), logs: $0.value) }
+            .map {
+                LogTimeGroup(id: $0.key.ISO8601Format(), title: formatter.string(from: $0.key), logs: $0.value)
+            }
     }
 
     private func groupedByHour() -> [LogTimeGroup] {
@@ -299,6 +290,8 @@ extension [LogEntry]/*Array where Element == LogEntry*/ {
 
         return groups
             .sorted { $0.key > $1.key }
-            .map { LogTimeGroup(id: $0.key.ISO8601Format(), title: formatter.string(from: $0.key), logs: $0.value) }
+            .map {
+                LogTimeGroup(id: $0.key.ISO8601Format(), title: formatter.string(from: $0.key), logs: $0.value)
+            }
     }
 }

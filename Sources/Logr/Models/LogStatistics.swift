@@ -44,7 +44,7 @@ import Foundation
 /// ### Rate Metrics
 /// - ``errorRate``
 /// - ``warningRate``
-//public struct LogStatistics: Sendable, Equatable {
+// public struct LogStatistics: Sendable, Equatable {
 //    /// Total number of log entries.
 //    public let totalCount: Int
 //
@@ -180,12 +180,12 @@ import Foundation
 //            dateRange: dateRange
 //        )
 //    }
-//}
+// }
 //
 //// MARK: - Time Series Data Point
 //
 ///// A data point for time-series chart display.
-//public struct LogTimeSeriesPoint: Identifiable, Sendable, Equatable {
+// public struct LogTimeSeriesPoint: Identifiable, Sendable, Equatable {
 //    public let id: String
 //    public let date: Date
 //    public let count: Int
@@ -200,11 +200,11 @@ import Foundation
 //        self.count = count
 //        self.level = level
 //    }
-//}
+// }
 //
 //// MARK: - Statistics Extensions
 //
-//public extension LogStatistics {
+// public extension LogStatistics {
 //    /// Returns hourly data points for chart display.
 //    var hourlyDataPoints: [LogTimeSeriesPoint] {
 //        let calendar = Calendar.current
@@ -238,7 +238,7 @@ import Foundation
 //        guard totalCount > 0 else { return [:] }
 //        return countByLevel.mapValues { Double($0) / Double(totalCount) * 100 }
 //    }
-//}
+// }
 
 public struct LogStatistics: Sendable, Equatable {
     public let totalCount: Int
@@ -248,14 +248,14 @@ public struct LogStatistics: Sendable, Equatable {
     public let dailyDistribution: [Date: Int]
     public let peakHour: Int?
     public let dateRange: ClosedRange<Date>?
-    
+
     public init(totalCount: Int,
-         countByLevel: [LogLevel : Int],
-         countByCategory: [LogCategory : Int],
-         hourlyDistribution: [Int : Int],
-         dailyDistribution: [Date : Int],
-         peakHour: Int?,
-         dateRange: ClosedRange<Date>?) {
+                countByLevel: [LogLevel: Int],
+                countByCategory: [LogCategory: Int],
+                hourlyDistribution: [Int: Int],
+                dailyDistribution: [Date: Int],
+                peakHour: Int?,
+                dateRange: ClosedRange<Date>?) {
         self.totalCount = totalCount
         self.countByLevel = countByLevel
         self.countByCategory = countByCategory
@@ -283,19 +283,17 @@ public struct LogStatistics: Sendable, Equatable {
 
     public var averageLogsPerHour: Double {
         guard let range = dateRange, range.upperBound > range.lowerBound else { return 0 }
-        let hours = range.upperBound.timeIntervalSince(range.lowerBound) / 3600
+        let hours = range.upperBound.timeIntervalSince(range.lowerBound) / 3_600
         return Double(totalCount) / hours
     }
 
-    public static let empty = LogStatistics(
-        totalCount: 0,
-        countByLevel: [:],
-        countByCategory: [:],
-        hourlyDistribution: [:],
-        dailyDistribution: [:],
-        peakHour: nil,
-        dateRange: nil
-    )
+    public static let empty = LogStatistics(totalCount: 0,
+                                            countByLevel: [:],
+                                            countByCategory: [:],
+                                            hourlyDistribution: [:],
+                                            dailyDistribution: [:],
+                                            peakHour: nil,
+                                            dateRange: nil)
 }
 
 // MARK: - Time Series Data Point
@@ -306,12 +304,10 @@ public struct LogTimeSeriesPoint: Identifiable, Sendable, Equatable {
     public let count: Int
     public let level: LogLevel?
 
-    public init(
-        id: UUID = UUID(),
-        date: Date,
-        count: Int,
-        level: LogLevel? = nil
-    ) {
+    public init(id: UUID = UUID(),
+                date: Date,
+                count: Int,
+                level: LogLevel? = nil) {
         self.id = id
         self.date = date
         self.count = count
@@ -325,7 +321,7 @@ public extension LogStatistics {
     var hourlyDataPoints: [LogTimeSeriesPoint] {
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: Date())
-        
+
         return (0..<24).compactMap { hour in
             guard let date = calendar
                 .date(byAdding: .hour, value: hour, to: todayStart) else {

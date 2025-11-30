@@ -27,7 +27,7 @@ struct FilterSheet: View {
                 }
 
                 timeGroupingSection
-                
+
                 Toggle("Show logs summary", isOn: Bindable(logFilterPreferences).showStatisticsPanel)
             }
             .navigationTitle("Filters")
@@ -135,7 +135,7 @@ private extension FilterSheet {
         }
         logFilterPreferences.saveSelectedCategories(currentCategories)
     }
-    
+
     func toggleLevel(_ level: LogLevel) {
         var currentLevels = logFilterPreferences.selectedLevels
         if currentLevels.contains(level) {

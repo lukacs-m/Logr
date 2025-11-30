@@ -9,7 +9,6 @@ import Charts
 import Logr
 import SwiftUI
 
-
 /// A view displaying log statistics and metrics.
 ///
 /// `LogStatisticsView` shows aggregated statistics about logs including
@@ -31,7 +30,7 @@ import SwiftUI
 public struct LogStatisticsView: View {
     @Environment(\.logService) private var logr
 
-   private var statistics: LogStatistics {
+    private var statistics: LogStatistics {
         logr.logStatistics()
     }
 
@@ -60,33 +59,25 @@ public struct LogStatisticsView: View {
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 12) {
-                StatCard(
-                    title: "Total Logs",
-                    value: "\(statistics.totalCount)",
-                    icon: "doc.text",
-                    color: .blue
-                )
+                StatCard(title: "Total Logs",
+                         value: "\(statistics.totalCount)",
+                         icon: "doc.text",
+                         color: .blue)
 
-                StatCard(
-                    title: "Error Rate",
-                    value: String(format: "%.1f%%", statistics.errorRate * 100),
-                    icon: "exclamationmark.triangle",
-                    color: statistics.errorRate > 0.1 ? .red : .orange
-                )
+                StatCard(title: "Error Rate",
+                         value: String(format: "%.1f%%", statistics.errorRate * 100),
+                         icon: "exclamationmark.triangle",
+                         color: statistics.errorRate > 0.1 ? .red : .orange)
 
-                StatCard(
-                    title: "Warning Rate",
-                    value: String(format: "%.1f%%", statistics.warningRate * 100),
-                    icon: "exclamationmark.circle",
-                    color: .yellow
-                )
+                StatCard(title: "Warning Rate",
+                         value: String(format: "%.1f%%", statistics.warningRate * 100),
+                         icon: "exclamationmark.circle",
+                         color: .yellow)
 
-                StatCard(
-                    title: "Avg/Hour",
-                    value: String(format: "%.1f", statistics.averageLogsPerHour),
-                    icon: "clock",
-                    color: .green
-                )
+                StatCard(title: "Avg/Hour",
+                         value: String(format: "%.1f", statistics.averageLogsPerHour),
+                         icon: "clock",
+                         color: .green)
             }
         }
         .padding()
@@ -137,11 +128,9 @@ public struct LogStatisticsView: View {
                 .font(.headline)
 
             Chart(statistics.hourlyDataPoints) { point in
-                BarMark(
-                    x: .value("Hour", point.date, unit: .hour),
-                    y: .value("Count", point.count)
-                )
-                .foregroundStyle(.blue.gradient)
+                BarMark(x: .value("Hour", point.date, unit: .hour),
+                        y: .value("Count", point.count))
+                    .foregroundStyle(.blue.gradient)
             }
             .frame(height: 150)
             .chartXAxis {
@@ -265,7 +254,7 @@ public struct CompactLogStatisticsView: View {
                     Text("\(statistics.totalCount)")
                         .font(.headline.monospacedDigit())
                 }
-                
+
                 Divider()
                     .frame(height: 30)
                 HStack {
@@ -290,9 +279,9 @@ public struct CompactLogStatisticsView: View {
                 .padding()
                 .background(.background.quaternary)
                 .cornerRadius(12)
-                
+
                 Spacer()
-                
+
                 if statistics.errorRate > 0.05 {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
@@ -308,11 +297,11 @@ public struct CompactLogStatisticsView: View {
 // MARK: - Preview
 
 #Preview("Log Statistics") {
-     @Previewable @State var mock = MockLogR()
+    @Previewable @State var mock = MockLogR()
     NavigationStack {
         List {
             CompactLogStatisticsView(statistics: mock.logStatistics())
-            .padding()
+                .padding()
             LogStatisticsView()
         }
         .listStyle(.plain)

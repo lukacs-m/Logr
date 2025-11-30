@@ -29,13 +29,13 @@ struct LogEntryRow: View, @MainActor Equatable {
             mainRowContent
         }
         .onChange(of: displayState) { _, newGlobalState in
-                isExpanded = newGlobalState
+            isExpanded = newGlobalState
         }
 //        .disclosureGroupStyle(CustomDisclosureGroupStyle(button: Text("ok")))
     }
 
     static func == (lhs: LogEntryRow, rhs: LogEntryRow) -> Bool {
-         lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded && lhs.displayState == rhs.displayState
+        lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded && lhs.displayState == rhs.displayState
     }
 }
 
@@ -66,7 +66,7 @@ private extension LogEntryRow {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                    isExpanded.toggle()
+                isExpanded.toggle()
             }
         }
     }

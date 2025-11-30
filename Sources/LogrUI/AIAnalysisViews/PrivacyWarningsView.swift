@@ -40,7 +40,7 @@ public struct PrivacyWarningsView: View {
     }
 
     private func loadData(reload: Bool = false) async {
-        guard (reload || logr.privacyAnalysisResult == nil) else {
+        guard reload || logr.privacyAnalysisResult == nil else {
             return
         }
         defer { loading = false }

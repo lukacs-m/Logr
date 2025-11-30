@@ -70,7 +70,8 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 /// ## Topics
 ///
 /// ### Creating Configuration
-/// - ``init(maxLogEntries:maxLogAge:enabledLevels:categoryLevelOverrides:subsystem:cleanupInterval:logVerbosity:)``
+/// -
+/// ``init(maxLogEntries:maxLogAge:enabledLevels:categoryLevelOverrides:subsystem:cleanupInterval:logVerbosity:)``
 /// - ``default``
 ///
 /// ### Properties
@@ -165,7 +166,8 @@ public struct LogrConfiguration: Sendable, Codable {
     public init(maxLogEntries: Int = LogrConfiguration.default.maxLogEntries,
                 maxLogAge: TimeInterval = LogrConfiguration.default.maxLogAge,
                 enabledLevels: Set<LogLevel> = LogrConfiguration.default.enabledLevels,
-                categoryLevelOverrides: [LogCategory: LogLevel]? = LogrConfiguration.default.categoryLevelOverrides,
+                categoryLevelOverrides: [LogCategory: LogLevel]? = LogrConfiguration.default
+                    .categoryLevelOverrides,
                 subsystem: String = LogrConfiguration.default.subsystem,
                 cleanupInterval: TimeInterval = LogrConfiguration.default.cleanupInterval,
                 logVerbosity: LogVerbosity = LogrConfiguration.default.logVerbosity) {

@@ -16,16 +16,15 @@ struct LogRExampleApp: App {
     init() {
         do {
             let storage = try SQLiteStorage()
-            let config = LogrConfiguration(
-                maxLogEntries: 10_000,
-                maxLogAge: 7 * 24 * 60 * 60,
-                enabledLevels: Set(LogLevel.allCases),
-                subsystem: "me.martin.example.LogRExample",
-                cleanupInterval: 60 * 60,
-                logVerbosity: .verbose
-            )
+            let config = LogrConfiguration(maxLogEntries: 10_000,
+                                           maxLogAge: 7 * 24 * 60 * 60,
+                                           enabledLevels: Set(LogLevel.allCases),
+                                           subsystem: "me.martin.example.LogRExample",
+                                           cleanupInterval: 60 * 60,
+                                           logVerbosity: .verbose)
             if #available(macOS 26.0, *) {
-                _logger = State(initialValue: LogR(storage: storage, logAnalyser: AIAnalyzer(), configuration: config))
+                _logger = State(initialValue: LogR(storage: storage, logAnalyser: AIAnalyzer(),
+                                                   configuration: config))
             } else {
                 _logger = State(initialValue: LogR(storage: storage, configuration: config))
             }
@@ -62,7 +61,7 @@ struct MainTabView: View {
                     LogViewer()
                 }
             }
-            
+
             if #available(macOS 26.0, *) {
                 Tab("Analysis", systemImage: "waveform.badge.magnifyingglass") {
                     NavigationStack {

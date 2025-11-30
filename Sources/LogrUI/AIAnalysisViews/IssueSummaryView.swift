@@ -34,7 +34,7 @@ public struct IssueSummaryView: View {
     }
 
     private func loadData(reload: Bool = false) async {
-        guard (reload || logr.logIssueSummary == nil) else {
+        guard reload || logr.logIssueSummary == nil else {
             return
         }
         defer { loading = false }

@@ -88,7 +88,7 @@ public protocol LogRService: Observable, Sendable {
     /// This property returns `true` when running on iOS 26+ or macOS 26+ with an AI analyzer configured.
     /// When `false`, calling `scanForPrivacyIssues()` or `summarizeIssues()` will throw an error.
     var canAnalyseLogs: Bool { get }
-    
+
     /// The most recent privacy analysis result (iOS 26+).
     ///
     /// Contains warnings about potential privacy issues detected in logs, along with
@@ -152,7 +152,6 @@ public protocol LogRService: Observable, Sendable {
     /// ```
     func exportLogs(format: ExportFormat) -> Data?
 
-    
     func logStatistics() -> LogStatistics
 
     /// Clears all logs from both memory and persistent storage.
@@ -236,9 +235,10 @@ public extension LogRService {
              function: String = #function,
              line: Int = #line,
              metadata: [String: LogMetadataValue]? = nil) {
-        log(level: level, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
+        log(level: level, message: message(), category: category, file: file, function: function, line: line,
+            metadata: metadata)
     }
-    
+
     func getLogs(levels: Set<LogLevel>? = nil,
                  categories: Set<LogCategory>? = nil,
                  subsystems: Set<String>? = nil,
@@ -262,7 +262,7 @@ public extension LogRService {
         }
         return Array(filteredLogs)
     }
-    
+
     func exportLogs(format: ExportFormat = .json) -> Data? {
         guard !recentLogs.isEmpty else { return nil }
 
@@ -282,12 +282,14 @@ public extension LogRService {
             for log in recentLogs {
                 let timestamp = formatter.string(from: log.timestamp)
                 let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
-                let metadataStr = log.metadata?.map { "\($0.key)=\($0.value.stringValue)" }.joined(separator: "; ") ?? ""
+                let metadataStr = log.metadata?.map { "\($0.key)=\($0.value.stringValue)" }
+                    .joined(separator: "; ") ?? ""
                 let escapedMetadata = metadataStr.replacingOccurrences(of: "\"", with: "\"\"")
                 csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line),\"\(escapedMetadata)\"\n"
             }
 
             baseData = csv.data(using: .utf8)
+
         case .txt:
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
@@ -310,12 +312,12 @@ public extension LogRService {
 
         return data
     }
-    
+
     func logStatistics() -> LogStatistics {
         guard !recentLogs.isEmpty else {
             return .empty
         }
-        
+
         let calendar = Calendar.current
         var countByLevel: [LogLevel: Int] = [:]
         var countByCategory: [LogCategory: Int] = [:]
@@ -323,39 +325,36 @@ public extension LogRService {
         var dailyDistribution: [Date: Int] = [:]
         var minDate: Date?
         var maxDate: Date?
-        
+
         for log in recentLogs {
             countByLevel[log.level, default: 0] += 1
             countByCategory[log.category, default: 0] += 1
-            
+
             let hour = calendar.component(.hour, from: log.timestamp)
             hourlyDistribution[hour, default: 0] += 1
-            
+
             let dayStart = calendar.startOfDay(for: log.timestamp)
             dailyDistribution[dayStart, default: 0] += 1
-            
+
             minDate = min(minDate ?? log.timestamp, log.timestamp)
             maxDate = max(maxDate ?? log.timestamp, log.timestamp)
         }
-        
+
         let peakHour = hourlyDistribution.max { $0.value < $1.value }?.key
-        
-        let dateRange: ClosedRange<Date>?
-        if let minDate, let maxDate {
-            dateRange = minDate...maxDate
+
+        let dateRange: ClosedRange<Date>? = if let minDate, let maxDate {
+            minDate...maxDate
         } else {
-            dateRange = nil
+            nil
         }
-        
-        return LogStatistics(
-            totalCount: recentLogs.count,
-            countByLevel: countByLevel,
-            countByCategory: countByCategory,
-            hourlyDistribution: hourlyDistribution,
-            dailyDistribution: dailyDistribution,
-            peakHour: peakHour,
-            dateRange: dateRange
-        )
+
+        return LogStatistics(totalCount: recentLogs.count,
+                             countByLevel: countByLevel,
+                             countByCategory: countByCategory,
+                             hourlyDistribution: hourlyDistribution,
+                             dailyDistribution: dailyDistribution,
+                             peakHour: peakHour,
+                             dateRange: dateRange)
     }
 }
 
@@ -387,7 +386,8 @@ public extension LogRService {
                function: String = #function,
                line: Int = #line,
                metadata: [String: LogMetadataValue]? = nil) {
-        log(level: .debug, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
+        log(level: .debug, message: message(), category: category, file: file, function: function, line: line,
+            metadata: metadata)
     }
 
     /// Logs an informational message.
@@ -414,7 +414,8 @@ public extension LogRService {
               function: String = #function,
               line: Int = #line,
               metadata: [String: LogMetadataValue]? = nil) {
-        log(level: .info, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
+        log(level: .info, message: message(), category: category, file: file, function: function, line: line,
+            metadata: metadata)
     }
 
     /// Logs a notice-level message.
@@ -441,7 +442,8 @@ public extension LogRService {
                 function: String = #function,
                 line: Int = #line,
                 metadata: [String: LogMetadataValue]? = nil) {
-        log(level: .notice, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
+        log(level: .notice, message: message(), category: category, file: file, function: function, line: line,
+            metadata: metadata)
     }
 
     /// Logs a warning-level message.
@@ -468,7 +470,8 @@ public extension LogRService {
                  function: String = #function,
                  line: Int = #line,
                  metadata: [String: LogMetadataValue]? = nil) {
-        log(level: .warning, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
+        log(level: .warning, message: message(), category: category, file: file, function: function, line: line,
+            metadata: metadata)
     }
 
     /// Logs an error-level message.
@@ -495,7 +498,8 @@ public extension LogRService {
                function: String = #function,
                line: Int = #line,
                metadata: [String: LogMetadataValue]? = nil) {
-        log(level: .error, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
+        log(level: .error, message: message(), category: category, file: file, function: function, line: line,
+            metadata: metadata)
     }
 
     /// Logs a fault-level message.
@@ -522,6 +526,7 @@ public extension LogRService {
                function: String = #function,
                line: Int = #line,
                metadata: [String: LogMetadataValue]? = nil) {
-        log(level: .fault, message: message(), category: category, file: file, function: function, line: line, metadata: metadata)
+        log(level: .fault, message: message(), category: category, file: file, function: function, line: line,
+            metadata: metadata)
     }
 }

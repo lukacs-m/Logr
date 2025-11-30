@@ -84,12 +84,10 @@ enum MockDataGenerator {
 
     // MARK: - Main Generation Methods
 
-    static func generateComprehensiveLogs(
-        logger: LogRService,
-        count: Int = 2000,
-        privacyIssues: Int = 25,
-        errorPatterns: Int = 50
-    ) async {
+    static func generateComprehensiveLogs(logger: LogRService,
+                                          count: Int = 2_000,
+                                          privacyIssues: Int = 25,
+                                          errorPatterns: Int = 50) async {
         logger.info("Starting mock data generation: \(count) logs", category: .debug)
 
         await generateNormalOperationLogs(logger: logger, count: count - privacyIssues - errorPatterns)
@@ -111,7 +109,7 @@ enum MockDataGenerator {
             (.error, 2)
         ]
 
-        for i in 0 ..< count {
+        for i in 0..<count {
             let level = weightedRandomLevel(levels)
             let (message, category) = generateNormalLogContent(index: i)
             logMessage(logger: logger, level: level, message: message, category: category)
@@ -149,7 +147,7 @@ enum MockDataGenerator {
         let endpoint = networkEndpoints.randomElement()!
         let method = httpMethods.randomElement()!
         let status = httpStatusCodes.filter { $0 < 400 }.randomElement()!
-        let latency = Int.random(in: 20 ... 500)
+        let latency = Int.random(in: 20...500)
 
         return ("\(method) \(endpoint) completed: \(status) (\(latency)ms)", .http)
     }
@@ -166,24 +164,24 @@ enum MockDataGenerator {
         let tables = ["users", "products", "orders", "sessions", "preferences"]
         let op = operations.randomElement()!
         let table = tables.randomElement()!
-        let rows = Int.random(in: 1 ... 100)
+        let rows = Int.random(in: 1...100)
 
-        return ("\(op) on \(table): \(rows) rows affected (\(Int.random(in: 1 ... 50))ms)", .database)
+        return ("\(op) on \(table): \(rows) rows affected (\(Int.random(in: 1...50))ms)", .database)
     }
 
     private static func generateCacheLog() -> (String, LogCategory) {
         let hit = Bool.random()
-        let key = "cache_key_\(Int.random(in: 1000 ... 9999))"
+        let key = "cache_key_\(Int.random(in: 1_000...9_999))"
 
         return ("Cache \(hit ? "HIT" : "MISS"): \(key)", .cache)
     }
 
     private static func generatePerformanceLog() -> (String, LogCategory) {
         let metrics = [
-            "Frame time: \(Int.random(in: 8 ... 33))ms",
-            "Memory usage: \(Int.random(in: 100 ... 400))MB",
-            "CPU: \(Int.random(in: 5 ... 80))%",
-            "Battery drain rate: \(Double.random(in: 0.5 ... 3.0).formatted(.number.precision(.fractionLength(1))))%/hr"
+            "Frame time: \(Int.random(in: 8...33))ms",
+            "Memory usage: \(Int.random(in: 100...400))MB",
+            "CPU: \(Int.random(in: 5...80))%",
+            "Battery drain rate: \(Double.random(in: 0.5...3.0).formatted(.number.precision(.fractionLength(1))))%/hr"
         ]
 
         return (metrics.randomElement()!, .performance)
@@ -207,7 +205,7 @@ enum MockDataGenerator {
             "Push notification registered",
             "App state changed to active",
             "Device orientation changed",
-            "System memory available: \(Int.random(in: 500 ... 2000))MB"
+            "System memory available: \(Int.random(in: 500...2_000))MB"
         ]
 
         return (events.randomElement()!, .system)
@@ -228,7 +226,7 @@ enum MockDataGenerator {
     // MARK: - Privacy Issue Logs (For AI Analysis Demo)
 
     private static func generatePrivacyIssueLogs(logger: LogRService, count: Int) async {
-        for i in 0 ..< count {
+        for i in 0..<count {
             let (message, category) = generatePrivacyIssueContent(index: i)
             let level: LogLevel = [.debug, .info, .warning].randomElement()!
             logMessage(logger: logger, level: level, message: message, category: category)
@@ -250,9 +248,10 @@ enum MockDataGenerator {
             let ip = mockIPs.randomElement()!
             return ("Request from IP: \(ip)", .network)
         case 4: // Location data
-            let lat = Double.random(in: 30 ... 50)
+            let lat = Double.random(in: 30...50)
             let lon = Double.random(in: -120 ... -70)
-            return ("User location: \(lat.formatted(.number.precision(.fractionLength(4)))), \(lon.formatted(.number.precision(.fractionLength(4))))", .location)
+            return ("User location: \(lat.formatted(.number.precision(.fractionLength(4)))), \(lon.formatted(.number.precision(.fractionLength(4))))",
+                    .location)
         case 5: // Credit card (last 4 only is ok, but full number is PII)
             let card = mockCreditCards.randomElement()!
             return ("Payment processed for card: \(card)", .payment)
@@ -267,7 +266,7 @@ enum MockDataGenerator {
     // MARK: - Error Pattern Logs (For Issue Summary Demo)
 
     private static func generateErrorPatternLogs(logger: LogRService, count: Int) async {
-        for i in 0 ..< count {
+        for i in 0..<count {
             if i % 3 == 0 {
                 let (message, category) = recurringErrors.randomElement()!
                 let level: LogLevel = i % 6 == 0 ? .fault : .error
@@ -318,7 +317,7 @@ enum MockDataGenerator {
 
     private static func weightedRandomLevel(_ weights: [(LogLevel, Int)]) -> LogLevel {
         let total = weights.reduce(0) { $0 + $1.1 }
-        var random = Int.random(in: 0 ..< total)
+        var random = Int.random(in: 0..<total)
 
         for (level, weight) in weights {
             random -= weight
@@ -333,29 +332,23 @@ enum MockDataGenerator {
     // MARK: - Quick Generation Methods
 
     static func generateSmallDataset(logger: LogRService) async {
-        await generateComprehensiveLogs(
-            logger: logger,
-            count: 500,
-            privacyIssues: 10,
-            errorPatterns: 20
-        )
+        await generateComprehensiveLogs(logger: logger,
+                                        count: 500,
+                                        privacyIssues: 10,
+                                        errorPatterns: 20)
     }
 
     static func generateMediumDataset(logger: LogRService) async {
-        await generateComprehensiveLogs(
-            logger: logger,
-            count: 2000,
-            privacyIssues: 25,
-            errorPatterns: 50
-        )
+        await generateComprehensiveLogs(logger: logger,
+                                        count: 2_000,
+                                        privacyIssues: 25,
+                                        errorPatterns: 50)
     }
 
     static func generateLargeDataset(logger: LogRService) async {
-        await generateComprehensiveLogs(
-            logger: logger,
-            count: 5000,
-            privacyIssues: 50,
-            errorPatterns: 100
-        )
+        await generateComprehensiveLogs(logger: logger,
+                                        count: 5_000,
+                                        privacyIssues: 50,
+                                        errorPatterns: 100)
     }
 }

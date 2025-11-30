@@ -84,6 +84,10 @@ struct LogAnalysisView: View {
                         Label("Scan for Privacy Issues", systemImage: "shield.checkered")
                         Spacer()
                         if isAnalyzingPrivacy {
+                            Text("\(logger.analysisProgress?.percentComplete)%")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .contentTransition(.numericText())
                             ProgressView()
                         }
                     }
@@ -112,6 +116,10 @@ struct LogAnalysisView: View {
                         Label("Summarize Issues", systemImage: "doc.text.magnifyingglass")
                         Spacer()
                         if isAnalyzingIssues {
+                            Text("\(logger.analysisProgress?.percentComplete)%")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .contentTransition(.numericText())
                             ProgressView()
                         }
                     }
@@ -367,7 +375,7 @@ struct LogAnalysisView: View {
     private func severityColor(_ severity: String) -> Color {
         switch severity.lowercased() {
         case "critical", "fault": .red
-        case "high", "error": .orange
+        case "error", "high": .orange
         case "medium", "warning": .yellow
         default: .secondary
         }

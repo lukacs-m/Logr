@@ -34,7 +34,7 @@ struct ContentView: View {
         .confirmationDialog("Clear All Logs", isPresented: $showClearConfirmation) {
             Button("Clear All", role: .destructive) {
                 Task {
-                   try? await logger.clearLogs()
+                    try? await logger.clearLogs()
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -69,41 +69,33 @@ struct ContentView: View {
     private var statsSection: some View {
         VStack(spacing: 16) {
             HStack(spacing: 12) {
-                StatCard(
-                    title: "Total Logs",
-                    value: "\(logCount)",
-                    icon: "doc.text.fill",
-                    color: .blue
-                )
+                StatCard(title: "Total Logs",
+                         value: "\(logCount)",
+                         icon: "doc.text.fill",
+                         color: .blue)
 
-                StatCard(
-                    title: "In Memory",
-                    value: "\(logger.recentLogs.count)",
-                    icon: "memorychip.fill",
-                    color: .green
-                )
+                StatCard(title: "In Memory",
+                         value: "\(logger.recentLogs.count)",
+                         icon: "memorychip.fill",
+                         color: .green)
             }
 
             HStack(spacing: 12) {
-                StatCard(
-                    title: "Errors",
-                    value: "\(countLogs(level: .error))",
-                    icon: "exclamationmark.circle.fill",
-                    color: .orange
-                )
+                StatCard(title: "Errors",
+                         value: "\(countLogs(level: .error))",
+                         icon: "exclamationmark.circle.fill",
+                         color: .orange)
 
-                StatCard(
-                    title: "Faults",
-                    value: "\(countLogs(level: .fault))",
-                    icon: "xmark.octagon.fill",
-                    color: .red
-                )
+                StatCard(title: "Faults",
+                         value: "\(countLogs(level: .fault))",
+                         icon: "xmark.octagon.fill",
+                         color: .red)
             }
         }
     }
 
     private func countLogs(level: LogLevel) -> Int {
-        logger.recentLogs.filter { $0.level == level }.count
+        logger.recentLogs.count(where: { $0.level == level })
     }
 
     // MARK: - Quick Actions
@@ -114,27 +106,21 @@ struct ContentView: View {
                 .font(.headline)
 
             HStack(spacing: 12) {
-                ActionButton(
-                    title: "Log Info",
-                    icon: "info.circle.fill",
-                    color: .blue
-                ) {
+                ActionButton(title: "Log Info",
+                             icon: "info.circle.fill",
+                             color: .blue) {
                     logger.info("Quick info log from home", category: .ui)
                 }
 
-                ActionButton(
-                    title: "Log Error",
-                    icon: "exclamationmark.triangle.fill",
-                    color: .orange
-                ) {
+                ActionButton(title: "Log Error",
+                             icon: "exclamationmark.triangle.fill",
+                             color: .orange) {
                     logger.error("Quick error log from home", category: .debug)
                 }
 
-                ActionButton(
-                    title: "Clear All",
-                    icon: "trash.fill",
-                    color: .red
-                ) {
+                ActionButton(title: "Clear All",
+                             icon: "trash.fill",
+                             color: .red) {
                     showClearConfirmation = true
                 }
             }
@@ -169,30 +155,24 @@ struct ContentView: View {
             }
 
             HStack(spacing: 12) {
-                MockDataButton(
-                    title: "Small",
-                    subtitle: "500 logs",
-                    icon: "1.circle.fill",
-                    isDisabled: isGenerating
-                ) {
+                MockDataButton(title: "Small",
+                               subtitle: "500 logs",
+                               icon: "1.circle.fill",
+                               isDisabled: isGenerating) {
                     await generateMockData(.small)
                 }
 
-                MockDataButton(
-                    title: "Medium",
-                    subtitle: "2,000 logs",
-                    icon: "2.circle.fill",
-                    isDisabled: isGenerating
-                ) {
+                MockDataButton(title: "Medium",
+                               subtitle: "2,000 logs",
+                               icon: "2.circle.fill",
+                               isDisabled: isGenerating) {
                     await generateMockData(.medium)
                 }
 
-                MockDataButton(
-                    title: "Large",
-                    subtitle: "5,000 logs",
-                    icon: "3.circle.fill",
-                    isDisabled: isGenerating
-                ) {
+                MockDataButton(title: "Large",
+                               subtitle: "5,000 logs",
+                               icon: "3.circle.fill",
+                               isDisabled: isGenerating) {
                     await generateMockData(.large)
                 }
             }
@@ -254,29 +234,21 @@ struct ContentView: View {
             Text("Features")
                 .font(.headline)
 
-            FeatureRow(
-                icon: "square.and.pencil",
-                title: "Log Demo",
-                description: "Interactive logging at all levels and categories"
-            )
+            FeatureRow(icon: "square.and.pencil",
+                       title: "Log Demo",
+                       description: "Interactive logging at all levels and categories")
 
-            FeatureRow(
-                icon: "list.bullet.rectangle",
-                title: "Log Viewer",
-                description: "Filter, search, and export logs with LogrUI"
-            )
+            FeatureRow(icon: "list.bullet.rectangle",
+                       title: "Log Viewer",
+                       description: "Filter, search, and export logs with LogrUI")
 
-            FeatureRow(
-                icon: "waveform.badge.magnifyingglass",
-                title: "AI Analysis",
-                description: "Privacy scanning and issue summarization (iOS 26+)"
-            )
+            FeatureRow(icon: "waveform.badge.magnifyingglass",
+                       title: "AI Analysis",
+                       description: "Privacy scanning and issue summarization (iOS 26+)")
 
-            FeatureRow(
-                icon: "gear",
-                title: "Settings",
-                description: "Configuration, export options, and storage info"
-            )
+            FeatureRow(icon: "gear",
+                       title: "Settings",
+                       description: "Configuration, export options, and storage info")
         }
     }
 }

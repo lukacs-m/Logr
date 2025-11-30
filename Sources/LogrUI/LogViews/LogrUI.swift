@@ -104,7 +104,7 @@ public struct LogViewer: View {
     @State private var debouncedQuery = ""
     @State private var showError: Error?
     @State private var functionalityFilter = Set(LogViewer.Functionalities.allCases)
-    
+
     enum SheetDestination: Identifiable {
         case filters
         case export
@@ -114,7 +114,7 @@ public struct LogViewer: View {
 
         var id: Self { self }
     }
-    
+
     public enum Functionalities: Equatable, CaseIterable {
         case analyser
         case sharing
@@ -197,7 +197,7 @@ public struct LogViewer: View {
             ExportSheet()
         case .filters:
             FilterSheet()
-            .environment(logFilterPreferences)
+                .environment(logFilterPreferences)
         case .privacyLogChecks:
             if #available(iOS 26.0, macOS 26.0, *) {
                 NavigationStack {
@@ -357,19 +357,19 @@ private extension LogViewer {
                     logFilterPreferences.allExpanded.toggle()
                 }
                 .disabled(logr.recentLogs.isEmpty)
-              
+
                 if functionalityFilter.contains(.statistics) {
                     Button("Logs statistics") {
                         presentedSheet = .statistics
                     }
                     .disabled(logr.recentLogs.isEmpty)
                 }
-                
+
                 Divider()
                 if functionalityFilter.contains(.analyser) {
                     logAnalyzeMenu
                 }
-                
+
                 if functionalityFilter.contains(.sharing) {
                     shareMenu
                 }
@@ -473,7 +473,8 @@ private extension LogViewer {
         logr.recentLogs.filter { entry in
             guard logFilterPreferences.selectedLevels.contains(entry.level) else { return false }
 
-            if !logFilterPreferences.selectedCategories.isEmpty, !logFilterPreferences.selectedCategories.contains(entry.category) {
+            if !logFilterPreferences.selectedCategories.isEmpty,
+               !logFilterPreferences.selectedCategories.contains(entry.category) {
                 return false
             }
 

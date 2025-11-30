@@ -153,14 +153,12 @@ struct LogDemoView: View {
 
             Button {
                 guard !customMessage.isEmpty else { return }
-                logger.log(
-                    level: selectedLevel,
-                    message: customMessage,
-                    category: selectedCategory,
-                    file: #file,
-                    function:  #function,
-                    line: #line
-                )
+                logger.log(level: selectedLevel,
+                           message: customMessage,
+                           category: selectedCategory,
+                           file: #file,
+                           function: #function,
+                           line: #line)
                 customMessage = ""
             } label: {
                 Label("Send Custom Log", systemImage: "paperplane.fill")
@@ -177,7 +175,7 @@ struct LogDemoView: View {
 
     private var batchLoggingSection: some View {
         Section {
-            Stepper("Count: \(batchCount)", value: $batchCount, in: 1 ... 100)
+            Stepper("Count: \(batchCount)", value: $batchCount, in: 1...100)
 
             Button {
                 generateBatchLogs()
@@ -256,14 +254,12 @@ struct LogDemoView: View {
             .fault: "Critical: Database connection lost"
         ]
 
-        logger.log(
-            level: level,
-            message: messages[level] ?? "Sample \(level.displayName) message",
-            category: .system,
-            file: #file,
-            function:  #function,
-            line: #line
-        )
+        logger.log(level: level,
+                   message: messages[level] ?? "Sample \(level.displayName) message",
+                   category: .system,
+                   file: #file,
+                   function: #function,
+                   line: #line)
     }
 
     private func logAllLevels() {
@@ -312,7 +308,7 @@ struct LogDemoView: View {
             "Resource loaded"
         ]
 
-        for i in 0 ..< batchCount {
+        for i in 0..<batchCount {
             let level = levels.randomElement() ?? .info
             let category = categories.randomElement() ?? .system
             let message = messages.randomElement() ?? "Log entry"
@@ -320,7 +316,7 @@ struct LogDemoView: View {
                        message: "\(message) #\(i + 1)",
                        category: category,
                        file: #file,
-                       function:  #function,
+                       function: #function,
                        line: #line)
         }
     }
