@@ -297,14 +297,14 @@ public extension LogRService {
 
             var text = ""
             for log in recentLogs {
-                var line = "[\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] \(log.message)"
+                var line = "\(log.level.visualQueue) [\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] [\(log.file)] \(log.message)"
                 if let metadata = log.metadata, !metadata.isEmpty {
                     let metadataStr = metadata.map { "\($0.key)=\($0.value.stringValue)" }.joined(separator: ", ")
                     line += " {\(metadataStr)}"
                 }
                 text += line + "\n"
             }
-
+         
             baseData = text.data(using: .utf8)
         }
 
@@ -312,7 +312,7 @@ public extension LogRService {
 
         return data
     }
-
+    
     func logStatistics() -> LogStatistics {
         guard !recentLogs.isEmpty else {
             return .empty

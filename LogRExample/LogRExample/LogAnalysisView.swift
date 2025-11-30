@@ -83,8 +83,8 @@ struct LogAnalysisView: View {
                     HStack {
                         Label("Scan for Privacy Issues", systemImage: "shield.checkered")
                         Spacer()
-                        if isAnalyzingPrivacy {
-                            Text("\(logger.analysisProgress?.percentComplete)%")
+                        if isAnalyzingPrivacy, let analysisProgress = logger.analysisProgress {
+                            Text("\(analysisProgress.percentComplete)%")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                                 .contentTransition(.numericText())
@@ -115,8 +115,8 @@ struct LogAnalysisView: View {
                     HStack {
                         Label("Summarize Issues", systemImage: "doc.text.magnifyingglass")
                         Spacer()
-                        if isAnalyzingIssues {
-                            Text("\(logger.analysisProgress?.percentComplete)%")
+                        if isAnalyzingIssues, let analysisProgress = logger.analysisProgress {
+                            Text("\(analysisProgress.percentComplete)%")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                                 .contentTransition(.numericText())
