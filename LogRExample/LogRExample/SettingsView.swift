@@ -248,7 +248,7 @@ struct SettingsView: View {
             DisclosureGroup("Features") {
                 featureItem("OSLog Integration", icon: "apple.terminal.fill")
                 featureItem("SQLite Persistence", icon: "externaldrive.fill")
-                featureItem("AES-256 Encryption or CHACHA", icon: "lock.shield.fill")
+                featureItem("AES-256 or CHACHA Encryption", icon: "lock.shield.fill")
                 featureItem("SwiftUI Log Viewer", icon: "list.bullet.rectangle")
                 featureItem("AI Analysis (iOS 26+)", icon: "brain")
                 featureItem("Export (JSON/CSV/TXT)", icon: "square.and.arrow.up")

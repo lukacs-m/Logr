@@ -299,7 +299,6 @@ private struct ActionButton: View {
             .padding(.vertical, 12)
             .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
         }
-        .buttonStyle(.plain)
     }
 }
 
