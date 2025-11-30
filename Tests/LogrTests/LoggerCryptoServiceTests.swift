@@ -12,7 +12,7 @@ struct LoggerCryptoServiceTests {
         let mockStore = MockKeychainService()
         let cryptoService = LoggerCryptoService(store: mockStore)
 
-        #expect(cryptoService.currentVersion.value.value == 1)
+        #expect(cryptoService.currentKeyVersion.value.value == 1)
     }
 
     @Test("Test crypto service initialization with existing key")
@@ -25,7 +25,7 @@ struct LoggerCryptoServiceTests {
         // Second initialization should load existing key
         let cryptoService2 = LoggerCryptoService(store: mockStore)
 
-        #expect(cryptoService2.currentVersion.value.value == 1)
+        #expect(cryptoService2.currentKeyVersion.value.value == 1)
     }
 
     // MARK: - Encryption Tests
@@ -217,7 +217,7 @@ struct LoggerCryptoServiceTests {
         let mockStore = MockKeychainService()
         let cryptoService = LoggerCryptoService(store: mockStore)
 
-        #expect(cryptoService.currentVersion.value.value == 1)
+        #expect(cryptoService.currentKeyVersion.value.value == 1)
 
         // Encrypt with version 1
         let originalText = "Test message"
@@ -226,7 +226,7 @@ struct LoggerCryptoServiceTests {
         // Rotate key
         try cryptoService.rotateKey(removeOldKeys: false)
 
-        #expect(cryptoService.currentVersion.value.value == 2)
+        #expect(cryptoService.currentKeyVersion.value.value == 2)
 
         // Should still be able to decrypt old data
         let decryptedText: String = try cryptoService.symmetricDecrypt(encryptedData: encryptedV1)
@@ -250,7 +250,7 @@ struct LoggerCryptoServiceTests {
         // Rotate key and remove old key
         try cryptoService.rotateKey(removeOldKeys: true)
 
-        #expect(cryptoService.currentVersion.value.value == 2)
+        #expect(cryptoService.currentKeyVersion.value.value == 2)
 
         // New encryption should work
         let encryptedV2 = try cryptoService.symmetricEncrypt(object: originalText)
@@ -263,15 +263,15 @@ struct LoggerCryptoServiceTests {
         let mockStore = MockKeychainService()
         let cryptoService = LoggerCryptoService(store: mockStore)
 
-        #expect(cryptoService.currentVersion.value.value == 1)
+        #expect(cryptoService.currentKeyVersion.value.value == 1)
 
         for i in 2...5 {
             try cryptoService.rotateKey(removeOldKeys: false)
-            #expect(cryptoService.currentVersion.value.value == i)
+            #expect(cryptoService.currentKeyVersion.value.value == i)
         }
 
         // Should be at version 5
-        #expect(cryptoService.currentVersion.value.value == 5)
+        #expect(cryptoService.currentKeyVersion.value.value == 5)
     }
 
     // MARK: - Error Handling Tests
