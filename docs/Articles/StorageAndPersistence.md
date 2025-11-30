@@ -1,16 +1,25 @@
+---
+layout: default
+title: Storage and Persistence
+nav_order: 4
+parent: Logr Documentation
+---
+
 # Storage and Persistence
 
-Learn about LogR's storage options and how to implement custom storage backends.
+Learn about Logr's storage options and how to implement custom storage backends.
+
+[← Back to Documentation](../index.md)
 
 ## Overview
 
-LogR provides flexible storage options for persisting logs. All stored logs are automatically encrypted using ChaCha20-Poly1305 with keys stored securely in the Keychain.
+Logr provides flexible storage options for persisting logs. All stored logs are automatically encrypted using ChaCha20-Poly1305 with keys stored securely in the Keychain.
 
 ## Storage Options
 
 ### No Storage (OSLog Only)
 
-Use LogR without persistent storage:
+Use Logr without persistent storage:
 
 ```swift
 let logger = LogR()
@@ -63,7 +72,6 @@ let logger = LogR(storage: SQLiteStorage())
 ```
 
 **Features:**
-- Powered by GRDB.swift
 - Optimized for mobile devices
 - Efficient querying
 - Automatic indexing
@@ -131,7 +139,7 @@ let logger = LogR(storage: storage)
 
 ## Custom Storage Implementation
 
-Implement the ``LogRPersistence`` protocol for custom storage:
+Implement the `LogRPersistence` protocol for custom storage:
 
 ```swift
 import Logr
@@ -297,7 +305,7 @@ class MyStorage: LogRPersistence {
         do {
             try await performStorage(entry)
         } catch {
-            // Log error (to OSLog, not LogR to avoid recursion)
+            // Log error (to OSLog, not Logr to avoid recursion)
             print("Storage error: \(error)")
 
             // Optionally retry
@@ -413,10 +421,16 @@ func fetchEntries() async throws -> [EncryptedLogEntry] {
 
 ## Summary
 
-LogR provides flexible storage options:
+Logr provides flexible storage options:
 
 - **FileSystem**: Simple, inspectable, good for moderate volumes
 - **SQLite**: Fast, scalable, recommended for production
-- **Custom**: Implement ``LogRPersistence`` for any backend
+- **Custom**: Implement `LogRPersistence` for any backend
 
 All storage is automatically encrypted with ChaCha20-Poly1305 and keys stored in Keychain for maximum security.
+
+## Related Documentation
+
+- [Architecture](Architecture.md) - How storage fits in the system
+- [Privacy and Security](PrivacyAndSecurity.md) - Encryption details
+- [Getting Started](GettingStarted.md) - Basic setup

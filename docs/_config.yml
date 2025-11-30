@@ -1,0 +1,35 @@
+# Logr Documentation - GitHub Pages Configuration
+title: Logr
+description: A powerful, persistent logging library for Apple platforms
+baseurl: ""
+url: ""
+
+# Theme
+remote_theme: pages-themes/minimal@v0.2.0
+plugins:
+  - jekyll-remote-theme
+
+# Markdown
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  hard_wrap: false
+
+# Navigation
+header_pages:
+  - index.md
+  - Articles/GettingStarted.md
+  - Articles/Architecture.md
+  - Articles/StorageAndPersistence.md
+  - Articles/PrivacyAndSecurity.md
+  - Articles/AIAnalysis.md
+  - Articles/SwiftUIIntegration.md
+  - Articles/TestingAndMocking.md
+
+# Exclude
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor

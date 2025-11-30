@@ -1,10 +1,19 @@
+---
+layout: default
+title: SwiftUI Integration
+nav_order: 7
+parent: Logr Documentation
+---
+
 # SwiftUI Integration
 
-Learn how to integrate LogR with SwiftUI and use the powerful LogViewer component.
+Learn how to integrate Logr with SwiftUI and use the powerful LogViewer component.
+
+[← Back to Documentation](../index.md)
 
 ## Overview
 
-LogR is designed with SwiftUI in mind, providing seamless integration through the environment system and a full-featured log viewer component.
+Logr is designed with SwiftUI in mind, providing seamless integration through the environment system and a full-featured log viewer component.
 
 ## Environment Integration
 
@@ -29,7 +38,7 @@ struct MyApp: App {
 }
 ```
 
-The logr service should always be set in the environment previously before calling any of the logging display views. 
+The logr service should always be set in the environment previously before calling any of the logging display views.
 
 ### Accessing the Logger
 
@@ -40,7 +49,7 @@ import SwiftUI
 import Logr
 
 struct ContentView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     var body: some View {
         Button("Test") {
@@ -52,7 +61,7 @@ struct ContentView: View {
 
 ## LogViewer Component
 
-The ``LogViewer`` provides a complete log viewing interface.
+The `LogViewer` provides a complete log viewing interface.
 
 ### Basic Usage
 
@@ -167,7 +176,7 @@ Export logs in multiple formats:
 
 **Programmatic Export:**
 ```swift
-@Environment(\.logr) private var logger
+@Environment(\.logService) private var logger
 
 func exportLogs() {
     if let jsonData = logger.exportLogs(format: .json) {
@@ -213,7 +222,7 @@ Create a minimal log viewer:
 
 ```swift
 struct SimpleLogView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     var body: some View {
         List(logger.recentLogs) { entry in
@@ -240,7 +249,7 @@ Show only specific logs:
 
 ```swift
 struct ErrorLogView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     private var errorLogs: [LogEntry] {
         logger.recentLogs.filter { entry in
@@ -279,7 +288,7 @@ Show logs for a specific category:
 
 ```swift
 struct NetworkLogView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     private var networkLogs: [LogEntry] {
         logger.recentLogs.filter { entry in
@@ -302,7 +311,7 @@ Watch logs in real-time:
 
 ```swift
 struct LogStreamView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
     @State private var scrollToBottom = false
 
     var body: some View {
@@ -331,7 +340,7 @@ struct LogStreamView: View {
 
 ## Observable Updates
 
-LogR uses `@Observable` for automatic SwiftUI updates:
+Logr uses `@Observable` for automatic SwiftUI updates:
 
 ```swift
 @Observable
@@ -359,7 +368,7 @@ Views update automatically when logs change:
 
 ```swift
 struct LogCountView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     var body: some View {
         // Updates automatically when recentLogs changes
@@ -374,7 +383,7 @@ Show log counts in your UI:
 
 ```swift
 struct TabViewWithBadge: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     private var errorCount: Int {
         logger.recentLogs.filter { $0.level == .error || $0.level == .fault }.count
@@ -403,7 +412,7 @@ Add a debug menu to your app:
 
 ```swift
 struct ContentView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
     @State private var showDebugMenu = false
 
     var body: some View {
@@ -432,7 +441,7 @@ struct ContentView: View {
 }
 
 struct DebugMenuView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -488,7 +497,7 @@ struct DebugMenuView: View {
 
 ## Testing in SwiftUI Previews
 
-Use ``MockLogR`` for previews:
+Use `MockLogR` for previews:
 
 ```swift
 #Preview {
@@ -589,4 +598,10 @@ SwiftUI integration provides:
 ✅ **Customizable** - Build your own log views
 ✅ **Debug-Friendly** - Perfect for development and testing
 
-The ``LogViewer`` component gives you a production-ready log viewing interface with zero configuration required.
+The `LogViewer` component gives you a production-ready log viewing interface with zero configuration required.
+
+## Related Documentation
+
+- [Getting Started](GettingStarted.md) - Initial setup
+- [Testing and Mocking](TestingAndMocking.md) - Using MockLogR in previews
+- [AI Analysis](AIAnalysis.md) - AI features in LogViewer

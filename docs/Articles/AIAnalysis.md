@@ -1,10 +1,19 @@
+---
+layout: default
+title: AI Analysis
+nav_order: 6
+parent: Logr Documentation
+---
+
 # AI Analysis Features
 
 Learn how to use Apple Intelligence to analyze logs for privacy issues and summarize critical problems.
 
+[← Back to Documentation](../index.md)
+
 ## Overview
 
-LogR integrates with Apple Intelligence (iOS 26+) to provide powerful AI-powered log analysis. These features help you identify privacy violations and understand patterns in your logs automatically.
+Logr integrates with Apple Intelligence (iOS 26+) to provide powerful AI-powered log analysis. These features help you identify privacy violations and understand patterns in your logs automatically.
 
 ## Availability
 
@@ -37,7 +46,7 @@ if #available(iOS 26.0, *) {
 ### Check Availability at Runtime
 
 ```swift
-@Environment(\.logr) private var logger
+@Environment(\.logService) private var logger
 
 var body: some View {
     VStack {
@@ -118,7 +127,7 @@ if #available(iOS 26.0, *) {
 
 ### Privacy Analysis Result
 
-The ``PrivacyAnalysisResult`` contains:
+The `PrivacyAnalysisResult` contains:
 
 ```swift
 public struct PrivacyAnalysisResult {
@@ -138,7 +147,7 @@ public struct PrivacyAnalysisResult {
 
 ### Privacy Warning Details
 
-Each ``PrivacyWarning`` includes:
+Each `PrivacyWarning` includes:
 
 ```swift
 public struct PrivacyWarning {
@@ -228,7 +237,7 @@ if #available(iOS 26.0, *) {
 
 ### Log Issue Summary
 
-The ``LogIssueSummary`` contains:
+The `LogIssueSummary` contains:
 
 ```swift
 public struct LogIssueSummary {
@@ -281,7 +290,7 @@ Affected Categories:
 
 ## In SwiftUI (LogViewer)
 
-The ``LogViewer`` automatically integrates AI features when available:
+The `LogViewer` automatically integrates AI features when available:
 
 ```swift
 import LogrUI
@@ -313,7 +322,7 @@ class CustomAIAnalyzer: LogAIAnalyzer {
         // Send logs to your AI service
         let response = try await MyAIService.analyzePrivacy(logs: logs)
 
-        // Convert to LogR format
+        // Convert to Logr format
         return PrivacyAnalysisResult(
             privacyScore: response.score,
             warnings: response.warnings.map { warning in
@@ -437,7 +446,7 @@ func runPreReleaseChecks() async throws {
 
 ```swift
 func logAnalysisResults(_ result: PrivacyAnalysisResult) {
-    // Don't log to LogR (would create recursion)
+    // Don't log to Logr (would create recursion)
     // Use system logging instead
     let osLog = OSLog(subsystem: "com.myapp", category: "privacy-analysis")
 
@@ -507,3 +516,9 @@ AI analysis features provide:
 ✅ **Extensible** - Implement custom analyzers for other AI services
 
 Use AI analysis to maintain log hygiene, protect user privacy, and quickly identify critical issues in your application.
+
+## Related Documentation
+
+- [Privacy and Security](PrivacyAndSecurity.md) - Privacy best practices
+- [SwiftUI Integration](SwiftUIIntegration.md) - LogViewer with AI features
+- [Getting Started](GettingStarted.md) - Basic setup
