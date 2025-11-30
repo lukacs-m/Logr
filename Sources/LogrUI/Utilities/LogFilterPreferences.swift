@@ -213,11 +213,15 @@ extension [LogEntry] {
         let calendar = Calendar.current
         let now = Date()
         let todayStart = calendar.startOfDay(for: now)
-        let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart)!
+        let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart)
         let thisWeekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear],
-                                                                        from: now))!
-        let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart)!
-        let thisMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
+                                                                        from: now))
+        let lastWeekStart: Date? = if let thisWeekStart {
+            calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart)
+        } else {
+            nil
+        }
+        let thisMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))
 
         var groups: [String: [LogEntry]] = [:]
         let order = ["today", "yesterday", "thisWeek", "lastWeek", "thisMonth", "older"]
@@ -225,13 +229,13 @@ extension [LogEntry] {
         for entry in self {
             let key = if entry.timestamp >= todayStart {
                 "today"
-            } else if entry.timestamp >= yesterdayStart {
+            } else if let yesterdayStart, entry.timestamp >= yesterdayStart {
                 "yesterday"
-            } else if entry.timestamp >= thisWeekStart {
+            } else if let thisWeekStart, entry.timestamp >= thisWeekStart {
                 "thisWeek"
-            } else if entry.timestamp >= lastWeekStart {
+            } else if let lastWeekStart, entry.timestamp >= lastWeekStart {
                 "lastWeek"
-            } else if entry.timestamp >= thisMonthStart {
+            } else if let thisMonthStart, entry.timestamp >= thisMonthStart {
                 "thisMonth"
             } else {
                 "older"
