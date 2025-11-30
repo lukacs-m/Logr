@@ -8,6 +8,7 @@ import OSLog
 @MainActor
 public final class LogR: LogRService, Sendable {
     public private(set) var recentLogs: Deque<LogEntry>
+    public let configuration: LogrConfiguration
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public var privacyAnalysisResult: PrivacyAnalysisResult? {
@@ -19,8 +20,19 @@ public final class LogR: LogRService, Sendable {
         _logIssueSummary as? LogIssueSummary
     }
 
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public var analysisProgress: AnalysisProgress? {
+        _analysisProgress as? AnalysisProgress
+    }
+
+    public var canAnalyseLogs: Bool {
+        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *), let analyser else {
+            return false
+        }
+        return analyser.isAvailable
+    }
+
     private let storage: LogRPersistence?
-    private let configuration: LogrConfiguration
     private let cryptoService: any LoggerCryptoServicing
 
     @ObservationIgnored
@@ -35,18 +47,15 @@ public final class LogR: LogRService, Sendable {
 
     private var _logIssueSummary: (any SendableMetatype)?
     private var _privacyAnalysisResult: (any SendableMetatype)?
+    private var _analysisProgress: (any SendableMetatype)?
     private var _analyser: (any SendableMetatype)?
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     private var analyser: LogAIAnalyzer? {
         _analyser as? LogAIAnalyzer
     }
 
-    public var canAnalyseLogs: Bool {
-        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *), let analyser else {
-            return false
-        }
-        return analyser.isAvailable
-    }
+    @ObservationIgnored
+    private nonisolated(unsafe) var progressTask: Task<Void, Never>?
 
     public init(storage: LogRPersistence? = nil,
                 cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
@@ -81,8 +90,9 @@ public final class LogR: LogRService, Sendable {
                     category: LogCategory,
                     file: String = #file,
                     function: String = #function,
-                    line: Int = #line) {
-        guard shouldLog(level: level) else { return }
+                    line: Int = #line,
+                    metadata: [String: LogMetadataValue]? = nil) {
+        guard shouldLog(level: level, category: category) else { return }
 
         let message = message()
 
@@ -92,7 +102,8 @@ public final class LogR: LogRService, Sendable {
                              message: message,
                              file: file,
                              function: function,
-                             line: line)
+                             line: line,
+                             metadata: metadata)
 
         let categoryLogger = getLogger(for: category)
 
@@ -130,10 +141,6 @@ public extension LogR {
         recentLogs.removeAll()
     }
 
-    func exportLogs(format: ExportFormat = .json) -> Data? {
-        encode(for: format)
-    }
-
     func flush() async {
         guard let writer else {
             return
@@ -151,12 +158,20 @@ public extension LogR {
         guard let analyser else {
             throw AIAnalyzerError.missingAnalyzer
         }
-        let result = if recentLogs.isEmpty {
+
+        // Reset progress at start
+        _analysisProgress = AnalysisProgress.starting(totalLogs: recentLogs.count)
+
+        let result: PrivacyAnalysisResult = if recentLogs.isEmpty {
             PrivacyAnalysisResult.empty
         } else {
-            try await analyser.scanForPrivacyIssues(logs: recentLogs.toArray)
+            try await analyser.scanForPrivacyIssues(logs: recentLogs.toArray) { [weak self] progress in
+                self?.updateProgress(progress: progress)
+            }
         }
 
+        // Clear progress when complete
+        _analysisProgress = nil
         _privacyAnalysisResult = result
         return result
     }
@@ -165,12 +180,20 @@ public extension LogR {
         guard let analyser else {
             throw AIAnalyzerError.missingAnalyzer
         }
-        let result = if recentLogs.isEmpty {
+
+        // Reset progress at start
+        _analysisProgress = AnalysisProgress.starting(totalLogs: recentLogs.count)
+
+        let result: LogIssueSummary = if recentLogs.isEmpty {
             LogIssueSummary.empty
         } else {
-            try await analyser.summarizeIssues(logs: recentLogs.toArray)
+            try await analyser.summarizeIssues(logs: recentLogs.toArray) { [weak self] progress in
+                self?.updateProgress(progress: progress)
+            }
         }
 
+        // Clear progress when complete
+        _analysisProgress = nil
         _logIssueSummary = result
         return result
     }
@@ -240,8 +263,21 @@ private extension LogR {
         cleanupTimer = nil
     }
 
-    func shouldLog(level: LogLevel) -> Bool {
-        configuration.enabledLevels.contains(level)
+    func shouldLog(level: LogLevel, category: LogCategory) -> Bool {
+        // Check category-specific minimum level override first
+        if let minLevel = configuration.categoryLevelOverrides?[category] {
+            return level.priority >= minLevel.priority
+        }
+        // Fall back to global enabled levels
+        return configuration.enabledLevels.contains(level)
+    }
+
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    nonisolated func updateProgress(progress: AnalysisProgress) {
+        progressTask?.cancel()
+        progressTask = Task { @MainActor in
+            _analysisProgress = progress
+        }
     }
 }
 
@@ -256,46 +292,6 @@ private extension LogR {
             recentLogs.append(contentsOf: logs)
         } catch {
             getLogger(for: .system).error("Failed to load recent logs: \(error.localizedDescription)")
-        }
-    }
-}
-
-// MARK: - Export
-
-private extension LogR {
-    // TODO: check other for export formatting
-    func encode(for exportFormat: ExportFormat) -> Data? {
-        guard !recentLogs.isEmpty else { return nil }
-        switch exportFormat {
-        case .json:
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            return try? encoder.encode(recentLogs)
-
-        case .csv:
-            var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line\n"
-            let formatter = ISO8601DateFormatter()
-
-            for log in recentLogs {
-                let timestamp = formatter.string(from: log.timestamp)
-                let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
-                csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line)\n"
-            }
-
-            return csv.data(using: .utf8)
-
-        case .txt:
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            formatter.timeStyle = .long
-
-            var text = ""
-            for log in recentLogs {
-                text += "[\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] \(log.message)\n"
-            }
-
-            return text.data(using: .utf8)
         }
     }
 }

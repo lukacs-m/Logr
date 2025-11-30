@@ -12,6 +12,9 @@ public struct PrivacyWarningsView: View {
     public var body: some View {
         mainContent
             .navigationTitle("Privacy Warnings")
+            .toolbar {
+                toolbarContent
+            }
             .overlay {
                 overlayContent
             }
@@ -36,13 +39,14 @@ public struct PrivacyWarningsView: View {
         .cornerRadius(8)
     }
 
-    private func loadData() async {
+    private func loadData(reload: Bool = false) async {
+        guard reload || logr.privacyAnalysisResult == nil else {
+            return
+        }
         defer { loading = false }
 
         do {
-            if logr.privacyAnalysisResult == nil {
-                loading = true
-            }
+            loading = true
             try await logr.scanForPrivacyIssues()
         } catch {
             showError = error
@@ -144,6 +148,21 @@ private extension PrivacyWarningsView {
                 }
                 .padding(.horizontal, 16)
             } actions: {}
+        }
+    }
+}
+
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+private extension PrivacyWarningsView {
+    var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            if logr.privacyAnalysisResult != nil {
+                Button("ReScan") {
+                    Task {
+                        await loadData(reload: true)
+                    }
+                }
+            }
         }
     }
 }

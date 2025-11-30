@@ -170,22 +170,31 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let cacheKeys: any MutexProtected<[KeyVersion: SymmetricKey]> = SafeMutex.create([:])
-
-    let currentVersion: any MutexProtected<KeyVersion> = SafeMutex.create(.default)
+    private let encryptionAlgo: CryptoAlgo
+    
+    let currentKeyVersion: any MutexProtected<KeyVersion> = SafeMutex.create(.default)
 
     /// Private envelope to store encrypted data with key version
     private struct CryptoEnvelope: Codable {
         let version: Int
         let data: Data
+        let algorithm: CryptoAlgo
     }
 
+    public enum CryptoAlgo: Sendable, Codable {
+        case chacha
+        case aes256gcm
+    }
+    
     // MARK: - Init
 
-    public init(store: KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore")) {
+    public init(store: KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
+                encryptionAlgo: CryptoAlgo = .aes256gcm) {
         self.store = store
+        self.encryptionAlgo = encryptionAlgo
         if let versionData = try? store.data(forKey: currentKeyRef),
            let version = try? decoder.decode(KeyVersion.self, from: versionData) {
-            currentVersion.modify {
+            currentKeyVersion.modify {
                 $0 = version
             }
         } else {
@@ -194,7 +203,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
                 let key = try Self.generateKey(version: newKeyVersion, store: store, keyPrefix: keyPrefix,
                                                keySize: keySize)
                 try store.set(encoder.encode(newKeyVersion), forKey: currentKeyRef)
-                currentVersion.modify {
+                currentKeyVersion.modify {
                     $0 = newKeyVersion
                 }
                 cacheKeys.modify {
@@ -207,14 +216,16 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
     }
 
     public func symmetricEncrypt(object: some Codable) throws -> Data {
-        guard let symmetricKey = try loadKey(version: currentVersion.value) else {
-            throw LoggerCryptoError.keyNotFound(version: currentVersion.value.value)
+        guard let symmetricKey = try loadKey(version: currentKeyVersion.value) else {
+            throw LoggerCryptoError.keyNotFound(version: currentKeyVersion.value.value)
         }
 
         let payload = try encoder.encode(object)
-        let encryptedPayload = try symmetricKey.encrypt(payload)
+        guard let encryptedPayload = try symmetricKey.encrypt(payload, algo: encryptionAlgo) else {
+            throw LoggerCryptoError.encryptionFailed
+        }
 
-        let envelope = CryptoEnvelope(version: currentVersion.value.value, data: encryptedPayload)
+        let envelope = CryptoEnvelope(version: currentKeyVersion.value.value, data: encryptedPayload, algorithm: encryptionAlgo)
         return try encoder.encode(envelope)
     }
 
@@ -226,24 +237,24 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
             throw LoggerCryptoError.keyNotFound(version: version.value)
         }
 
-        let decryptedData = try symmetricKey.decrypt(envelope.data)
+        let decryptedData = try symmetricKey.decrypt(envelope.data, algo: envelope.algorithm)
         return try decoder.decode(T.self, from: decryptedData)
     }
 
     // MARK: - Rotation
 
     public func rotateKey(removeOldKeys: Bool = false) throws {
-        let newVersion = KeyVersion(currentVersion.value.value + 1)
+        let newVersion = KeyVersion(currentKeyVersion.value.value + 1)
         let newKey = try Self.generateKey(version: newVersion, store: store, keyPrefix: keyPrefix,
                                           keySize: keySize)
         try store.set(encoder.encode(newVersion), forKey: currentKeyRef)
         if removeOldKeys {
-            try? store.remove(forKey: keyName(for: currentVersion.value))
+            try? store.remove(forKey: keyName(for: currentKeyVersion.value))
             cacheKeys.modify {
-                $0.removeValue(forKey: currentVersion.value)
+                $0.removeValue(forKey: currentKeyVersion.value)
             }
         }
-        currentVersion.modify {
+        currentKeyVersion.modify {
             $0 = newVersion
         }
         cacheKeys.modify {
@@ -294,12 +305,23 @@ private extension Data {
 }
 
 private extension SymmetricKey {
-    func encrypt(_ clearData: Data) throws -> Data {
-        try ChaChaPoly.seal(clearData, using: self).combined
+    func encrypt(_ clearData: Data, algo: LoggerCryptoService.CryptoAlgo) throws -> Data? {
+        switch algo {
+        case .chacha:
+            try ChaChaPoly.seal(clearData, using: self).combined
+        case .aes256gcm:
+            try AES.GCM.seal(clearData, using: self).combined
+        }
     }
 
-    func decrypt(_ cypherData: Data) throws -> Data {
-        let sealedBox = try ChaChaPoly.SealedBox(combined: cypherData)
-        return try ChaChaPoly.open(sealedBox, using: self)
+    func decrypt(_ cypherData: Data, algo: LoggerCryptoService.CryptoAlgo) throws -> Data {
+        switch algo {
+        case .chacha:
+            let sealedBox = try ChaChaPoly.SealedBox(combined: cypherData)
+            return try ChaChaPoly.open(sealedBox, using: self)
+        case .aes256gcm:
+            let sealedBox = try AES.GCM.SealedBox(combined: cypherData)
+            return try AES.GCM.open(sealedBox, using: self)
+        }
     }
 }

@@ -70,13 +70,15 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 /// ## Topics
 ///
 /// ### Creating Configuration
-/// - ``init(maxLogEntries:maxLogAge:enabledLevels:subsystem:cleanupInterval:logVerbosity:)``
+/// -
+/// ``init(maxLogEntries:maxLogAge:enabledLevels:categoryLevelOverrides:subsystem:cleanupInterval:logVerbosity:)``
 /// - ``default``
 ///
 /// ### Properties
 /// - ``maxLogEntries``
 /// - ``maxLogAge``
 /// - ``enabledLevels``
+/// - ``categoryLevelOverrides``
 /// - ``subsystem``
 /// - ``cleanupInterval``
 /// - ``logVerbosity``
@@ -108,6 +110,26 @@ public struct LogrConfiguration: Sendable, Codable {
     /// ```
     public let enabledLevels: Set<LogLevel>
 
+    /// Per-category minimum log level overrides.
+    ///
+    /// Allows fine-grained control over which log levels are enabled
+    /// for specific categories. When a category has an override, only
+    /// logs at or above the specified level will be processed.
+    ///
+    /// This takes precedence over `enabledLevels` for matching categories.
+    ///
+    /// ## Example
+    /// ```swift
+    /// let config = LogrConfiguration(
+    ///     enabledLevels: [.warning, .error, .fault],
+    ///     categoryLevelOverrides: [
+    ///         .network: .debug,     // Verbose network logging
+    ///         .ui: .error           // Only errors for UI
+    ///     ]
+    /// )
+    /// ```
+    public let categoryLevelOverrides: [LogCategory: LogLevel]?
+
     /// OSLog subsystem identifier for this logger.
     ///
     /// Typically your app's bundle identifier. This appears in Console.app
@@ -137,18 +159,22 @@ public struct LogrConfiguration: Sendable, Codable {
     ///   - maxLogEntries: Maximum log entries to keep. Default: 10,000
     ///   - maxLogAge: Maximum age in seconds. Default: 7 days
     ///   - enabledLevels: Which log levels to process. Default: All levels
+    ///   - categoryLevelOverrides: Per-category minimum log level overrides. Default: Empty
     ///   - subsystem: OSLog subsystem identifier. Default: Bundle identifier
     ///   - cleanupInterval: Cleanup frequency in seconds. Default: 1 hour
     ///   - logVerbosity: Output verbosity. Default: `.verbose`
     public init(maxLogEntries: Int = LogrConfiguration.default.maxLogEntries,
                 maxLogAge: TimeInterval = LogrConfiguration.default.maxLogAge,
                 enabledLevels: Set<LogLevel> = LogrConfiguration.default.enabledLevels,
+                categoryLevelOverrides: [LogCategory: LogLevel]? = LogrConfiguration.default
+                    .categoryLevelOverrides,
                 subsystem: String = LogrConfiguration.default.subsystem,
                 cleanupInterval: TimeInterval = LogrConfiguration.default.cleanupInterval,
                 logVerbosity: LogVerbosity = LogrConfiguration.default.logVerbosity) {
         self.maxLogEntries = maxLogEntries
         self.maxLogAge = maxLogAge
         self.enabledLevels = enabledLevels
+        self.categoryLevelOverrides = categoryLevelOverrides
         self.subsystem = subsystem
         self.cleanupInterval = cleanupInterval
         self.logVerbosity = logVerbosity
@@ -160,12 +186,14 @@ public struct LogrConfiguration: Sendable, Codable {
     /// - 10,000 max log entries
     /// - 7 day retention
     /// - All log levels enabled
+    /// - No per-category overrides
     /// - Bundle identifier as subsystem
     /// - 1 hour cleanup interval
     /// - Verbose output with source locations
     public static let `default` = LogrConfiguration(maxLogEntries: 10_000,
                                                     maxLogAge: 7 * 24 * 60 * 60,
                                                     enabledLevels: Set(LogLevel.allCases),
+                                                    categoryLevelOverrides: nil,
                                                     subsystem: Bundle.main.bundleIdentifier ?? "com.logr.default",
                                                     cleanupInterval: 60 * 60,
                                                     logVerbosity: .verbose)

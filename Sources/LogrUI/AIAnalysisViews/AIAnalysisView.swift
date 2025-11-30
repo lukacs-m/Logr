@@ -197,32 +197,13 @@ public struct AIAnalysisView: View {
     }
 }
 
-struct AnalyzeProcessingView: View {
-    var body: some View {
-        VStack(spacing: 24) {
-            ProgressView()
-                .scaleEffect(1.5)
-
-            VStack(spacing: 8) {
-                Text("Analyzing Logs")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-
-                Text("AI Intelligence tool is processing your logs...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
 // MARK: - Preview
 
-// @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-// #Preview("Analyzing State") {
-//    @Previewable @State var mock = MockLogR()
-//    NavigationStack {
-//        AIAnalysisView()
-//            .environment(\.logService, mock)
-//    }
-// }
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+#Preview("Analyzing State") {
+    @Previewable @State var mock = MockLogR()
+    NavigationStack {
+        AIAnalysisView()
+            .environment(\.logService, mock)
+    }
+}

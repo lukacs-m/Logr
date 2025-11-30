@@ -12,6 +12,9 @@ public struct IssueSummaryView: View {
     public var body: some View {
         mainContent
             .navigationTitle("Issue Summary")
+            .toolbar {
+                toolbarContent
+            }
             .overlay {
                 overlayContent
             }
@@ -30,13 +33,14 @@ public struct IssueSummaryView: View {
         }
     }
 
-    private func loadData() async {
+    private func loadData(reload: Bool = false) async {
+        guard reload || logr.logIssueSummary == nil else {
+            return
+        }
         defer { loading = false }
 
         do {
-            if logr.logIssueSummary == nil {
-                loading = true
-            }
+            loading = true
             try await logr.summarizeIssues()
         } catch {
             showError = error
@@ -128,6 +132,21 @@ private extension IssueSummaryView {
             Section("All Issues (\(summary.issues.count))") {
                 ForEach(summary.issues) { issue in
                     IssueRow(issue: issue)
+                }
+            }
+        }
+    }
+}
+
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+private extension IssueSummaryView {
+    var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            if logr.logIssueSummary != nil {
+                Button("ReScan") {
+                    Task {
+                        await loadData(reload: true)
+                    }
                 }
             }
         }

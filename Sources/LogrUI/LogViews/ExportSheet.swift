@@ -16,7 +16,7 @@ struct ExportSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                exportFromatSection
+                exportFormatSection
                 exportingActionsSection
             }
             .navigationTitle("Export Logs")
@@ -30,7 +30,6 @@ struct ExportSheet: View {
         }
     }
 
-    // TODO: export in model or service
     private func exportLogs(format: ExportFormat) {
         do {
             guard let data = logr.exportLogs(format: format) else {
@@ -54,7 +53,7 @@ struct ExportSheet: View {
 // MARK: - Sections
 
 private extension ExportSheet {
-    var exportFromatSection: some View {
+    var exportFormatSection: some View {
         Section("Export Format") {
             ForEach(ExportFormat.allCases) { format in
                 Button {

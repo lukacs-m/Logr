@@ -10,7 +10,7 @@ import SwiftUI
 
 // MARK: - Environment Key and Values
 
-extension EnvironmentValues {
+public extension EnvironmentValues {
     #if DEBUG
     @Entry var logService: LogRService = MockLogR()
     #else
@@ -27,7 +27,7 @@ public struct LogRServiceModifier: ViewModifier {
     }
 }
 
-extension View {
+public extension View {
     /// Injects a LogRService into the SwiftUI environment
     func logRService(_ service: LogRService) -> some View {
         modifier(LogRServiceModifier(service: service))
