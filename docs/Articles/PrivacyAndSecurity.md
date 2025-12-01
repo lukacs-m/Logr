@@ -1,10 +1,19 @@
+---
+layout: default
+title: Privacy and Security
+nav_order: 5
+parent: Logr Documentation
+---
+
 # Privacy and Security
 
-Learn how LogR protects sensitive data through encryption and privacy-first design.
+Learn how Logr protects sensitive data through encryption and privacy-first design.
+
+[← Back to Documentation](../index.md)
 
 ## Overview
 
-LogR is built with privacy and security as first-class concerns, providing automatic encryption, secure key management, and privacy-aware logging practices.
+Logr is built with privacy and security as first-class concerns, providing automatic encryption, secure key management, and privacy-aware logging practices.
 
 ## Encryption
 
@@ -60,7 +69,7 @@ logger.info("User action") // Automatically encrypted before storage
 
 ## Key Management
 
-Encryption keys are managed securely by the ``LoggerCryptoService``.
+Encryption keys are managed securely by the `LoggerCryptoService`.
 
 ### Key Storage
 
@@ -125,7 +134,7 @@ try cryptoService.rotateKey(removeOldKeys: true)
 
 ## Custom Encryption
 
-Implement your own encryption by conforming to ``LoggerCryptoServicing``:
+Implement your own encryption by conforming to `LoggerCryptoServicing`:
 
 ```swift
 import CryptoKit
@@ -239,9 +248,9 @@ let paymentLog = PaymentLog(
 logger.info("Payment processed: \(paymentLog)", category: .payment)
 ```
 
-### LogR's Approach
+### Logr's Approach
 
-LogR logs everything to OSLog as-is, relying on iOS's default privacy behavior for OSLog output in Console.app. However, **persistent storage is always encrypted**.
+Logr logs everything to OSLog as-is, relying on iOS's default privacy behavior for OSLog output in Console.app. However, **persistent storage is always encrypted**.
 
 ```swift
 logger.info("Sensitive data: \(data)")
@@ -270,13 +279,13 @@ if #available(iOS 26.0, *) {
 }
 ```
 
-See <doc:AIAnalysis> for details.
+See [AI Analysis](AIAnalysis.md) for details.
 
 ## Compliance
 
 ### GDPR Compliance
 
-LogR supports GDPR requirements:
+Logr supports GDPR requirements:
 
 **Right to Erasure:**
 ```swift
@@ -300,7 +309,7 @@ if let jsonData = logger.exportLogs(format: .json) {
 
 ### SOC 2 Compliance
 
-LogR supports audit requirements:
+Logr supports audit requirements:
 
 **Audit Trail:**
 ```swift
@@ -431,7 +440,7 @@ logger.info("Health data accessed", category: .custom("healthcare"))
 
 ## Threat Model
 
-### What LogR Protects Against
+### What Logr Protects Against
 
 ✅ **Unauthorized Access to Storage**
 - All logs encrypted at rest
@@ -449,10 +458,10 @@ logger.info("Health data accessed", category: .custom("healthcare"))
 - Keychain tied to device
 - Requires device unlock for key access
 
-### What LogR Doesn't Protect Against
+### What Logr Doesn't Protect Against
 
 ❌ **Logging Sensitive Data**
-- LogR encrypts storage, but can't prevent you from logging sensitive data
+- Logr encrypts storage, but can't prevent you from logging sensitive data
 - Use privacy-aware logging practices
 
 ❌ **Memory Dumps**
@@ -463,7 +472,7 @@ logger.info("Health data accessed", category: .custom("healthcare"))
 - If device is fully compromised (jailbroken, malware), encryption keys may be accessible
 
 ❌ **Screen Recording**
-- If using ``LogViewer``, logs visible on screen can be captured
+- If using `LogViewer`, logs visible on screen can be captured
 
 ## Security Incident Response
 
@@ -522,7 +531,7 @@ if #available(iOS 26.0, *) {
 
 ## Summary
 
-LogR provides:
+Logr provides:
 
 ✅ **Strong Encryption** - ChaCha20-Poly1305 with 256-bit keys
 ✅ **Secure Key Management** - Keychain storage, versioned keys
@@ -530,4 +539,10 @@ LogR provides:
 ✅ **Compliance Ready** - Supports GDPR, HIPAA, SOC 2
 ✅ **AI-Powered Auditing** - Detect privacy issues automatically (iOS 26+)
 
-Follow privacy-aware logging practices and use LogR's encryption features to protect your users' data.
+Follow privacy-aware logging practices and use Logr's encryption features to protect your users' data.
+
+## Related Documentation
+
+- [AI Analysis](AIAnalysis.md) - Privacy scanning with AI
+- [Storage and Persistence](StorageAndPersistence.md) - Storage options
+- [Architecture](Architecture.md) - Security architecture

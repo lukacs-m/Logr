@@ -1,16 +1,25 @@
-# Getting Started with LogR
+---
+layout: default
+title: Getting Started
+nav_order: 2
+parent: Logr Documentation
+---
 
-Learn how to integrate LogR into your app and start logging immediately.
+# Getting Started with Logr
+
+Learn how to integrate Logr into your app and start logging immediately.
+
+[← Back to Documentation](../index.md)
 
 ## Overview
 
-This guide will walk you through adding LogR to your project, configuring it, and using it to log messages in your application.
+This guide will walk you through adding Logr to your project, configuring it, and using it to log messages in your application.
 
 ## Installation
 
 ### Swift Package Manager
 
-Add LogR to your project using Swift Package Manager:
+Add Logr to your project using Swift Package Manager:
 
 **In Xcode:**
 1. File → Add Package Dependencies
@@ -90,7 +99,7 @@ import SwiftUI
 import Logr
 
 struct ContentView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     var body: some View {
         VStack {
@@ -149,7 +158,7 @@ class NetworkManager {
 
 ## Using Log Levels
 
-LogR provides six log levels to categorize message severity:
+Logr provides six log levels to categorize message severity:
 
 ```swift
 // Debug - detailed information for development
@@ -236,7 +245,7 @@ struct MyApp: App {
 
 ## Configuration
 
-Customize LogR behavior with configuration:
+Customize Logr behavior with configuration:
 
 ```swift
 let config = LogrConfiguration(
@@ -294,14 +303,14 @@ struct MyApp: App {
 
 ## Next Steps
 
-Now that you have LogR set up, explore these topics:
+Now that you have Logr set up, explore these topics:
 
-- <doc:Architecture> - Understand how LogR works internally
-- <doc:StorageAndPersistence> - Learn about storage options and custom implementations
-- <doc:PrivacyAndSecurity> - Understand encryption and privacy features
-- <doc:SwiftUIIntegration> - Explore the full LogViewer capabilities
-- <doc:AIAnalysis> - Use AI-powered log analysis (iOS 26+)
-- <doc:TestingAndMocking> - Test your logging with `MockLogR`
+- [Architecture](Architecture.md) - Understand how Logr works internally
+- [Storage and Persistence](StorageAndPersistence.md) - Learn about storage options and custom implementations
+- [Privacy and Security](PrivacyAndSecurity.md) - Understand encryption and privacy features
+- [SwiftUI Integration](SwiftUIIntegration.md) - Explore the full LogViewer capabilities
+- [AI Analysis](AIAnalysis.md) - Use AI-powered log analysis (iOS 26+)
+- [Testing and Mocking](TestingAndMocking.md) - Test your logging with `MockLogR`
 
 ## Common Patterns
 

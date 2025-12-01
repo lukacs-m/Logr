@@ -1,18 +1,27 @@
+---
+layout: default
+title: Testing and Mocking
+nav_order: 8
+parent: Logr Documentation
+---
+
 # Testing and Mocking
 
 Learn how to test your logging code and use MockLogR for development and testing.
 
+[← Back to Documentation](../index.md)
+
 ## Overview
 
-LogR provides comprehensive testing support through ``MockLogR``, a full-featured mock implementation that works seamlessly in SwiftUI previews and unit tests.
+Logr provides comprehensive testing support through `MockLogR`, a full-featured mock implementation that works seamlessly in SwiftUI previews and unit tests.
 
 ## MockLogR
 
-The ``MockLogR`` class implements ``LogRService`` with in-memory storage and pre-populated sample data.
+The `MockLogR` class implements `LogRService` with in-memory storage and pre-populated sample data.
 
 ### Features
 
-- Full ``LogRService`` protocol compliance
+- Full `LogRService` protocol compliance
 - Pre-populated with realistic sample logs
 - In-memory storage (no disk I/O)
 - All querying and filtering capabilities
@@ -38,7 +47,7 @@ print("Total logs: \(mock.recentLogs.count)")
 
 ## SwiftUI Previews
 
-Use ``MockLogR`` in SwiftUI previews for instant feedback without running the app.
+Use `MockLogR` in SwiftUI previews for instant feedback without running the app.
 
 ### Basic Preview
 
@@ -104,7 +113,7 @@ Use ``MockLogR`` in SwiftUI previews for instant feedback without running the ap
 
 ```swift
 struct MyLogView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     var body: some View {
         List(logger.recentLogs.filter { $0.level == .error }) { log in
@@ -125,7 +134,7 @@ struct MyLogView: View {
 
 ## Unit Testing
 
-Use ``MockLogR`` to test logging behavior in your code.
+Use `MockLogR` to test logging behavior in your code.
 
 ### Setup
 
@@ -318,7 +327,7 @@ func testClearLogs() async throws {
 
 ## Integration Testing
 
-Test the full LogR system with actual storage.
+Test the full Logr system with actual storage.
 
 ### Setup Test Storage
 
@@ -702,7 +711,7 @@ func testSomething() {
 
 ## Summary
 
-LogR provides comprehensive testing support:
+Logr provides comprehensive testing support:
 
 ✅ **MockLogR** - Full mock implementation for testing
 ✅ **SwiftUI Previews** - Instant visual feedback
@@ -710,4 +719,10 @@ LogR provides comprehensive testing support:
 ✅ **Integration Tests** - Test with real storage
 ✅ **Performance Tests** - Measure logging performance
 
-Use ``MockLogR`` for fast, predictable tests, and real ``LogR`` instances for integration testing with actual storage and encryption.
+Use `MockLogR` for fast, predictable tests, and real `LogR` instances for integration testing with actual storage and encryption.
+
+## Related Documentation
+
+- [SwiftUI Integration](SwiftUIIntegration.md) - Using MockLogR in previews
+- [Getting Started](GettingStarted.md) - Basic setup
+- [Architecture](Architecture.md) - Understanding the system

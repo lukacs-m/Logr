@@ -1,10 +1,19 @@
+---
+layout: default
+title: Architecture
+nav_order: 3
+parent: Logr Documentation
+---
+
 # Architecture Overview
 
-Understand the internal design and architecture of LogR.
+Understand the internal design and architecture of Logr.
+
+[← Back to Documentation](../index.md)
 
 ## Overview
 
-LogR is built with a clean, modular architecture that prioritizes performance, thread safety, and extensibility. This guide explains how the different components work together.
+Logr is built with a clean, modular architecture that prioritizes performance, thread safety, and extensibility. This guide explains how the different components work together.
 
 ## Component Diagram
 
@@ -28,12 +37,12 @@ LogR is built with a clean, modular architecture that prioritizes performance, t
              │
              ├──→ LogRPersistence Protocol
              │    ├── FileSystemStorage
-             │    ├── SQLiteStorage (GRDB-backed)
+             │    ├── SQLiteStorage
              │    └── Custom implementations
              │
              ├──→ LoggerCryptoServicing Protocol
              │    └── LoggerCryptoService
-             │         - ChaCha20-Poly1305 encryption
+             │         - Encryption
              │         - Keychain storage for keys
              │         - Key versioning & rotation
              │
@@ -48,7 +57,7 @@ LogR is built with a clean, modular architecture that prioritizes performance, t
 
 ### LogR
 
-The main logging class that implements ``LogRService``:
+The main logging class that implements `LogRService`:
 
 - **Decorated with `@Observable`**: Enables reactive SwiftUI updates
 - **`@MainActor` isolated**: All public APIs are main-actor isolated for thread safety
@@ -116,8 +125,7 @@ public protocol LogRPersistence: Sendable {
 
 **SQLiteStorage:**
 - High-performance SQLite database
-- Powered by GRDB.swift
-- Optimized for large volumes
+- Optimized for mobile devices
 - Efficient querying and cleanup
 - Recommended for production
 
@@ -270,7 +278,7 @@ All types conform to `Sendable` where appropriate:
 
 ### Custom Storage
 
-Implement ``LogRPersistence`` for custom storage:
+Implement `LogRPersistence` for custom storage:
 
 ```swift
 class CloudStorage: LogRPersistence {
@@ -285,7 +293,7 @@ let logger = LogR(storage: CloudStorage())
 
 ### Custom Crypto
 
-Implement ``LoggerCryptoServicing`` for custom encryption:
+Implement `LoggerCryptoServicing` for custom encryption:
 
 ```swift
 class CustomCrypto: LoggerCryptoServicing {
@@ -303,7 +311,7 @@ let logger = LogR(cryptoService: CustomCrypto())
 
 ### Custom AI Analyzer
 
-Implement ``LogAIAnalyzer`` for custom analysis:
+Implement `LogAIAnalyzer` for custom analysis:
 
 ```swift
 @available(iOS 26.0, *)
@@ -341,27 +349,27 @@ SwiftUI-friendly with `@Observable`:
 ### 3. Protocol-Oriented
 
 Extensible through protocols:
-- Storage layer: ``LogRPersistence``
-- Crypto layer: ``LoggerCryptoServicing``
-- AI layer: ``LogAIAnalyzer``
+- Storage layer: `LogRPersistence`
+- Crypto layer: `LoggerCryptoServicing`
+- AI layer: `LogAIAnalyzer`
 
 ### 4. Type-Safe
 
 Strong typing throughout:
-- ``LogLevel`` enum prevents invalid levels
-- ``LogCategory`` enum provides structured categories
+- `LogLevel` enum prevents invalid levels
+- `LogCategory` enum provides structured categories
 - No magic strings or numbers
 
 ### 5. Testable
 
 Easy to test with mocks:
-- ``MockLogR`` for SwiftUI previews
+- `MockLogR` for SwiftUI previews
 - Protocol-based design enables mocking
 - In-memory operations for testing
 
 ## Summary
 
-LogR's architecture provides:
+Logr's architecture provides:
 
 ✅ **Performance** - Non-blocking, efficient storage
 ✅ **Safety** - Thread-safe, strong typing, sendability
@@ -369,4 +377,10 @@ LogR's architecture provides:
 ✅ **Reliability** - Automatic cleanup, error handling
 ✅ **Simplicity** - Clear responsibilities, minimal API surface
 
-The modular design allows you to use LogR's components independently or replace them with your own implementations while maintaining the benefits of the overall system.
+The modular design allows you to use Logr's components independently or replace them with your own implementations while maintaining the benefits of the overall system.
+
+## Related Documentation
+
+- [Getting Started](GettingStarted.md) - Basic setup and usage
+- [Storage and Persistence](StorageAndPersistence.md) - Storage implementation details
+- [Privacy and Security](PrivacyAndSecurity.md) - Encryption details

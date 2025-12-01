@@ -1,14 +1,20 @@
-# ``Logr``
+---
+layout: default
+title: Logr Documentation
+nav_order: 1
+---
+
+# Logr
 
 A powerful, persistent logging library for Apple platforms that leverages OSLog while providing encrypted persistent storage, AI-powered analysis, and beautiful SwiftUI visualization.
 
 ## Overview
 
-LogR is a comprehensive logging solution that combines the power of Apple's OSLog framework with persistent storage capabilities, encryption, and AI-powered analysis. It's designed to be simple to use, highly configurable, and production-ready.
+Logr is a comprehensive logging solution that combines the power of Apple's OSLog framework with persistent storage capabilities, encryption, and AI-powered analysis. It's designed to be simple to use, highly configurable, and production-ready.
 
 ### Key Features
 
-- **Persistent Logging**: Unlike standard OSLog entries that are cleared between sessions, LogR maintains logs persistently with optional encrypted storage
+- **Persistent Logging**: Unlike standard OSLog entries that are cleared between sessions, Logr maintains logs persistently with optional encrypted storage
 - **AI-Powered Analysis** (iOS 26+): Automatic privacy issue detection and intelligent log issue summarization using Apple Intelligence
 - **Encryption**: Built-in ChaCha20-Poly1305 encryption for sensitive log data using secure Keychain storage
 - **SwiftUI Integration**: Beautiful, built-in log viewer (`LogViewer`) with filtering, search, sharing, and AI analysis
@@ -40,7 +46,7 @@ struct MyApp: App {
 }
 
 struct ContentView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     var body: some View {
         Button("Test") {
@@ -50,65 +56,83 @@ struct ContentView: View {
 }
 ```
 
-## Topics
+## Documentation
 
 ### Getting Started
 
-- <doc:GettingStarted>
-- <doc:Architecture>
+- [Getting Started](Articles/GettingStarted.md) - Installation, setup, and your first logs
+- [Architecture](Articles/Architecture.md) - Understand how Logr works internally
 
 ### Core Types
 
-- ``LogR``
-- ``LogRService``
-- ``LogEntry``
-- ``LogLevel``
-- ``LogCategory``
-- ``LogrConfiguration``
-- ``LogVerbosity``
+| Type | Description |
+|------|-------------|
+| `LogR` | Main logging class, `@Observable` and `@MainActor` |
+| `LogRService` | Protocol defining the logging API |
+| `LogEntry` | Represents a single log entry |
+| `LogLevel` | Six log levels: debug, info, notice, warning, error, fault |
+| `LogCategory` | 47+ predefined categories + custom |
+| `LogrConfiguration` | Configuration for retention, cleanup, and verbosity |
+| `LogVerbosity` | Control log detail level (verbose/normal) |
 
 ### Storage
 
-- <doc:StorageAndPersistence>
-- ``LogRPersistence``
-- ``FileSystemStorage``
-- ``SQLiteStorage``
-- ``EncryptedLogEntry``
+- [Storage and Persistence](Articles/StorageAndPersistence.md) - Storage options and custom implementations
+
+| Type | Description |
+|------|-------------|
+| `LogRPersistence` | Protocol for custom storage implementations |
+| `FileSystemStorage` | JSON-based file storage |
+| `SQLiteStorage` | High-performance SQLite storage (recommended) |
+| `EncryptedLogEntry` | Encrypted log entry for storage |
 
 ### Privacy & Security
 
-- <doc:PrivacyAndSecurity>
-- ``LoggerCryptoServicing``
-- ``LoggerCryptoService``
-- ``LoggerCryptoError``
-- ``KeychainStore``
+- [Privacy and Security](Articles/PrivacyAndSecurity.md) - Encryption and privacy features
+
+| Type | Description |
+|------|-------------|
+| `LoggerCryptoServicing` | Protocol for custom encryption |
+| `LoggerCryptoService` | ChaCha20-Poly1305 encryption implementation |
+| `LoggerCryptoError` | Encryption-related errors |
+| `KeychainStore` | Secure key storage |
 
 ### AI Analysis (iOS 26+)
 
-- <doc:AIAnalysis>
-- ``LogAIAnalyzer``
-- ``AIAnalyzer``
-- ``PrivacyAnalysisResult``
-- ``PrivacyWarning``
-- ``PrivacySeverity``
-- ``LogIssueSummary``
-- ``AIAnalyzerError``
+- [AI Analysis](Articles/AIAnalysis.md) - Privacy scanning and issue summarization
+
+| Type | Description |
+|------|-------------|
+| `LogAIAnalyzer` | Protocol for AI analysis |
+| `AIAnalyzer` | Apple Intelligence integration |
+| `PrivacyAnalysisResult` | Privacy scan results |
+| `PrivacyWarning` | Individual privacy warning |
+| `PrivacySeverity` | Warning severity levels |
+| `LogIssueSummary` | AI-generated issue summary |
+| `AIAnalyzerError` | AI analysis errors |
 
 ### SwiftUI Integration
 
-- <doc:SwiftUIIntegration>
-- ``LogViewer``
-- ``ExportFormat``
+- [SwiftUI Integration](Articles/SwiftUIIntegration.md) - LogViewer and environment setup
+
+| Type | Description |
+|------|-------------|
+| `LogViewer` | Complete log viewing UI component |
+| `ExportFormat` | Export formats: JSON, CSV, TXT |
 
 ### Testing & Mocking
 
-- <doc:TestingAndMocking>
-- ``MockLogR``
+- [Testing and Mocking](Articles/TestingAndMocking.md) - Test your logging code
 
-### Models & Errors
+| Type | Description |
+|------|-------------|
+| `MockLogR` | Full mock implementation for testing |
 
-- ``LogrErrors``
-- ``ExportFormat``
+### Errors
+
+| Type | Description |
+|------|-------------|
+| `LogrErrors` | General logging errors |
 
 ## Platform Support
 
@@ -127,7 +151,7 @@ struct ContentView: View {
 
 ### Swift Package Manager
 
-Add LogR to your `Package.swift`:
+Add Logr to your `Package.swift`:
 
 ```swift
 dependencies: [
@@ -142,7 +166,7 @@ Or add via Xcode:
 
 ## Architecture
 
-LogR uses a clean, modular architecture:
+Logr uses a clean, modular architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -162,7 +186,7 @@ LogR uses a clean, modular architecture:
              │
              ├──→ LogRPersistence Protocol
              │    ├── FileSystemStorage
-             │    ├── SQLiteStorage (GRDB)
+             │    ├── SQLiteStorage
              │    └── Custom implementations
              │
              ├──→ LoggerCryptoServicing Protocol
@@ -241,7 +265,7 @@ logger.info("User authentication successful", category: .authentication)
 
 With storage encryption enabled, all logs are automatically encrypted before persistence.
 
-LogR is optimized for minimal performance impact:
+Logr is optimized for minimal performance impact:
 - Background actor prevents main thread blocking
 - Lazy message evaluation with `@autoclosure`
 - Efficient in-memory cache with size limits
@@ -249,17 +273,15 @@ LogR is optimized for minimal performance impact:
 
 ## License
 
-LogR is released under the MIT License.
+Logr is released under the MIT License.
 
 ## Support
 
-- **Documentation**: [Full DocC Documentation](https://docs.example.com/logr)
 - **Issues**: [GitHub Issues](https://github.com/lukacs-m/logr/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/lukacs-m/logr/discussions)
 
 ## Acknowledgments
 
 Built with:
-- [GRDB.swift](https://github.com/groue/GRDB.swift) - SQLite toolkit
 - [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) - Keychain wrapper
 - [SQLiteData](https://github.com/pointfreeco/sqlite-data) - SQLite Data models
