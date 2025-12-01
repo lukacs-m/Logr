@@ -60,7 +60,7 @@ struct ContentView: View {
 
 ### Getting Started
 
-- [Getting Started](../docs/Articles/GettingStarted.md) - Installation, setup, and your first logs
+- [Getting Started](../Articles/GettingStarted.md) - Installation, setup, and your first logs
 - [Architecture](../docs/Articles/Architecture.md) - Understand how Logr works internally
 
 ### Core Types
