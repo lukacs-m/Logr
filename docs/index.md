@@ -77,7 +77,7 @@ struct ContentView: View {
 
 ### Storage
 
-- [Storage and Persistence](../docs/Articles/StorageAndPersistence.md) - Storage options and custom implementations
+- [Storage and Persistence](./Articles/StorageAndPersistence.md) - Storage options and custom implementations
 
 | Type | Description |
 |------|-------------|
@@ -88,7 +88,7 @@ struct ContentView: View {
 
 ### Privacy & Security
 
-- [Privacy and Security](../docs/Articles/PrivacyAndSecurity.md) - Encryption and privacy features
+- [Privacy and Security](./Articles/PrivacyAndSecurity.md) - Encryption and privacy features
 
 | Type | Description |
 |------|-------------|
@@ -99,7 +99,7 @@ struct ContentView: View {
 
 ### AI Analysis (iOS 26+)
 
-- [AI Analysis](../docs/Articles/AIAnalysis.md) - Privacy scanning and issue summarization
+- [AI Analysis](./Articles/AIAnalysis.md) - Privacy scanning and issue summarization
 
 | Type | Description |
 |------|-------------|
@@ -113,7 +113,7 @@ struct ContentView: View {
 
 ### SwiftUI Integration
 
-- [SwiftUI Integration](../docs/Articles/SwiftUIIntegration.md) - LogViewer and environment setup
+- [SwiftUI Integration](./Articles/SwiftUIIntegration.md) - LogViewer and environment setup
 
 | Type | Description |
 |------|-------------|
@@ -122,7 +122,7 @@ struct ContentView: View {
 
 ### Testing & Mocking
 
-- [Testing and Mocking](../docs/Articles/TestingAndMocking.md) - Test your logging code
+- [Testing and Mocking](./Articles/TestingAndMocking.md) - Test your logging code
 
 | Type | Description |
 |------|-------------|

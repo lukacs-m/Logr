@@ -9,7 +9,7 @@ parent: Logr Documentation
 
 Learn about Logr's storage options and how to implement custom storage backends.
 
-[← Back to Documentation](../docs/index.md)
+[← Back to Documentation](../index.md)
 
 ## Overview
 
@@ -431,6 +431,6 @@ All storage is automatically encrypted with ChaCha20-Poly1305 and keys stored in
 
 ## Related Documentation
 
-- [Architecture](Architecture.md) - How storage fits in the system
-- [Privacy and Security](PrivacyAndSecurity.md) - Encryption details
-- [Getting Started](GettingStarted.md) - Basic setup
+- [Architecture](./Architecture.md) - How storage fits in the system
+- [Privacy and Security](./PrivacyAndSecurity.md) - Encryption details
+- [Getting Started](./GettingStarted.md) - Basic setup

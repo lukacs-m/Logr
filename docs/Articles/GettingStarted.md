@@ -305,12 +305,12 @@ struct MyApp: App {
 
 Now that you have Logr set up, explore these topics:
 
-- [Architecture](../docs/Articles/Architecture.md) - Understand how Logr works internally
-- [Storage and Persistence](../docs/Articles/StorageAndPersistence.md) - Learn about storage options and custom implementations
-- [Privacy and Security](../docs/Articles/PrivacyAndSecurity.md) - Understand encryption and privacy features
-- [SwiftUI Integration](../docs/Articles/SwiftUIIntegration.md) - Explore the full LogViewer capabilities
-- [AI Analysis](../docs/Articles/AIAnalysis.md) - Use AI-powered log analysis (iOS 26+)
-- [Testing and Mocking](../docs/Articles/TestingAndMocking.md) - Test your logging with `MockLogR`
+- [Architecture](./Architecture.md) - Understand how Logr works internally
+- [Storage and Persistence](./StorageAndPersistence.md) - Learn about storage options and custom implementations
+- [Privacy and Security](./PrivacyAndSecurity.md) - Understand encryption and privacy features
+- [SwiftUI Integration](./SwiftUIIntegration.md) - Explore the full LogViewer capabilities
+- [AI Analysis](./AIAnalysis.md) - Use AI-powered log analysis (iOS 26+)
+- [Testing and Mocking](./TestingAndMocking.md) - Test your logging with `MockLogR`
 
 ## Common Patterns
 

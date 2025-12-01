@@ -9,7 +9,7 @@ parent: Logr Documentation
 
 Learn how Logr protects sensitive data through encryption and privacy-first design.
 
-[← Back to Documentation](../docs/index.md)
+[← Back to Documentation](../index.md)
 
 ## Overview
 
@@ -279,7 +279,7 @@ if #available(iOS 26.0, *) {
 }
 ```
 
-See [AI Analysis](../docs/Articles/AIAnalysis.md) for details.
+See [AI Analysis](./AIAnalysis.md) for details.
 
 ## Compliance
 
@@ -543,6 +543,6 @@ Follow privacy-aware logging practices and use Logr's encryption features to pro
 
 ## Related Documentation
 
-- [AI Analysis](../docs/Articles/AIAnalysis.md) - Privacy scanning with AI
-- [Storage and Persistence](../docs/Articles/StorageAndPersistence.md) - Storage options
-- [Architecture](../docs/Articles/Architecture.md) - Security architecture
+- [AI Analysis](./AIAnalysis.md) - Privacy scanning with AI
+- [Storage and Persistence](./StorageAndPersistence.md) - Storage options
+- [Architecture](./Architecture.md) - Security architecture
