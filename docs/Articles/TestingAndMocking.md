@@ -723,6 +723,6 @@ Use `MockLogR` for fast, predictable tests, and real `LogR` instances for integr
 
 ## Related Documentation
 
-- [SwiftUI Integration](SwiftUIIntegration.md) - Using MockLogR in previews
-- [Getting Started](GettingStarted.md) - Basic setup
-- [Architecture](Architecture.md) - Understanding the system
+- [SwiftUI Integration](./SwiftUIIntegration.md) - Using MockLogR in previews
+- [Getting Started](./GettingStarted.md) - Basic setup
+- [Architecture](./Architecture.md) - Understanding the system

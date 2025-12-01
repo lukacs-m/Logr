@@ -279,7 +279,7 @@ if #available(iOS 26.0, *) {
 }
 ```
 
-See [AI Analysis](AIAnalysis.md) for details.
+See [AI Analysis](./AIAnalysis.md) for details.
 
 ## Compliance
 
@@ -543,6 +543,6 @@ Follow privacy-aware logging practices and use Logr's encryption features to pro
 
 ## Related Documentation
 
-- [AI Analysis](AIAnalysis.md) - Privacy scanning with AI
-- [Storage and Persistence](StorageAndPersistence.md) - Storage options
-- [Architecture](Architecture.md) - Security architecture
+- [AI Analysis](./AIAnalysis.md) - Privacy scanning with AI
+- [Storage and Persistence](./StorageAndPersistence.md) - Storage options
+- [Architecture](./Architecture.md) - Security architecture
