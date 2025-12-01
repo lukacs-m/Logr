@@ -602,6 +602,6 @@ The `LogViewer` component gives you a production-ready log viewing interface wit
 
 ## Related Documentation
 
-- [Getting Started](GettingStarted.md) - Initial setup
-- [Testing and Mocking](TestingAndMocking.md) - Using MockLogR in previews
-- [AI Analysis](AIAnalysis.md) - AI features in LogViewer
+- [Getting Started](../docs/Articles/GettingStarted.md) - Initial setup
+- [Testing and Mocking](../docs/Articles/TestingAndMocking.md) - Using MockLogR in previews
+- [AI Analysis](../docs/Articles/AIAnalysis.md) - AI features in LogViewer

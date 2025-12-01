@@ -9,7 +9,7 @@ parent: Logr Documentation
 
 Learn how to test your logging code and use MockLogR for development and testing.
 
-[← Back to Documentation](../index.md)
+[← Back to Documentation](../docs/index.md)
 
 ## Overview
 
@@ -723,6 +723,6 @@ Use `MockLogR` for fast, predictable tests, and real `LogR` instances for integr
 
 ## Related Documentation
 
-- [SwiftUI Integration](SwiftUIIntegration.md) - Using MockLogR in previews
-- [Getting Started](GettingStarted.md) - Basic setup
-- [Architecture](Architecture.md) - Understanding the system
+- [SwiftUI Integration](../docs/Articles/SwiftUIIntegration.md) - Using MockLogR in previews
+- [Getting Started](../docs/Articles/GettingStarted.md) - Basic setup
+- [Architecture](../docs/Articles/Architecture.md) - Understanding the system

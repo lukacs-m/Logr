@@ -9,7 +9,7 @@ parent: Logr Documentation
 
 Learn about Logr's storage options and how to implement custom storage backends.
 
-[← Back to Documentation](../index.md)
+[← Back to Documentation](../docs/index.md)
 
 ## Overview
 

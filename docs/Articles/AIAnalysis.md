@@ -519,6 +519,6 @@ Use AI analysis to maintain log hygiene, protect user privacy, and quickly ident
 
 ## Related Documentation
 
-- [Privacy and Security](PrivacyAndSecurity.md) - Privacy best practices
-- [SwiftUI Integration](SwiftUIIntegration.md) - LogViewer with AI features
-- [Getting Started](GettingStarted.md) - Basic setup
+- [Privacy and Security](../docs/Articles/PrivacyAndSecurity.md) - Privacy best practices
+- [SwiftUI Integration](../docs/Articles/SwiftUIIntegration.md) - LogViewer with AI features
+- [Getting Started](../docs/Articles/GettingStarted.md) - Basic setup

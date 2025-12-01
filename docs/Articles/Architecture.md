@@ -381,6 +381,6 @@ The modular design allows you to use Logr's components independently or replace 
 
 ## Related Documentation
 
-- [Getting Started](GettingStarted.md) - Basic setup and usage
-- [Storage and Persistence](StorageAndPersistence.md) - Storage implementation details
-- [Privacy and Security](PrivacyAndSecurity.md) - Encryption details
+- [Getting Started](../docs/Articles/GettingStarted.md) - Basic setup and usage
+- [Storage and Persistence](../docs/Articles/StorageAndPersistence.md) - Storage implementation details
+- [Privacy and Security](../docs/Articles/PrivacyAndSecurity.md) - Encryption details
