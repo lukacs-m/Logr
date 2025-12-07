@@ -276,19 +276,19 @@ public extension LogRService {
             baseData = try? encoder.encode(recentLogs)
 
         case .csv:
-            var csv = "Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata\n"
             let formatter = ISO8601DateFormatter()
 
+            var rows: [String] = ["Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata"]
             for log in recentLogs {
                 let timestamp = formatter.string(from: log.timestamp)
                 let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
                 let metadataStr = log.metadata?.map { "\($0.key)=\($0.value.stringValue)" }
                     .joined(separator: "; ") ?? ""
                 let escapedMetadata = metadataStr.replacingOccurrences(of: "\"", with: "\"\"")
-                csv += "\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line),\"\(escapedMetadata)\"\n"
+                rows.append("\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line),\"\(escapedMetadata)\"")
             }
 
-            baseData = csv.data(using: .utf8)
+            baseData = rows.joined(separator: "\n").data(using: .utf8)
 
         case .txt:
             let formatter = DateFormatter()
@@ -304,7 +304,7 @@ public extension LogRService {
                 }
                 text += line + "\n"
             }
-         
+
             baseData = text.data(using: .utf8)
         }
 
@@ -312,7 +312,7 @@ public extension LogRService {
 
         return data
     }
-    
+
     func logStatistics() -> LogStatistics {
         guard !recentLogs.isEmpty else {
             return .empty

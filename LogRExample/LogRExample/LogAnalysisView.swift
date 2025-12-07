@@ -271,12 +271,12 @@ struct LogAnalysisView: View {
                 Text(warning.exposureType)
                     .font(.headline)
                 Spacer()
-                Text(warning.severity)
+                Text(warning.severity.description)
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(severityColor(warning.severity).opacity(0.2), in: Capsule())
-                    .foregroundStyle(severityColor(warning.severity))
+                    .background(severityColor(warning.severity.description).opacity(0.2), in: Capsule())
+                    .foregroundStyle(severityColor(warning.severity.description))
             }
 
             Text("\(warning.file):\(warning.line)")
@@ -342,12 +342,12 @@ struct LogAnalysisView: View {
                 Text(issue.title)
                     .font(.headline)
                 Spacer()
-                Text(issue.severity)
+                Text(issue.severity.description)
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(severityColor(issue.severity).opacity(0.2), in: Capsule())
-                    .foregroundStyle(severityColor(issue.severity))
+                    .background(severityColor(issue.severity.description).opacity(0.2), in: Capsule())
+                    .foregroundStyle(severityColor(issue.severity.description))
             }
 
             Text(issue.category)

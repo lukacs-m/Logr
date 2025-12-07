@@ -270,7 +270,7 @@ struct IssueRow: View {
     }
 
     private var severityBadge: some View {
-        Text(issue.severity.capitalized)
+        Text(issue.severity.description.capitalized)
             .font(.caption)
             .fontWeight(.semibold)
             .padding(.horizontal, 8)
@@ -281,10 +281,10 @@ struct IssueRow: View {
     }
 
     private var severityColor: Color {
-        switch issue.severity.lowercased() {
-        case "critical": .red
-        case "high": .orange
-        case "medium": .yellow
+        switch issue.severity {
+        case .critical: .red
+        case .high: .orange
+        case .medium: .yellow
         default: .blue
         }
     }

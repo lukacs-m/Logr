@@ -32,7 +32,7 @@ public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
     public var occurrences: Int
 
     @Guide(description: "Severity level: critical, high, medium, or low")
-    public var severity: String
+    public var severity: LogSeverity
 
     @Guide(description: "Suggested solution or next steps to resolve the issue")
     public var suggestedFix: String
@@ -43,7 +43,7 @@ public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
                 file: String,
                 line: Int,
                 occurrences: Int,
-                severity: String,
+                severity: LogSeverity,
                 suggestedFix: String) {
         self.category = category
         self.title = title

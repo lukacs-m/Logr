@@ -134,7 +134,7 @@ public struct LogViewer: View {
         var recoverySuggestion: String? {
             switch self {
             case .failedLogClearing:
-                "Article publishing failed due to missing title"
+                "Failed to clear logs. Please try again later."
             }
         }
     }
@@ -470,7 +470,8 @@ private extension LogViewer {
     }
 
     func filterData() -> [LogEntry] {
-        logr.recentLogs.filter { entry in
+        let debouncedQuery = debouncedQuery.lowercased()
+       return logr.recentLogs.filter { entry in
             guard logFilterPreferences.selectedLevels.contains(entry.level) else { return false }
 
             if !logFilterPreferences.selectedCategories.isEmpty,
@@ -480,8 +481,7 @@ private extension LogViewer {
 
             if !debouncedQuery.isEmpty {
                 return entry.message.localizedCaseInsensitiveContains(debouncedQuery) ||
-                    entry.category.rawValue.localizedCaseInsensitiveContains(debouncedQuery) ||
-                    entry.category.displayName.localizedCaseInsensitiveContains(debouncedQuery)
+                    entry.category.rawValue.localizedCaseInsensitiveContains(debouncedQuery)
             }
 
             return true
@@ -516,3 +516,4 @@ private extension ExportFormat {
         "logs.\(fileExtension)"
     }
 }
+

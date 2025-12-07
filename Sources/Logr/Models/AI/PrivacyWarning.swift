@@ -29,13 +29,18 @@ public struct PrivacyWarning: Sendable, Identifiable, Hashable, Equatable {
     public var explanation: String
 
     @Guide(description: "Severity level: critical, high, medium, or low")
-    public var severity: String
+    public var severity: LogSeverity
 
     @Guide(description: "Recommended action to fix this privacy issue")
     public var recommendation: String
 
-    public init(file: String, line: Int, exposureType: String, exposedContent: String, explanation: String,
-                severity: String, recommendation: String) {
+    public init(file: String,
+                line: Int,
+                exposureType: String,
+                exposedContent: String,
+                explanation: String,
+                severity: LogSeverity,
+                recommendation: String) {
         self.file = file
         self.line = line
         self.exposureType = exposureType

@@ -64,14 +64,14 @@ public final class MockLogR: LogRService, Sendable {
                            exposureType: "email",
                            exposedContent: "user@example.com",
                            explanation: "Email address is being logged in plain text, which could expose user identity.",
-                           severity: "high",
+                           severity: .high,
                            recommendation: "Remove email logging or use hashed/redacted versions."),
             PrivacyWarning(file: "PaymentService.swift",
                            line: 158,
                            exposureType: "credit card",
                            exposedContent: "4532-1234-5678-1234",
                            explanation: "Full credit card number detected in logs - severe PCI compliance violation.",
-                           severity: "critical",
+                           severity: .critical,
                            recommendation: "Never log credit card numbers. Implement PCI-DSS compliant logging.")
         ],
         summary: "Found 2 potential privacy exposures: 1 critical, 1 high severity.",
@@ -89,7 +89,7 @@ public final class MockLogR: LogRService, Sendable {
                                      file: "NetworkManager.swift",
                                      line: 156,
                                      occurrences: 23,
-                                     severity: "high",
+                                     severity: .high,
                                      suggestedFix: "Implement retry logic with exponential backoff and reduce timeout to 15s."),
                             LogIssue(category: "crash",
                                      title: "Force unwrap causing crashes",
@@ -97,7 +97,7 @@ public final class MockLogR: LogRService, Sendable {
                                      file: "DataParser.swift",
                                      line: 89,
                                      occurrences: 5,
-                                     severity: "critical",
+                                     severity: .critical,
                                      suggestedFix: "Use optional binding (if let) or nil coalescing instead of force unwrap."),
                             LogIssue(category: "performance",
                                      title: "Main thread blocked by heavy computation",
@@ -105,7 +105,7 @@ public final class MockLogR: LogRService, Sendable {
                                      file: "ImageProcessor.swift",
                                      line: 234,
                                      occurrences: 12,
-                                     severity: "medium",
+                                     severity: .medium,
                                      suggestedFix: "Move image processing to background queue using DispatchQueue.global().")
                         ],
                         totalErrors: 45,
@@ -196,14 +196,14 @@ public final class MockLogR: LogRService, Sendable {
                            exposureType: "email",
                            exposedContent: "user@example.com",
                            explanation: "Email address is being logged in plain text, which could expose user identity.",
-                           severity: "high",
+                           severity: .high,
                            recommendation: "Remove email logging or use hashed/redacted versions."),
             PrivacyWarning(file: "PaymentService.swift",
                            line: 158,
                            exposureType: "credit card",
                            exposedContent: "4532-1234-5678-1234",
                            explanation: "Full credit card number detected in logs - severe PCI compliance violation.",
-                           severity: "critical",
+                           severity: .critical,
                            recommendation: "Never log credit card numbers. Implement PCI-DSS compliant logging.")
         ],
         summary: "Found 2 potential privacy exposures: 1 critical, 1 high severity.",
@@ -221,7 +221,7 @@ public final class MockLogR: LogRService, Sendable {
                                      file: "NetworkManager.swift",
                                      line: 156,
                                      occurrences: 23,
-                                     severity: "high",
+                                     severity: .high,
                                      suggestedFix: "Implement retry logic with exponential backoff and reduce timeout to 15s."),
                             LogIssue(category: "crash",
                                      title: "Force unwrap causing crashes",
@@ -229,7 +229,7 @@ public final class MockLogR: LogRService, Sendable {
                                      file: "DataParser.swift",
                                      line: 89,
                                      occurrences: 5,
-                                     severity: "critical",
+                                     severity: .critical,
                                      suggestedFix: "Use optional binding (if let) or nil coalescing instead of force unwrap."),
                             LogIssue(category: "performance",
                                      title: "Main thread blocked by heavy computation",
@@ -237,7 +237,7 @@ public final class MockLogR: LogRService, Sendable {
                                      file: "ImageProcessor.swift",
                                      line: 234,
                                      occurrences: 12,
-                                     severity: "medium",
+                                     severity: .medium,
                                      suggestedFix: "Move image processing to background queue using DispatchQueue.global().")
                         ],
                         totalErrors: 45,
@@ -319,8 +319,8 @@ public final class MockLogR: LogRService, Sendable {
             }
 
             // Update on main actor in batches
-                mockLogs.append(contentsOf: entries)
-                recentLogs.append(contentsOf: entries)
+            mockLogs.append(contentsOf: entries)
+            recentLogs.append(contentsOf: entries)
 
             if chunk < chunks - 1 {
                 try? await Task.sleep(for: .seconds(delay))
@@ -373,7 +373,7 @@ public final class MockLogR: LogRService, Sendable {
             ].randomElement()!
 
         default:
-            return "Unknow"
+            return "Unknown"
         }
     }
 

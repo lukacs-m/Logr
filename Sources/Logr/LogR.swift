@@ -275,8 +275,8 @@ private extension LogR {
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     nonisolated func updateProgress(progress: AnalysisProgress) {
         progressTask?.cancel()
-        progressTask = Task { @MainActor in
-            _analysisProgress = progress
+        progressTask = Task { @MainActor [weak self] in
+            self?._analysisProgress = progress
         }
     }
 }

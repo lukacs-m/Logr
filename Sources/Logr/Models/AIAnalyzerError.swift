@@ -16,7 +16,7 @@ public enum AIAnalyzerError: Error, LocalizedError, Sendable {
     case systemError(Error)
     case mergeError
     case missingAnalyzer
-
+    case analyzerDeallocated
     public var errorDescription: String? {
         switch self {
         case let .modelUnavailable(reason):
@@ -35,6 +35,8 @@ public enum AIAnalyzerError: Error, LocalizedError, Sendable {
             "Something went wrong while merging the analysis results. Please try again."
         case .missingAnalyzer:
             "No analyzer is configured for this app."
+        case .analyzerDeallocated:
+            "An analyzer has been deallocated before it could be used."
         }
     }
 }

@@ -12,10 +12,8 @@ struct FilterSheet: View {
     @Environment(\.logService) private var logr
     @Environment(LogFilterPreferences.self) private var logFilterPreferences
     @Environment(\.dismiss) private var dismiss
+    @State private var availableCategories: [LogCategory] = []
 
-    private var availableCategories: [LogCategory] {
-        Array(Set(logr.recentLogs.map(\.category)))
-    }
 
     var body: some View {
         NavigationStack {
@@ -39,6 +37,16 @@ struct FilterSheet: View {
                 }
             }
         }
+        .task {
+            setCategories()
+        }
+        .onChange(of: logr.recentLogs) { _ in
+            setCategories()
+        }
+    }
+
+    func setCategories() {
+        availableCategories = Array(Set(logr.recentLogs.map(\.category)))
     }
 }
 
