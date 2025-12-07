@@ -113,17 +113,18 @@ public extension SQLiteStorage {
     }
 
     func deleteEntries(keepingLatest count: Int) async throws {
+
         try await database.write { db in
             // This uses raw SQL for the complex query
             let sql = """
-            DELETE FROM EncryptedLogEntryDAO 
-            WHERE id IN (
-                SELECT id FROM EncryptedLogEntryDAO 
-                ORDER BY timestamp ASC 
-                LIMIT (SELECT MAX(0, (SELECT COUNT(*) FROM EncryptedLogEntryDAO) - ?))
-            )
-            """
-            try db.execute(sql: sql, arguments: [count])
+              DELETE FROM EncryptedLogEntryDAO
+              WHERE id NOT IN (
+                  SELECT id FROM EncryptedLogEntryDAO
+                  ORDER BY timestamp DESC
+                  LIMIT \(count)
+              )
+              """
+            try db.execute(sql: sql)
         }
     }
 

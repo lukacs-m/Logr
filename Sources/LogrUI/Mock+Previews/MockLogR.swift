@@ -373,7 +373,7 @@ public final class MockLogR: LogRService, Sendable {
             ].randomElement()!
 
         default:
-            return "Unknow"
+            return "Unknown"
         }
     }
 

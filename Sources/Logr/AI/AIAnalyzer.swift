@@ -227,7 +227,7 @@ private extension AIAnalyzer {
 
         return try await withThrowingTaskGroup(of: (Int, Int, T).self) { [weak self] group in
             guard let self else {
-                return []
+                throw AIAnalyzerError.analyzerDeallocated
             }
 
             var results: [T?] = Array(repeating: nil, count: chunks.count)
@@ -386,7 +386,7 @@ private extension AIAnalyzer {
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 private extension AIAnalyzer {
-    func mergeResults<T>(_ results: [T],
+    func mergeResults<T: Generable & Sendable>(_ results: [T],
                          type: AnalysisType) -> T? {
         switch type {
         case .privacy:
@@ -465,9 +465,8 @@ private extension AIAnalyzer {
         }
 
         return Array(merged.values)
-            .sorted { lhs, rhs in
-                lhs.severity.priority > rhs.severity.priority ||
-                    (lhs.severity.priority == rhs.severity.priority && lhs.occurrences > rhs.occurrences)
+            .sorted {
+                ($0.severity.priority, $0.occurrences) > ($1.severity.priority, $1.occurrences)
             }
     }
 
