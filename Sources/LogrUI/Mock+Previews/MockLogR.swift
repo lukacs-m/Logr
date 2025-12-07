@@ -319,8 +319,8 @@ public final class MockLogR: LogRService, Sendable {
             }
 
             // Update on main actor in batches
-                mockLogs.append(contentsOf: entries)
-                recentLogs.append(contentsOf: entries)
+            mockLogs.append(contentsOf: entries)
+            recentLogs.append(contentsOf: entries)
 
             if chunk < chunks - 1 {
                 try? await Task.sleep(for: .seconds(delay))

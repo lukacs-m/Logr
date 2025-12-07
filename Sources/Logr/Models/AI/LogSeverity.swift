@@ -1,4 +1,4 @@
-//  
+//
 //  LogSeverity.swift
 //  Logr
 //
@@ -10,7 +10,7 @@ import FoundationModels
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 @Generable(description: "Severity level of an issue: critical, high, medium, or low")
-public enum LogSeverity: Sendable , Hashable, Equatable {
+public enum LogSeverity: Sendable, Hashable, Equatable {
     case critical
     case high
     case medium
@@ -18,10 +18,10 @@ public enum LogSeverity: Sendable , Hashable, Equatable {
 
     public var description: String {
         switch self {
-        case .critical: return "Critical"
-        case .high: return "High"
-        case .medium: return "Medium"
-        case .low: return "Low"
+        case .critical: "Critical"
+        case .high: "High"
+        case .medium: "Medium"
+        case .low: "Low"
         }
     }
 

@@ -304,7 +304,7 @@ public extension LogRService {
                 }
                 text += line + "\n"
             }
-         
+
             baseData = text.data(using: .utf8)
         }
 
@@ -312,7 +312,7 @@ public extension LogRService {
 
         return data
     }
-    
+
     func logStatistics() -> LogStatistics {
         guard !recentLogs.isEmpty else {
             return .empty

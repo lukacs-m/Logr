@@ -467,7 +467,7 @@ private extension AIAnalyzer {
         return Array(merged.values)
             .sorted { lhs, rhs in
                 lhs.severity.priority > rhs.severity.priority ||
-                (lhs.severity.priority == rhs.severity.priority && lhs.occurrences > rhs.occurrences)
+                    (lhs.severity.priority == rhs.severity.priority && lhs.occurrences > rhs.occurrences)
             }
     }
 

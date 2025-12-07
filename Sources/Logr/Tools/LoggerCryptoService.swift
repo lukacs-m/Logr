@@ -171,7 +171,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
     private let decoder = JSONDecoder()
     private let cacheKeys: any MutexProtected<[KeyVersion: SymmetricKey]> = SafeMutex.create([:])
     private let encryptionAlgo: CryptoAlgo
-    
+
     let currentKeyVersion: any MutexProtected<KeyVersion> = SafeMutex.create(.default)
 
     /// Private envelope to store encrypted data with key version
@@ -185,7 +185,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
         case chacha
         case aes256gcm
     }
-    
+
     // MARK: - Init
 
     public init(store: KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
@@ -225,7 +225,8 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
             throw LoggerCryptoError.encryptionFailed
         }
 
-        let envelope = CryptoEnvelope(version: currentKeyVersion.value.value, data: encryptedPayload, algorithm: encryptionAlgo)
+        let envelope = CryptoEnvelope(version: currentKeyVersion.value.value, data: encryptedPayload,
+                                      algorithm: encryptionAlgo)
         return try encoder.encode(envelope)
     }
 
