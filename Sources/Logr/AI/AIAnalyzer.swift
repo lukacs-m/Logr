@@ -10,20 +10,6 @@ import FoundationModels
 
 // MARK: - Supporting Types
 
-/// Severity levels for issues and warnings
-public enum SeverityLevel: String, Sendable, CaseIterable {
-    case critical, high, medium, low
-
-    var priority: Int {
-        switch self {
-        case .critical: 4
-        case .high: 3
-        case .medium: 2
-        case .low: 1
-        }
-    }
-}
-
 /// Configuration for the analyzer
 public struct AnalyzerConfiguration: Sendable {
     /// Maximum number of log entries per model request.
@@ -420,8 +406,8 @@ private extension AIAnalyzer {
 
     func mergePrivacyResults(_ results: [PrivacyAnalysisResult]) -> PrivacyAnalysisResult {
         let allWarnings = results.flatMap(\.warnings)
-        let criticalCount = allWarnings.count(where: { $0.severity == SeverityLevel.critical.rawValue })
-        let highCount = allWarnings.count(where: { $0.severity == SeverityLevel.high.rawValue })
+        let criticalCount = allWarnings.count(where: { $0.severity == .critical })
+        let highCount = allWarnings.count(where: { $0.severity == .high })
 
         let overallSummary = if allWarnings.isEmpty {
             "No privacy concerns detected in the analyzed logs."
@@ -480,18 +466,14 @@ private extension AIAnalyzer {
 
         return Array(merged.values)
             .sorted { lhs, rhs in
-                guard let lhsSeverity = SeverityLevel(rawValue: lhs.severity),
-                      let rhsSeverity = SeverityLevel(rawValue: rhs.severity) else {
-                    return lhs.occurrences > rhs.occurrences
-                }
-                return lhsSeverity.priority > rhsSeverity.priority ||
-                    (lhsSeverity.priority == rhsSeverity.priority && lhs.occurrences > rhs.occurrences)
+                lhs.severity.priority > rhs.severity.priority ||
+                (lhs.severity.priority == rhs.severity.priority && lhs.occurrences > rhs.occurrences)
             }
     }
 
     func generateExecutiveSummary(issues: [LogIssue], errors: Int, warnings: Int, faults: Int) -> String {
-        let critical = issues.count(where: { $0.severity == "critical" })
-        let high = issues.count(where: { $0.severity == "high" })
+        let critical = issues.count(where: { $0.severity == .critical })
+        let high = issues.count(where: { $0.severity == .high })
 
         return """
         Analyzed \(errors) errors, \(warnings) warnings, and \(faults) faults. \
@@ -510,8 +492,8 @@ private extension AIAnalyzer {
 
     func prioritizeActions(from issues: [LogIssue]) -> [String] {
         issues
-            .filter { $0.severity == "critical" || $0.severity == "high" }
-            .sorted { $0.severity > $1.severity }
+            .filter { $0.severity == .critical || $0.severity == .high }
+            .sorted { $0.severity.priority > $1.severity.priority }
             .prefix(5)
             .map { "\($0.title) (\($0.file):\($0.line))" }
     }

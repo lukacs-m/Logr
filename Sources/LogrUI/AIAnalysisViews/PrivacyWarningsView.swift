@@ -206,14 +206,14 @@ private struct PrivacyWarningRow: View {
     }
 
     private var severityIcon: some View {
-        switch warning.severity.lowercased() {
-        case "critical":
+        switch warning.severity {
+        case .critical:
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
-        case "high":
+        case .high:
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(.orange)
-        case "medium":
+        case .medium:
             Image(systemName: "exclamationmark.circle")
                 .foregroundStyle(.yellow)
         default:
