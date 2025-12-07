@@ -18,7 +18,6 @@ struct AnalyzeProcessingView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Spacer()
             progressIndicator
 
             VStack(spacing: 8) {
@@ -42,16 +41,15 @@ struct AnalyzeProcessingView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
     }
 
     @ViewBuilder
     private var progressIndicator: some View {
         if let progress {
-            ProgressView(value: progress.progress)
+            ProgressView()
                 .progressViewStyle(.circular)
                 .scaleEffect(1.5)
         } else {
