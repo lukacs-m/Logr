@@ -13,7 +13,6 @@ A powerful, persistent logging library for Apple platforms that leverages OSLog 
 - **AI-Powered Analysis** (iOS 26+): Automatic privacy issue detection and intelligent log issue summarization
 - **Encryption**: Built-in symmetric encryption for sensitive log data using the Keychain
 - **SwiftUI Integration**: Beautiful, built-in log viewer with filtering, search, sharing, and AI analysis capabilities
-- **Privacy-First**: Apple privacy system integration with automatic redaction of sensitive data
 - **Configurable**: Flexible configuration for log retention, levels, cleanup intervals, and verbosity
 - **Modular Architecture**: Separate `Logr` core and `LogrUI` modules for flexibility
 - **Category System**: Comprehensive enum-based categories with custom support
@@ -475,7 +474,7 @@ LogR is built with privacy and security as first-class concerns.
 ### Encryption
 
 All stored logs are automatically encrypted using:
--  **AES** or **ChaChapoly**: Industry-standard symmetric encryption
+- **AES** or **ChaChapoly**: Industry-standard symmetric encryption
 - **Keychain Storage**: Encryption keys stored securely in the Keychain
 - **Automatic**: No configuration required
 
@@ -830,5 +829,3 @@ Built with:
 - [SQLiteData](https://github.com/pointfreeco/sqlite-data) - SQLite Data models
 
 ---
-
-Made with ❤️ for the Swift community
