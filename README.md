@@ -13,7 +13,6 @@ A powerful, persistent logging library for Apple platforms that leverages OSLog 
 - **AI-Powered Analysis** (iOS 26+): Automatic privacy issue detection and intelligent log issue summarization
 - **Encryption**: Built-in symmetric encryption for sensitive log data using the Keychain
 - **SwiftUI Integration**: Beautiful, built-in log viewer with filtering, search, sharing, and AI analysis capabilities
-- **Privacy-First**: Apple privacy system integration with automatic redaction of sensitive data
 - **Configurable**: Flexible configuration for log retention, levels, cleanup intervals, and verbosity
 - **Modular Architecture**: Separate `Logr` core and `LogrUI` modules for flexibility
 - **Category System**: Comprehensive enum-based categories with custom support
@@ -475,7 +474,7 @@ LogR is built with privacy and security as first-class concerns.
 ### Encryption
 
 All stored logs are automatically encrypted using:
-- **ChaChapoly**: Industry-standard symmetric encryption
+- **AES** or **ChaChapoly**: Industry-standard symmetric encryption
 - **Keychain Storage**: Encryption keys stored securely in the Keychain
 - **Automatic**: No configuration required
 
@@ -776,11 +775,11 @@ LogR is built with a clean, modular architecture:
              │
              ├──→ LogRPersistence Protocol
              │    ├── FileSystemStorage
-             │    ├── SQLiteStorage (GRDB)
+             │    ├── SQLiteStorage
              │    └── Custom implementations
              │
              ├──→ LoggerCryptoServicing Protocol
-             │    └── LoggerCryptoService (ChaChaPoly + Keychain)
+             │    └── LoggerCryptoService (AES / ChaChaPoly + Keychain)
              │
              └──→ LogAIAnalyzer Protocol (iOS 26+)
                   └── AIAnalyzer
@@ -816,21 +815,17 @@ Contributions are welcome! Please:
 
 ## License
 
-LogR is released under the MIT License. See [LICENSE](LICENSE) for details.
+LogR is released under the MIT License. See [LICENSE](https://spdx.org/licenses/MIT.html) for details.
 
 ## Support & Documentation
 
-- **Documentation**: [Full DocC Documentation](https://docs.example.com/logr)
+- **Documentation**: [Full Documentation](https://lukacs-m.github.io/Logr/)
 - **Issues**: [GitHub Issues](https://github.com/lukacs-m/logr/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/lukacs-m/logr/discussions)
 
 ## Acknowledgments
 
 Built with:
-- [GRDB.swift](https://github.com/groue/GRDB.swift) - SQLite toolkit
 - [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) - Keychain wrapper
 - [SQLiteData](https://github.com/pointfreeco/sqlite-data) - SQLite Data models
 
 ---
-
-Made with ❤️ for the Swift community
