@@ -417,5 +417,5 @@ struct LogAnalysisView: View {
     NavigationStack {
         LogAnalysisView()
     }
-    .environment(\.logService, LogR())
+    .environment(\.logService, try! LogR())
 }

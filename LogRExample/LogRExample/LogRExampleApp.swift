@@ -23,13 +23,16 @@ struct LogRExampleApp: App {
                                            cleanupInterval: 60 * 60,
                                            logVerbosity: .verbose)
             if #available(macOS 26.0, *) {
-                _logger = State(initialValue: LogR(storage: storage, logAnalyser: AIAnalyzer(),
-                                                   configuration: config))
+                let logr = try LogR(storage: storage,
+                                    logAnalyser: AIAnalyzer(),
+                                    configuration: config)
+                _logger = State(initialValue: logr)
             } else {
-                _logger = State(initialValue: LogR(storage: storage, configuration: config))
+                let logr = try LogR(storage: storage, configuration: config)
+                _logger = State(initialValue: logr)
             }
         } catch {
-            _logger = State(initialValue: LogR())
+            fatalError("Could not initialize LogR: \(error)")
         }
     }
 
@@ -81,5 +84,5 @@ struct MainTabView: View {
 
 #Preview {
     MainTabView()
-        .environment(\.logService, LogR())
+        .environment(\.logService, try! LogR())
 }

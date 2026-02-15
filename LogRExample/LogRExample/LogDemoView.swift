@@ -373,5 +373,5 @@ struct LogDemoView: View {
     NavigationStack {
         LogDemoView()
     }
-    .environment(\.logService, LogR())
+    .environment(\.logService, try! LogR())
 }
