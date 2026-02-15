@@ -10,7 +10,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test crypto service initialization")
     func testCryptoServiceInitialization() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         #expect(cryptoService.currentKeyVersion.value.value == 1)
     }
@@ -20,10 +20,10 @@ struct LoggerCryptoServiceTests {
         let mockStore = MockKeychainService()
 
         // First initialization
-        _ = LoggerCryptoService(store: mockStore)
+        _ = try LoggerCryptoService(store: mockStore)
 
         // Second initialization should load existing key
-        let cryptoService2 = LoggerCryptoService(store: mockStore)
+        let cryptoService2 = try LoggerCryptoService(store: mockStore)
 
         #expect(cryptoService2.currentKeyVersion.value.value == 1)
     }
@@ -33,7 +33,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test symmetric encryption")
     func testSymmetricEncryption() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let testData = "Hello, World!"
         let encryptedData = try cryptoService.symmetricEncrypt(object: testData)
@@ -46,7 +46,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt log entry")
     func testEncryptLogEntry() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let logEntry = LogEntry(
             level: .info,
@@ -63,7 +63,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt empty string")
     func testEncryptEmptyString() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let emptyString = ""
         let encryptedData = try cryptoService.symmetricEncrypt(object: emptyString)
@@ -74,7 +74,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt large data")
     func testEncryptLargeData() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let largeString = String(repeating: "A", count: 100000)
         let encryptedData = try cryptoService.symmetricEncrypt(object: largeString)
@@ -85,7 +85,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt unicode data")
     func testEncryptUnicodeData() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let unicodeString = "Hello 世界 🌍 مرحبا"
         let encryptedData = try cryptoService.symmetricEncrypt(object: unicodeString)
@@ -98,7 +98,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test symmetric decryption")
     func testSymmetricDecryption() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let originalText = "Hello, World!"
         let encryptedData = try cryptoService.symmetricEncrypt(object: originalText)
@@ -110,7 +110,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt log entry")
     func testDecryptLogEntry() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let originalEntry = LogEntry(
             level: .error,
@@ -131,7 +131,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt empty string")
     func testDecryptEmptyString() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let emptyString = ""
         let encryptedData = try cryptoService.symmetricEncrypt(object: emptyString)
@@ -143,7 +143,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt large data")
     func testDecryptLargeData() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let largeString = String(repeating: "B", count: 100000)
         let encryptedData = try cryptoService.symmetricEncrypt(object: largeString)
@@ -155,7 +155,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt unicode data")
     func testDecryptUnicodeData() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let unicodeString = "Hello 世界 🌍 مرحبا"
         let encryptedData = try cryptoService.symmetricEncrypt(object: unicodeString)
@@ -169,7 +169,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt-decrypt round trip")
     func testEncryptDecryptRoundTrip() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let testStrings = [
             "Simple text",
@@ -191,7 +191,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt-decrypt multiple log entries")
     func testEncryptDecryptMultipleLogEntries() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let entries = [
             LogEntry(level: .debug, category: .debug, subsystem: "test", message: "Debug message"),
@@ -215,7 +215,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test key rotation")
     func testKeyRotation() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         #expect(cryptoService.currentKeyVersion.value.value == 1)
 
@@ -241,7 +241,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test key rotation with removal of old keys")
     func testKeyRotationWithRemoval() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         // Encrypt with version 1
         let originalText = "Test message"
@@ -261,7 +261,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test multiple key rotations")
     func testMultipleKeyRotations() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         #expect(cryptoService.currentKeyVersion.value.value == 1)
 
@@ -279,7 +279,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt with invalid data")
     func testDecryptWithInvalidData() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let invalidData = Data([0x00, 0x01, 0x02, 0x03])
 
@@ -291,7 +291,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt with corrupted data")
     func testDecryptWithCorruptedData() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let originalText = "Test message"
         var encryptedData = try cryptoService.symmetricEncrypt(object: originalText)
@@ -309,7 +309,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test concurrent encryption")
     func testConcurrentEncryption() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         await withTaskGroup(of: Void.self) { group in
             for i in 0..<10 {
@@ -328,7 +328,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test concurrent encryption and decryption")
     func testConcurrentEncryptionAndDecryption() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         // Pre-encrypt some data
         let originalMessages = (0..<10).map { "Message \($0)" }
@@ -369,7 +369,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt decrypt complex log entry")
     func testEncryptDecryptComplexLogEntry() async throws {
         let mockStore = MockKeychainService()
-        let cryptoService = LoggerCryptoService(store: mockStore)
+        let cryptoService = try LoggerCryptoService(store: mockStore)
 
         let complexEntry = LogEntry(
             id: "test-id-123",

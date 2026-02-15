@@ -118,7 +118,7 @@ public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable, Identif
         case .debug: "Debug"
         case .info: "Info"
         case .notice: "Notice"
-        case .warning: "Notice"
+        case .warning: "Warning"
         case .error: "Error"
         case .fault: "Fault"
         }
