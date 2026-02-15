@@ -292,7 +292,7 @@ private extension LoggerCryptoService {
                             store: KeychainStore,
                             keyPrefix: String,
                             keySize: Int) throws -> SymmetricKey {
-        let data = Data.randomBytes(count: keySize)
+        let data = try Data.randomBytes(count: keySize)
         try store.set(data, forKey: "\(keyPrefix)\(version.value)")
         return SymmetricKey(data: data)
     }
@@ -301,9 +301,12 @@ private extension LoggerCryptoService {
 // MARK: - Data helpers
 
 private extension Data {
-    static func randomBytes(count: Int) -> Data {
+    static func randomBytes(count: Int) throws -> Data {
         var bytes = [UInt8](repeating: 0, count: count)
-        _ = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
+        let status = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
+        guard status == errSecSuccess else {
+            throw LoggerCryptoError.keychainFailure("SecRandomCopyBytes failed with status \(status)")
+        }
         return Data(bytes)
     }
 }

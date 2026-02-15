@@ -40,7 +40,7 @@ struct FilterSheet: View {
         .task {
             setCategories()
         }
-        .onChange(of: logr.recentLogs) { _ in
+        .onChange(of: logr.recentLogs) {
             setCategories()
         }
     }

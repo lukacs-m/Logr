@@ -32,6 +32,8 @@ public final class LogR: LogRService, Sendable {
         return analyser.isAvailable
     }
 
+    public private(set) var droppedLogCount: Int = 0
+
     private let storage: LogRPersistence?
     private let cryptoService: any LoggerCryptoServicing
 
@@ -145,7 +147,7 @@ public final class LogR: LogRService, Sendable {
         }
         recentLogs.prepend(entry)
 
-        let task = Task { [weak writer, cryptoService] in
+        let task = Task { [weak self, weak writer, cryptoService] in
             do {
                 let encryptedLogData = try cryptoService.symmetricEncrypt(object: entry)
                 let encryptedLogEntry = EncryptedLogEntry(id: entry.id,
@@ -153,7 +155,8 @@ public final class LogR: LogRService, Sendable {
                                                           data: encryptedLogData)
                 await writer?.enqueue(encryptedLogEntry)
             } catch {
-                getLogger(for: .encryption).log(level: .error, "Failed to encrypt log entry: \(error)")
+                self?.droppedLogCount += 1
+                self?.getLogger(for: .encryption).log(level: .error, "Failed to encrypt log entry: \(error)")
             }
         }
         encryptionTasks.append(task)
