@@ -48,7 +48,7 @@ public actor FileSystemStorage: LogRPersistence {
 
     public func deleteEntries(olderThan date: Date) async throws {
         let entries = try await fetchEntries()
-        let filteredEntries = entries.filter { $0.timestamp >= date }
+        let filteredEntries = entries.filter { $0.timestamp > date }
         try await saveEntries(filteredEntries)
     }
 

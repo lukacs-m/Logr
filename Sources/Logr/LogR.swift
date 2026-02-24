@@ -32,6 +32,8 @@ public final class LogR: LogRService, Sendable {
         return analyser.isAvailable
     }
 
+    public private(set) var droppedLogCount: Int = 0
+
     private let storage: LogRPersistence?
     private let cryptoService: any LoggerCryptoServicing
 
@@ -41,6 +43,8 @@ public final class LogR: LogRService, Sendable {
     private nonisolated(unsafe) var cleanupTimer: AnyCancellable?
     @ObservationIgnored
     private var cleanupTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var encryptionTasks: [Task<Void, Never>] = []
 
     @ObservationIgnored
     private let writer: LogWriterActor?
@@ -58,7 +62,7 @@ public final class LogR: LogRService, Sendable {
     private nonisolated(unsafe) var progressTask: Task<Void, Never>?
 
     public init(storage: LogRPersistence? = nil,
-                cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
+                cryptoService: LoggerCryptoServicing,
                 configuration: LogrConfiguration = .default) {
         recentLogs = Deque()
         self.storage = storage
@@ -72,17 +76,41 @@ public final class LogR: LogRService, Sendable {
         setup()
     }
 
+    public convenience init(storage: LogRPersistence? = nil,
+                            configuration: LogrConfiguration = .default) throws {
+        let crypto = try LoggerCryptoService()
+        self.init(storage: storage, cryptoService: crypto, configuration: configuration)
+    }
+
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public convenience init(storage: LogRPersistence? = nil,
                             logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
-                            cryptoService: LoggerCryptoServicing = LoggerCryptoService(),
+                            cryptoService: LoggerCryptoServicing,
                             configuration: LogrConfiguration = .default) {
         self.init(storage: storage, cryptoService: cryptoService, configuration: configuration)
         _analyser = logAnalyser
     }
 
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    public convenience init(storage: LogRPersistence? = nil,
+                            logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
+                            configuration: LogrConfiguration = .default) throws {
+        let crypto = try LoggerCryptoService()
+        self.init(storage: storage, logAnalyser: logAnalyser, cryptoService: crypto, configuration: configuration)
+    }
+
     deinit {
+        let pendingTasks = encryptionTasks
+        let writer = self.writer
         stopTimer()
+        if !pendingTasks.isEmpty || writer != nil {
+            Task {
+                for task in pendingTasks {
+                    await task.value
+                }
+                await writer?.flush()
+            }
+        }
     }
 
     public func log(level: LogLevel,
@@ -119,7 +147,7 @@ public final class LogR: LogRService, Sendable {
         }
         recentLogs.prepend(entry)
 
-        Task { [weak writer, cryptoService] in
+        let task = Task { [weak self, weak writer, cryptoService] in
             do {
                 let encryptedLogData = try cryptoService.symmetricEncrypt(object: entry)
                 let encryptedLogEntry = EncryptedLogEntry(id: entry.id,
@@ -127,9 +155,11 @@ public final class LogR: LogRService, Sendable {
                                                           data: encryptedLogData)
                 await writer?.enqueue(encryptedLogEntry)
             } catch {
-                getLogger(for: .encryption).log(level: .error, "Failed to encrypt log entry: \(error)")
+                self?.droppedLogCount += 1
+                self?.getLogger(for: .encryption).log(level: .error, "Failed to encrypt log entry: \(error)")
             }
         }
+        encryptionTasks.append(task)
     }
 }
 
@@ -142,6 +172,12 @@ public extension LogR {
     }
 
     func flush() async {
+        let tasks = encryptionTasks
+        encryptionTasks.removeAll()
+        for task in tasks {
+            await task.value
+        }
+
         guard let writer else {
             return
         }
@@ -286,9 +322,21 @@ private extension LogR {
 private extension LogR {
     private func loadRecentLogs() async {
         do {
-            let encryptedLogs = try await storage?.fetchEntries()
-            let logs: [LogEntry] = encryptedLogs?
-                .compactMap { try? cryptoService.symmetricDecrypt(encryptedData: $0.data) } ?? []
+            guard let encryptedLogs = try await storage?.fetchEntries() else { return }
+            var logs: [LogEntry] = []
+            var decryptionFailures = 0
+            for encrypted in encryptedLogs {
+                do {
+                    let entry: LogEntry = try cryptoService.symmetricDecrypt(encryptedData: encrypted.data)
+                    logs.append(entry)
+                } catch {
+                    decryptionFailures += 1
+                }
+            }
+            if decryptionFailures > 0 {
+                getLogger(for: .encryption)
+                    .warning("Failed to decrypt \(decryptionFailures) of \(encryptedLogs.count) log entries")
+            }
             recentLogs.append(contentsOf: logs)
         } catch {
             getLogger(for: .system).error("Failed to load recent logs: \(error.localizedDescription)")
@@ -302,7 +350,7 @@ actor LogWriterActor {
     private let storage: LogRPersistence
     private let logger: Logger
     private var pending: [EncryptedLogEntry] = []
-    private var isWritingTask: Task<Void, Never>?
+    private var writingTask: Task<Void, Never>?
     private let batchSize: Int
 
     init(storage: LogRPersistence, configuration: LogrConfiguration, batchSize: Int = 50) {
@@ -313,14 +361,21 @@ actor LogWriterActor {
 
     func enqueue(_ entry: EncryptedLogEntry) {
         pending.append(entry)
-        guard isWritingTask == nil else { return }
-        isWritingTask = Task {
-            defer { isWritingTask = nil }
-            await flush()
+        guard writingTask == nil else { return }
+        writingTask = Task {
+            defer { writingTask = nil }
+            await drainPending()
         }
     }
 
     func flush() async {
+        if let writingTask {
+            await writingTask.value
+        }
+        await drainPending()
+    }
+
+    private func drainPending() async {
         while !pending.isEmpty {
             let batch = Array(pending.prefix(batchSize))
             pending.removeFirst(batch.count)
@@ -328,6 +383,7 @@ actor LogWriterActor {
                 try await storage.store(batch)
             } catch {
                 logger.error("Failed to store log entry: \(error.localizedDescription)")
+                break
             }
         }
     }

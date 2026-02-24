@@ -84,6 +84,9 @@ public enum LoggerCryptoError: Error {
 
     /// The encrypted data envelope is invalid or corrupted.
     case invalidEnvelope
+
+    /// Initialization failed due to an underlying error.
+    case initializationFailed(underlying: Error)
 }
 
 // MARK: - KeyVersion
@@ -189,7 +192,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
     // MARK: - Init
 
     public init(store: KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
-                encryptionAlgo: CryptoAlgo = .aes256gcm) {
+                encryptionAlgo: CryptoAlgo = .aes256gcm) throws {
         self.store = store
         self.encryptionAlgo = encryptionAlgo
         if let versionData = try? store.data(forKey: currentKeyRef),
@@ -210,7 +213,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
                     $0[newKeyVersion] = key
                 }
             } catch {
-                fatalError("Failed to generate initial key with error \(error.localizedDescription)")
+                throw LoggerCryptoError.initializationFailed(underlying: error)
             }
         }
     }
@@ -289,7 +292,7 @@ private extension LoggerCryptoService {
                             store: KeychainStore,
                             keyPrefix: String,
                             keySize: Int) throws -> SymmetricKey {
-        let data = Data.randomBytes(count: keySize)
+        let data = try Data.randomBytes(count: keySize)
         try store.set(data, forKey: "\(keyPrefix)\(version.value)")
         return SymmetricKey(data: data)
     }
@@ -298,9 +301,12 @@ private extension LoggerCryptoService {
 // MARK: - Data helpers
 
 private extension Data {
-    static func randomBytes(count: Int) -> Data {
+    static func randomBytes(count: Int) throws -> Data {
         var bytes = [UInt8](repeating: 0, count: count)
-        _ = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
+        let status = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
+        guard status == errSecSuccess else {
+            throw LoggerCryptoError.keychainFailure("SecRandomCopyBytes failed with status \(status)")
+        }
         return Data(bytes)
     }
 }

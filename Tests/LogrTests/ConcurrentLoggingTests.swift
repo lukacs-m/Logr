@@ -15,8 +15,8 @@ struct ConcurrentLoggingTests {
         return try SQLiteStorage(databasePath: testDBPath)
     }
 
-    func createMockCryptoService() -> LoggerCryptoService {
-        return LoggerCryptoService(store: MockKeychainService())
+    func createMockCryptoService() throws -> LoggerCryptoService {
+        return try LoggerCryptoService(store: MockKeychainService())
     }
 
     // MARK: - Basic Concurrent Tests
@@ -24,7 +24,7 @@ struct ConcurrentLoggingTests {
     @MainActor
     @Test("Test concurrent logging from multiple threads - in memory")
     func testConcurrentLoggingInMemory() async throws {
-        let logr = LogR(cryptoService: createMockCryptoService())
+        let logr = LogR(cryptoService: try createMockCryptoService())
         let logCount = 100
         let threadCount = 10
 
@@ -50,7 +50,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
 
         let logCount = 50
@@ -58,9 +58,9 @@ struct ConcurrentLoggingTests {
 
         await withTaskGroup(of: Void.self) { group in
             for threadId in 0..<threadCount {
-                group.addTask { @MainActor in
+                group.addTask {
                     for i in 0..<logCount {
-                        logr.info("Thread \(threadId) - Message \(i)", category: .test)
+                        await logr.info("Thread \(threadId) - Message \(i)", category: .test)
                     }
                 }
             }
@@ -84,7 +84,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
 
         let logCount = 100
@@ -105,6 +105,7 @@ struct ConcurrentLoggingTests {
                     }
                 }
             }
+            await group.waitForAll()
         }
 
         await logr.flush()
@@ -121,7 +122,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
 
         let logCount = 30
@@ -150,7 +151,7 @@ struct ConcurrentLoggingTests {
     @Test("Test concurrent logging preserves data integrity")
     func testConcurrentLoggingPreservesDataIntegrity() async throws {
         let logr = LogR(
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
 
         let logCount = 50
@@ -187,7 +188,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
         
         let logCount = 20
@@ -227,7 +228,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
         
         let logCount = 20
@@ -267,7 +268,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
 
         let burstSize = 100
@@ -296,7 +297,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
 
         let threadCount = 10
@@ -323,7 +324,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
 
         let unicodeMessages = [
@@ -362,7 +363,7 @@ struct ConcurrentLoggingTests {
         let storage = try createTestDatabase()
         let logr = LogR(
             storage: storage,
-            cryptoService: createMockCryptoService()
+            cryptoService: try createMockCryptoService()
         )
 
         let logCount = 1000
@@ -400,7 +401,7 @@ struct ConcurrentLoggingTests {
             cleanupInterval: 1 // 1 second
         )
         let logr = LogR(
-            cryptoService: createMockCryptoService(),
+            cryptoService: try createMockCryptoService(),
             configuration: config
         )
 
@@ -423,7 +424,7 @@ struct ConcurrentLoggingTests {
     @Test("Test storage integrity after many concurrent writes")
     func testStorageIntegrityAfterManyConcurrentWrites() async throws {
         let storage = try createTestDatabase()
-        let cryptoService = createMockCryptoService()
+        let cryptoService = try createMockCryptoService()
         let logr = LogR(
             storage: storage,
             cryptoService: cryptoService

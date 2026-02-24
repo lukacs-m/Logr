@@ -12,7 +12,7 @@ public final class SQLiteStorage: LogRPersistence {
     private let database: any DatabaseWriter
 
     public enum DatabaseError: Error {
-        case databaseInitializationFailed
+        case databaseInitializationFailed(underlying: Error)
         case invalidDatabasePath
     }
 
@@ -35,7 +35,7 @@ public final class SQLiteStorage: LogRPersistence {
             try runMigrations()
 
         } catch {
-            throw DatabaseError.databaseInitializationFailed
+            throw DatabaseError.databaseInitializationFailed(underlying: error)
         }
     }
 
@@ -66,6 +66,14 @@ public final class SQLiteStorage: LogRPersistence {
                 table.column("data", .blob).notNull()
                 table.column("timestamp", .double).notNull()
             }
+        }
+
+        migrator.registerMigration("add_timestamp_index") { db in
+            try db.create(
+                index: "EncryptedLogEntryDAO_timestamp",
+                on: "EncryptedLogEntryDAO",
+                columns: ["timestamp"]
+            )
         }
 
         try migrator.migrate(database)
@@ -113,18 +121,16 @@ public extension SQLiteStorage {
     }
 
     func deleteEntries(keepingLatest count: Int) async throws {
-
         try await database.write { db in
-            // This uses raw SQL for the complex query
             let sql = """
               DELETE FROM EncryptedLogEntryDAO
               WHERE id NOT IN (
                   SELECT id FROM EncryptedLogEntryDAO
                   ORDER BY timestamp DESC
-                  LIMIT \(count)
+                  LIMIT ?
               )
               """
-            try db.execute(sql: sql)
+            try db.execute(sql: sql, arguments: [count])
         }
     }
 

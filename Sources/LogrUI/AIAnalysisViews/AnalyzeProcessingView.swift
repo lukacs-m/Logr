@@ -49,7 +49,7 @@ struct AnalyzeProcessingView: View {
     @ViewBuilder
     private var progressIndicator: some View {
         if let progress {
-            ProgressView()
+            ProgressView(value: progress.progress)
                 .progressViewStyle(.circular)
                 .scaleEffect(1.5)
         } else {

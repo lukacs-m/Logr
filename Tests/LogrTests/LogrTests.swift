@@ -25,7 +25,7 @@ final class MockKeychainService: @unchecked Sendable, KeychainStore {
 @Suite("LogR Core Functionality")
 struct LogrTests {
 
-    let cryptoService = LoggerCryptoService(store: MockKeychainService())
+    let cryptoService = try! LoggerCryptoService(store: MockKeychainService())
     // MARK: - Basic Logging Tests
 
     @Test("Test basic debug logging")

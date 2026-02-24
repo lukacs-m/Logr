@@ -32,7 +32,7 @@ struct ModelsTests {
             #expect(LogLevel.debug.displayName == "Debug")
             #expect(LogLevel.info.displayName == "Info")
             #expect(LogLevel.notice.displayName == "Notice")
-            #expect(LogLevel.warning.displayName == "Notice")
+            #expect(LogLevel.warning.displayName == "Warning")
             #expect(LogLevel.error.displayName == "Error")
             #expect(LogLevel.fault.displayName == "Fault")
         }

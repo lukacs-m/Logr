@@ -363,5 +363,5 @@ private struct FeatureRow: View {
     NavigationStack {
         ContentView()
     }
-    .environment(\.logService, LogR())
+    .environment(\.logService, try! LogR())
 }
