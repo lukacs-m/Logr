@@ -1,4 +1,5 @@
 import Collections
+import DequeModule
 import Combine
 import Foundation
 import Observation

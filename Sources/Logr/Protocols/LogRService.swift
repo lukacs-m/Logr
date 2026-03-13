@@ -7,6 +7,7 @@
 
 import Collections
 import Foundation
+import DequeModule
 
 /// The main logging service protocol that defines all logging operations.
 ///
