@@ -390,7 +390,7 @@ actor LogWriterActor {
     }
 }
 
-private extension Deque {
+private extension Collections.Deque {
     var toArray: [Element] {
         Array(self)
     }
