@@ -1,6 +1,7 @@
 import Testing
 @testable import Logr
 import Foundation
+import Collections
 
 final class MockKeychainService: @unchecked Sendable, KeychainStore {
     var storage: [String: Data] = [:]
@@ -18,6 +19,17 @@ final class MockKeychainService: @unchecked Sendable, KeychainStore {
     
     func remove(forKey key: String) throws {
         storage.removeValue(forKey: key)
+    }
+}
+
+/// Counts how many times its message factory is evaluated. Used to prove that
+/// the logging `@autoclosure` is only invoked when the level is actually enabled.
+@MainActor
+final class EvaluationCounter {
+    private(set) var count = 0
+    func track() -> String {
+        count += 1
+        return "tracked-message"
     }
 }
 
@@ -102,6 +114,111 @@ struct LogrTests {
         #expect(logr.recentLogs[2].message == "Notice")
         #expect(logr.recentLogs[3].message == "Info")
         #expect(logr.recentLogs[4].message == "Debug")
+    }
+
+    // MARK: - Lazy Evaluation Tests
+
+    @Test("Disabled log level does not evaluate the message autoclosure")
+    func testDisabledLevelSkipsMessageEvaluation() async throws {
+        let config = LogrConfiguration(enabledLevels: [.error, .fault])
+        let logr = LogR(cryptoService: cryptoService, configuration: config)
+        let counter = EvaluationCounter()
+
+        // `.debug` is not enabled — the message must never be built.
+        logr.debug(counter.track())
+        #expect(counter.count == 0)
+
+        // `.error` is enabled — the message is built exactly once.
+        logr.error(counter.track())
+        #expect(counter.count == 1)
+    }
+
+    @Test("Category-level override below threshold skips message evaluation")
+    func testCategoryOverrideSkipsMessageEvaluation() async throws {
+        let config = LogrConfiguration(enabledLevels: Set(LogLevel.allCases),
+                                       categoryLevelOverrides: [.network: .error])
+        let logr = LogR(cryptoService: cryptoService, configuration: config)
+        let counter = EvaluationCounter()
+
+        // `.network` only logs `.error`+ — a `.debug` to `.network` must not evaluate.
+        logr.debug(counter.track(), category: .network)
+        #expect(counter.count == 0)
+    }
+
+    // MARK: - Cleanup Tests
+
+    private func agedEntry(_ message: String, ageSeconds: TimeInterval, now: Date) -> LogEntry {
+        LogEntry(timestamp: now.addingTimeInterval(-ageSeconds),
+                 level: .info,
+                 category: .system,
+                 subsystem: "test",
+                 message: message)
+    }
+
+    @Test("Expired entries are trimmed from the tail and fresh entries kept, in order")
+    func testTrimExpiredEntries() async throws {
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-60) // entries older than 60s expire
+        // Newest-first ordering: fresh at the front, oldest at the back.
+        var deque: Deque<LogEntry> = [
+            agedEntry("fresh-2", ageSeconds: 5, now: now),
+            agedEntry("fresh-1", ageSeconds: 30, now: now),
+            agedEntry("old-1", ageSeconds: 120, now: now),
+            agedEntry("old-2", ageSeconds: 600, now: now)
+        ]
+
+        LogR.trimExpiredEntries(&deque, olderThan: cutoff)
+
+        #expect(deque.map(\.message) == ["fresh-2", "fresh-1"])
+    }
+
+    @Test("Trimming is a no-op when nothing has expired")
+    func testTrimExpiredNoOp() async throws {
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-3600)
+        var deque: Deque<LogEntry> = [
+            agedEntry("a", ageSeconds: 1, now: now),
+            agedEntry("b", ageSeconds: 100, now: now)
+        ]
+
+        LogR.trimExpiredEntries(&deque, olderThan: cutoff)
+
+        #expect(deque.count == 2)
+        #expect(deque.map(\.message) == ["a", "b"])
+    }
+
+    // MARK: - Load Merge Tests
+
+    @Test("Loaded history is merged newest-first, after any logs captured during launch")
+    func testMergeLoadedHistoryOrder() async throws {
+        let now = Date()
+        // As returned by fetchEntries(limit:): oldest-first.
+        let historical = [
+            agedEntry("h1", ageSeconds: 50, now: now),
+            agedEntry("h2", ageSeconds: 40, now: now),
+            agedEntry("h3", ageSeconds: 30, now: now)
+        ]
+        // Live logs captured during launch: newest-first, newer than the history.
+        var current: Deque<LogEntry> = [
+            agedEntry("live2", ageSeconds: 1, now: now),
+            agedEntry("live1", ageSeconds: 2, now: now)
+        ]
+
+        LogR.mergeLoaded(historical, into: &current, cap: 100)
+
+        #expect(current.map(\.message) == ["live2", "live1", "h3", "h2", "h1"])
+    }
+
+    @Test("Merging loaded history drops the oldest beyond the cap")
+    func testMergeLoadedRespectsCap() async throws {
+        let now = Date()
+        // oldest-first: h1 (oldest) … h6 (newest)
+        let historical = (1 ... 6).map { agedEntry("h\($0)", ageSeconds: Double(60 - $0), now: now) }
+        var current: Deque<LogEntry> = []
+
+        LogR.mergeLoaded(historical, into: &current, cap: 3)
+
+        #expect(current.map(\.message) == ["h6", "h5", "h4"])
     }
 
     // MARK: - Configuration Tests

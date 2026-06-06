@@ -44,8 +44,6 @@ public final class LogR: LogRService, Sendable {
     private nonisolated(unsafe) var cleanupTimer: AnyCancellable?
     @ObservationIgnored
     private var cleanupTask: Task<Void, Never>?
-    @ObservationIgnored
-    private var encryptionTasks: [Task<Void, Never>] = []
 
     @ObservationIgnored
     private let writer: LogWriterActor?
@@ -70,7 +68,7 @@ public final class LogR: LogRService, Sendable {
         self.configuration = configuration
         self.cryptoService = cryptoService
         writer = if let storage {
-            LogWriterActor(storage: storage, configuration: configuration)
+            LogWriterActor(storage: storage, cryptoService: cryptoService, configuration: configuration)
         } else {
             nil
         }
@@ -101,17 +99,11 @@ public final class LogR: LogRService, Sendable {
     }
 
     deinit {
-        let pendingTasks = encryptionTasks
-        let writer = self.writer
         stopTimer()
-        if !pendingTasks.isEmpty || writer != nil {
-            Task {
-                for task in pendingTasks {
-                    await task.value
-                }
-                await writer?.flush()
-            }
-        }
+        // Finishing the writer's stream lets its consumer drain and persist any buffered
+        // entries, then releases it. This is best-effort; call `flush()` when you need a
+        // guarantee that pending entries are persisted before termination.
+        writer?.shutdown()
     }
 
     public func log(level: LogLevel,
@@ -148,19 +140,10 @@ public final class LogR: LogRService, Sendable {
         }
         recentLogs.prepend(entry)
 
-        let task = Task { [weak self, weak writer, cryptoService] in
-            do {
-                let encryptedLogData = try cryptoService.symmetricEncrypt(object: entry)
-                let encryptedLogEntry = EncryptedLogEntry(id: entry.id,
-                                                          timestamp: entry.timestamp,
-                                                          data: encryptedLogData)
-                await writer?.enqueue(encryptedLogEntry)
-            } catch {
-                self?.droppedLogCount += 1
-                self?.getLogger(for: .encryption).log(level: .error, "Failed to encrypt log entry: \(error)")
-            }
-        }
-        encryptionTasks.append(task)
+        // Hand the entry to the background writer. Encryption and batched persistence
+        // happen inside the actor's single consumer — no per-call Task is spawned and
+        // nothing accumulates on the main actor.
+        writer?.ingest(entry)
     }
 }
 
@@ -173,17 +156,7 @@ public extension LogR {
     }
 
     func flush() async {
-        let tasks = encryptionTasks
-        encryptionTasks.removeAll()
-        for task in tasks {
-            await task.value
-        }
-
-        guard let writer else {
-            return
-        }
-
-        await writer.flush()
+        await writer?.flush()
     }
 }
 
@@ -236,6 +209,35 @@ public extension LogR {
     }
 }
 
+// MARK: - Cleanup helpers
+
+extension LogR {
+    /// Removes entries older than `cutoff` from a newest-first deque.
+    ///
+    /// `recentLogs` is maintained newest-first, so expired entries always form a
+    /// contiguous tail. Trimming from the back is O(number-expired) and allocates
+    /// nothing when nothing has expired — unlike a full `filter`, which reallocated the
+    /// entire deque on every cleanup tick.
+    func trimExpiredEntries(_ entries: inout Deque<LogEntry>, olderThan cutoff: Date) {
+        while let oldest = entries.last, oldest.timestamp <= cutoff {
+            entries.removeLast()
+        }
+    }
+
+    /// Merges history loaded from storage into the in-memory cache.
+    ///
+    /// `historical` arrives oldest-first (as returned by `fetchEntries(limit:)`), while
+    /// `current` holds any logs captured during launch, newest-first. History is appended
+    /// newest-first after those live logs, then the cache is trimmed to `cap` (dropping the
+    /// oldest). This keeps `recentLogs` newest-first and never larger than `maxLogEntries`.
+    func mergeLoaded(_ historical: [LogEntry], into current: inout Deque<LogEntry>, cap: Int) {
+        current.append(contentsOf: historical.reversed())
+        while current.count > cap {
+            current.removeLast()
+        }
+    }
+}
+
 // MARK: - Setup & utils
 
 private extension LogR {
@@ -244,6 +246,13 @@ private extension LogR {
 
         setupCategoryLoggers()
         startCleanupTimer()
+        if let writer {
+            Task {
+                await writer.setOnDrop { [weak self] count in
+                    Task { @MainActor in self?.droppedLogCount += count }
+                }
+            }
+        }
         Task {
             await loadRecentLogs()
         }
@@ -258,7 +267,7 @@ private extension LogR {
 
     func startCleanupTimer() {
         cleanupTimer = Timer
-            .publish(every: 1.0, on: .main, in: .common)
+            .publish(every: configuration.cleanupInterval, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.performCleanup()
@@ -278,7 +287,7 @@ private extension LogR {
 
     func performCleanup() {
         let cutoffDate = Date().addingTimeInterval(-configuration.maxLogAge)
-        recentLogs = recentLogs.filter { $0.timestamp > cutoffDate }
+        trimExpiredEntries(&recentLogs, olderThan: cutoffDate)
         guard cleanupTask == nil else { return }
         cleanupTask = Task {
             defer { cleanupTask = nil }
@@ -323,7 +332,10 @@ private extension LogR {
 private extension LogR {
     private func loadRecentLogs() async {
         do {
-            guard let encryptedLogs = try await storage?.fetchEntries() else { return }
+            // Load at most as many entries as the in-memory cache holds, rather than the
+            // entire persisted history.
+            guard let encryptedLogs = try await storage?.fetchEntries(limit: configuration.maxLogEntries)
+            else { return }
             var logs: [LogEntry] = []
             var decryptionFailures = 0
             for encrypted in encryptedLogs {
@@ -338,7 +350,7 @@ private extension LogR {
                 getLogger(for: .encryption)
                     .warning("Failed to decrypt \(decryptionFailures) of \(encryptedLogs.count) log entries")
             }
-            recentLogs.append(contentsOf: logs)
+           mergeLoaded(logs, into: &recentLogs, cap: configuration.maxLogEntries)
         } catch {
             getLogger(for: .system).error("Failed to load recent logs: \(error.localizedDescription)")
         }
@@ -347,44 +359,123 @@ private extension LogR {
 
 // MARK: - Background Writer Actor
 
+/// Background actor that encrypts and persists log entries.
+///
+/// Plaintext entries are handed in synchronously via ``ingest(_:)`` and delivered to a
+/// single consumer over an `AsyncStream`. The consumer encrypts each entry off the main
+/// actor, accumulates a batch, and writes it to storage with retry-on-failure. Using one
+/// ordered consumer means the caller never spawns a per-log task, nothing accumulates on
+/// the main actor, and entries are persisted in the order they were logged.
 actor LogWriterActor {
+    /// Events delivered to the single consumer.
+    private enum Event {
+        case entry(LogEntry)
+        case flush(CheckedContinuation<Void, Never>)
+    }
+
     private let storage: LogRPersistence
+    private let cryptoService: any LoggerCryptoServicing
     private let logger: Logger
-    private var pending: [EncryptedLogEntry] = []
-    private var writingTask: Task<Void, Never>?
     private let batchSize: Int
+    private let maxRetries: Int
+    private let continuation: AsyncStream<Event>.Continuation
+    private var onDrop: (@Sendable (Int) -> Void)?
 
-    init(storage: LogRPersistence, configuration: LogrConfiguration, batchSize: Int = 50) {
+    init(storage: LogRPersistence,
+         cryptoService: any LoggerCryptoServicing,
+         configuration: LogrConfiguration,
+         batchSize: Int = 50,
+         maxRetries: Int = 3) {
         self.storage = storage
+        self.cryptoService = cryptoService
         self.batchSize = batchSize
+        self.maxRetries = maxRetries
         logger = Logger(subsystem: configuration.subsystem, category: LogCategory.persistence.rawValue)
+        let (stream, continuation) = AsyncStream<Event>.makeStream()
+        self.continuation = continuation
+        Task { await self.consume(stream) }
     }
 
-    func enqueue(_ entry: EncryptedLogEntry) {
-        pending.append(entry)
-        guard writingTask == nil else { return }
-        writingTask = Task {
-            defer { writingTask = nil }
-            await drainPending()
+    /// Registers a callback invoked with the number of entries dropped (encryption
+    /// failures, or a batch abandoned after exhausting retries).
+    func setOnDrop(_ handler: @escaping @Sendable (Int) -> Void) {
+        onDrop = handler
+    }
+
+    /// Hands a plaintext entry to the writer. Synchronous and non-isolated so the main
+    /// actor's logging hot path neither awaits nor spawns a task.
+    nonisolated func ingest(_ entry: LogEntry) {
+        continuation.yield(.entry(entry))
+    }
+
+    /// Suspends until every entry enqueued before this call has been persisted.
+    nonisolated func flush() async {
+        await withCheckedContinuation { awaiter in
+            continuation.yield(.flush(awaiter))
         }
     }
 
-    func flush() async {
-        if let writingTask {
-            await writingTask.value
-        }
-        await drainPending()
+    /// Ends the stream so the consumer drains its buffer and exits. Best-effort.
+    nonisolated func shutdown() {
+        continuation.finish()
     }
 
-    private func drainPending() async {
-        while !pending.isEmpty {
-            let batch = Array(pending.prefix(batchSize))
-            pending.removeFirst(batch.count)
+    private func consume(_ stream: AsyncStream<Event>) async {
+        var batch: [EncryptedLogEntry] = []
+        batch.reserveCapacity(batchSize)
+        for await event in stream {
+            switch event {
+            case let .entry(entry):
+                if let encrypted = encrypt(entry) {
+                    batch.append(encrypted)
+                    if batch.count >= batchSize {
+                        await store(&batch)
+                    }
+                }
+            case let .flush(awaiter):
+                await store(&batch)
+                awaiter.resume()
+            }
+        }
+        // Stream finished (shutdown): persist whatever is still buffered.
+        await store(&batch)
+    }
+
+    private func encrypt(_ entry: LogEntry) -> EncryptedLogEntry? {
+        do {
+            let data = try cryptoService.symmetricEncrypt(object: entry)
+            return EncryptedLogEntry(id: entry.id, timestamp: entry.timestamp, data: data)
+        } catch {
+            logger.error("Failed to encrypt log entry: \(error.localizedDescription)")
+            onDrop?(1)
+            return nil
+        }
+    }
+
+    /// Stores `batch`, retrying with linear backoff. Entries are cleared only after a
+    /// successful write, so a transient failure never loses data. After `maxRetries`
+    /// failures the batch is dropped (and reported via `onDrop`) so the loop can't stall.
+    private func store(_ batch: inout [EncryptedLogEntry]) async {
+        guard !batch.isEmpty else { return }
+        let toStore = batch
+        var attempt = 0
+        while true {
             do {
-                try await storage.store(batch)
+                try await storage.store(toStore)
+                batch.removeAll(keepingCapacity: true)
+                return
             } catch {
-                logger.error("Failed to store log entry: \(error.localizedDescription)")
-                break
+                attempt += 1
+                if attempt >= maxRetries {
+                    logger.error("""
+                    Dropping \(toStore.count) log entries after \(attempt) failed store \
+                    attempts: \(error.localizedDescription)
+                    """)
+                    onDrop?(toStore.count)
+                    batch.removeAll(keepingCapacity: true)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50 * attempt))
             }
         }
     }

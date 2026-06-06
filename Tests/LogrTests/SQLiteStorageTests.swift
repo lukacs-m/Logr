@@ -15,6 +15,23 @@ struct SQLiteStorageTests {
         return try SQLiteStorage(databasePath: testDBPath)
     }
 
+    @Test("fetchEntries(limit:) returns the latest entries, oldest-first")
+    func testFetchEntriesWithLimit() async throws {
+        let storage = try createTestDatabase()
+        let now = Date()
+        for index in 1 ... 10 {
+            try await storage.store(EncryptedLogEntry(id: "e\(index)",
+                                                      timestamp: now.addingTimeInterval(TimeInterval(index)),
+                                                      data: Data("d\(index)".utf8)))
+        }
+
+        let latest = try await storage.fetchEntries(limit: 3)
+        #expect(latest.map(\.id) == ["e8", "e9", "e10"])
+
+        let all = try await storage.fetchEntries(limit: nil)
+        #expect(all.count == 10)
+    }
+
     // MARK: - Initialization Tests
 
     @Test("Test database initialization with custom path")
