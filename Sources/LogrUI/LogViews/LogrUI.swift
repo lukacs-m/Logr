@@ -282,7 +282,6 @@ private extension LogViewer {
         }
     }
 
-    @ViewBuilder
     private func logEntryRow(_ entry: LogEntry) -> some View {
         #if os(macOS)
         LogEntryRow(entry: entry, displayState: $logFilterPreferences.allExpanded)

@@ -111,6 +111,19 @@ public extension SQLiteStorage {
         return results.map(\.toEncryptedLogEntry)
     }
 
+    func fetchEntries(limit: Int?) async throws -> [EncryptedLogEntry] {
+        guard let limit else { return try await fetchEntries() }
+        let results: [EncryptedLogEntryDAO] = try await database.read { db in
+            try EncryptedLogEntryDAO
+                .order { $0.timestamp.desc() }
+                .limit(limit)
+                .fetchAll(db)
+        }
+        // The query returns the latest entries newest-first; reverse to honor the
+        // oldest-first contract of `fetchEntries`.
+        return results.reversed().map(\.toEncryptedLogEntry)
+    }
+
     func deleteEntries(olderThan date: Date) async throws {
         try await database.write { db in
             try EncryptedLogEntryDAO

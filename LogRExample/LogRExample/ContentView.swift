@@ -219,7 +219,6 @@ struct ContentView: View {
         }
 
         generationProgress = "Complete!"
-        try? await Task.sleep(for: .seconds(1.5))
 
         withAnimation {
             generationProgress = ""

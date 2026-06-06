@@ -31,11 +31,10 @@ struct LogEntryRow: View, @MainActor Equatable {
         .onChange(of: displayState) { _, newGlobalState in
             isExpanded = newGlobalState
         }
-//        .disclosureGroupStyle(CustomDisclosureGroupStyle(button: Text("ok")))
     }
 
     static func == (lhs: LogEntryRow, rhs: LogEntryRow) -> Bool {
-        lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded && lhs.displayState == rhs.displayState
+        lhs.entry == rhs.entry && lhs.displayState == rhs.displayState
     }
 }
 
@@ -120,27 +119,3 @@ struct LogLevelBadge: View {
         .white
     }
 }
-
-// struct CustomDisclosureGroupStyle<Label: View>: DisclosureGroupStyle {
-//    let button: Label
-//
-//    func makeBody(configuration: Configuration) -> some View {
-//        HStack {
-//            configuration.label
-//            Spacer()
-//            button
-//                .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
-//        }
-//        .contentShape(Rectangle())
-//        .onTapGesture {
-//            withAnimation {
-//                configuration.isExpanded.toggle()
-//            }
-//        }
-//        if configuration.isExpanded {
-//            configuration.content
-//                .padding(.leading, 30)
-//                .disclosureGroupStyle(self)
-//        }
-//    }
-// }

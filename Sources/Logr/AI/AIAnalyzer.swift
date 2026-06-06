@@ -22,7 +22,7 @@ public struct AnalyzerConfiguration: Sendable {
 
     /// Maximum number of concurrent chunk requests when parallel processing is enabled.
     /// Foundation models have limited resources, so this prevents overwhelming the model.
-    /// A value of 2-3 is recommended for most devices.
+    /// Values are clamped to `1...8`; 2-3 is recommended for most devices (default: 3).
     public let maxConcurrentChunks: Int
 
     /// Pre-warm the model before first request.
@@ -30,11 +30,12 @@ public struct AnalyzerConfiguration: Sendable {
 
     public init(maxLogsPerRequest: Int = 20,
                 enableParallelProcessing: Bool = true,
-                maxConcurrentChunks: Int = 20,
+                maxConcurrentChunks: Int = 3,
                 prewarmModel: Bool = true) {
         self.maxLogsPerRequest = maxLogsPerRequest
         self.enableParallelProcessing = enableParallelProcessing
-        self.maxConcurrentChunks = max(1, maxConcurrentChunks)
+        // On-device models are resource constrained: keep concurrency in a safe range.
+        self.maxConcurrentChunks = max(1, min(maxConcurrentChunks, 8))
         self.prewarmModel = prewarmModel
     }
 
@@ -52,7 +53,7 @@ public actor AIAnalyzer: LogAIAnalyzer {
 
     public let configuration: AnalyzerConfiguration
     private let model: SystemLanguageModel
-    private var session: LanguageModelSession?
+    private var hasPrewarmed = false
 
     enum AnalysisType {
         case privacy
@@ -117,12 +118,6 @@ public actor AIAnalyzer: LogAIAnalyzer {
         return try await processInChunks(logs: logs, analysisType: .issues, onProgress: onProgress)
     }
 
-    // MARK: - Cleanup
-
-    deinit {
-        // Clean up session if needed
-        session = nil
-    }
 }
 
 // MARK: - Setup & Utils
@@ -164,9 +159,11 @@ private extension AIAnalyzer {
                                               - Be concise but comprehensive - no hallucination, no fluff
                                               """)
 
-        // Prewarm if configured
-        if configuration.prewarmModel {
+        // Prewarm once: the model load is shared across sessions, so there's no need to
+        // prewarm every per-chunk session.
+        if configuration.prewarmModel, !hasPrewarmed {
             newSession.prewarm()
+            hasPrewarmed = true
         }
 
         return newSession
@@ -347,7 +344,7 @@ private extension AIAnalyzer {
     func promptForIssuesAnalysing(logs: [LogEntry], logsText: String) -> String {
         // Count errors, warnings, faults for context
         let errors = logs.count(where: { $0.level == .error })
-        let warnings = logs.count(where: { $0.level == .notice })
+        let warnings = logs.count(where: { $0.level == .warning })
         let faults = logs.count(where: { $0.level == .fault })
 
         return """
