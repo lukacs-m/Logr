@@ -419,7 +419,9 @@ actor LogWriterActor {
     nonisolated func shutdown() {
         continuation.finish()
     }
+}
 
+private extension LogWriterActor {
     private func consume(_ stream: AsyncStream<Event>) async {
         var batch: [EncryptedLogEntry] = []
         batch.reserveCapacity(batchSize)
@@ -441,7 +443,7 @@ actor LogWriterActor {
         await store(&batch)
     }
 
-    private func encrypt(_ entry: LogEntry) -> EncryptedLogEntry? {
+    func encrypt(_ entry: LogEntry) -> EncryptedLogEntry? {
         do {
             let data = try cryptoService.symmetricEncrypt(object: entry)
             return EncryptedLogEntry(id: entry.id, timestamp: entry.timestamp, data: data)
@@ -455,7 +457,7 @@ actor LogWriterActor {
     /// Stores `batch`, retrying with linear backoff. Entries are cleared only after a
     /// successful write, so a transient failure never loses data. After `maxRetries`
     /// failures the batch is dropped (and reported via `onDrop`) so the loop can't stall.
-    private func store(_ batch: inout [EncryptedLogEntry]) async {
+    func store(_ batch: inout [EncryptedLogEntry]) async {
         guard !batch.isEmpty else { return }
         let toStore = batch
         var attempt = 0
