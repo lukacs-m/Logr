@@ -107,6 +107,20 @@ public protocol LogRPersistence: Sendable {
     /// consider implementing pagination or limiting the returned entries.
     func fetchEntries() async throws -> [EncryptedLogEntry]
 
+    /// Fetches the most recent stored entries (up to `limit`), oldest first.
+    ///
+    /// Passing `nil` returns all entries (equivalent to ``fetchEntries()``). This is used
+    /// at logger startup to load only as many entries as the in-memory cache holds, rather
+    /// than decrypting the entire persisted history.
+    ///
+    /// A default implementation fetches everything and returns the latest `limit`.
+    /// Conformers backed by a query engine should override this to push the limit down to
+    /// storage (e.g. `ORDER BY timestamp DESC LIMIT ?`).
+    ///
+    /// - Parameter limit: The maximum number of (most recent) entries to return, or `nil`
+    ///   for all entries.
+    func fetchEntries(limit: Int?) async throws -> [EncryptedLogEntry]
+
     /// Deletes log entries older than the specified date.
     ///
     /// Part of the automatic cleanup process. Called periodically based on
@@ -144,4 +158,28 @@ public protocol LogRPersistence: Sendable {
     /// - Returns: The count of stored entries.
     /// - Throws: Storage-specific errors if the operation fails.
     func count() async throws -> Int
+}
+
+public extension LogRPersistence {
+    /// Default implementation: stores each entry via the single-entry primitive.
+    ///
+    /// Keeps ``store(_:)-batch`` an additive, non-breaking requirement for existing conformers —
+    /// a custom backend that only implements the single-entry `store(_:)` still compiles.
+    /// Built-in backends (``SQLiteStorage``, ``FileSystemStorage``) override this with a single
+    /// batched write, which is far more efficient and should be preferred whenever the backend
+    /// supports it.
+    func store(_ entries: [EncryptedLogEntry]) async throws {
+        for entry in entries {
+            try await store(entry)
+        }
+    }
+
+    /// Default implementation: fetches all entries and returns the latest `limit`,
+    /// preserving the oldest-first order. Override for storage that can apply the limit
+    /// natively.
+    func fetchEntries(limit: Int?) async throws -> [EncryptedLogEntry] {
+        let all = try await fetchEntries()
+        guard let limit, limit < all.count else { return all }
+        return Array(all.suffix(limit))
+    }
 }

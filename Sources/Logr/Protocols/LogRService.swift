@@ -54,6 +54,7 @@ import DequeModule
 /// ### State Properties
 /// - ``recentLogs``
 /// - ``canAnalyseLogs``
+/// - ``droppedLogCount``
 /// - ``privacyAnalysisResult``
 /// - ``logIssueSummary``
 ///
@@ -89,6 +90,14 @@ public protocol LogRService: Observable, Sendable {
     /// This property returns `true` when running on iOS 26+ or macOS 26+ with an AI analyzer configured.
     /// When `false`, calling `scanForPrivacyIssues()` or `summarizeIssues()` will throw an error.
     var canAnalyseLogs: Bool { get }
+
+    /// The number of log entries that could not be persisted.
+    ///
+    /// Increments when an entry fails encryption, a storage write is abandoned after exhausting
+    /// retries, or an entry is shed under backpressure (storage falling behind a sustained burst).
+    /// `0` when no storage is configured or nothing has been dropped. Observe it to surface
+    /// silent log loss in diagnostics UI.
+    var droppedLogCount: Int { get }
 
     /// The most recent privacy analysis result (iOS 26+).
     ///
@@ -142,18 +151,25 @@ public protocol LogRService: Observable, Sendable {
 
     /// Exports all recent logs in the specified format.
     ///
+    /// Serialization runs off the main actor; an empty cache yields empty `Data` (not an error),
+    /// while a genuine encoding failure throws.
+    ///
     /// - Parameter format: The export format (`.json`, `.csv`, or `.txt`).
-    /// - Returns: The exported data, or `nil` if there are no logs to export.
+    /// - Returns: The exported data (empty when there are no logs).
+    /// - Throws: ``LogExportError`` if encoding fails.
     ///
     /// ## Example
     /// ```swift
-    /// if let jsonData = logger.exportLogs(format: .json) {
-    ///     try? jsonData.write(to: fileURL)
-    /// }
+    /// let jsonData = try await logger.exportLogs(format: .json)
+    /// try jsonData.write(to: fileURL)
     /// ```
-    func exportLogs(format: ExportFormat) -> Data?
+    func exportLogs(format: ExportFormat) async throws -> Data
 
-    func logStatistics() -> LogStatistics
+    /// Computes aggregate statistics over the recent-log cache.
+    ///
+    /// The computation (which touches every cached entry) runs off the main actor, so calling this
+    /// over a large cache does not stall the UI.
+    func logStatistics() async -> LogStatistics
 
     /// Clears all logs from both memory and persistent storage.
     ///
@@ -229,6 +245,11 @@ public protocol LogRService: Observable, Sendable {
 // MARK: - Utils implementations
 
 public extension LogRService {
+    /// Default: no drops reported. Concrete services that track persistence loss (e.g. ``LogR``)
+    /// override this; providing a default keeps `droppedLogCount` an additive, non-breaking
+    /// requirement for existing conformers.
+    var droppedLogCount: Int { 0 }
+
     func log(level: LogLevel,
              message: @autoclosure () -> String,
              category: LogCategory,
@@ -240,6 +261,8 @@ public extension LogRService {
             metadata: metadata)
     }
 
+    /// Returns logged entries, optionally filtered. `recentLogs` is always current (the concrete
+    /// service updates it synchronously), so no flush is required before reading.
     func getLogs(levels: Set<LogLevel>? = nil,
                  categories: Set<LogCategory>? = nil,
                  subsystems: Set<String>? = nil,
@@ -264,23 +287,47 @@ public extension LogRService {
         return Array(filteredLogs)
     }
 
-    func exportLogs(format: ExportFormat = .json) -> Data? {
-        guard !recentLogs.isEmpty else { return nil }
+    func exportLogs(format: ExportFormat = .json) async throws -> Data {
+        // Snapshot on the main actor, then serialize off it.
+        let snapshot = Array(recentLogs)
+        return try await LogExporter.serialize(snapshot, format: format)
+    }
 
-        // Get the base format data first
-        let baseData: Data?
+    func logStatistics() async -> LogStatistics {
+        // Snapshot on the main actor, then compute the per-entry aggregates off it.
+        let snapshot = Array(recentLogs)
+        return await LogStatisticsComputer.compute(from: snapshot)
+    }
+}
+
+// MARK: - Off-main serialization & statistics
+
+/// Errors thrown while exporting logs.
+public enum LogExportError: Error, Sendable {
+    /// The serialized text could not be encoded as UTF-8 data.
+    case encodingFailed
+}
+
+/// Serializes log entries to an export format off the main actor.
+///
+/// A dedicated, single-responsibility serializer: a new ``ExportFormat`` is added by extending the
+/// switch here, not by touching the logging facade.
+enum LogExporter {
+    @concurrent
+    static func serialize(_ logs: [LogEntry], format: ExportFormat) async throws -> Data {
+        guard !logs.isEmpty else { return Data() }
+
         switch format {
         case .json:
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            baseData = try? encoder.encode(recentLogs)
+            return try encoder.encode(logs)
 
         case .csv:
             let formatter = ISO8601DateFormatter()
-
             var rows: [String] = ["Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata"]
-            for log in recentLogs {
+            for log in logs {
                 let timestamp = formatter.string(from: log.timestamp)
                 let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
                 let metadataStr = log.metadata?.map { "\($0.key)=\($0.value.stringValue)" }
@@ -288,36 +335,37 @@ public extension LogRService {
                 let escapedMetadata = metadataStr.replacingOccurrences(of: "\"", with: "\"\"")
                 rows.append("\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line),\"\(escapedMetadata)\"")
             }
-
-            baseData = rows.joined(separator: "\n").data(using: .utf8)
+            guard let data = rows.joined(separator: "\n").data(using: .utf8) else {
+                throw LogExportError.encodingFailed
+            }
+            return data
 
         case .txt:
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
             formatter.timeStyle = .long
-
             var text = ""
-            for log in recentLogs {
-                var line = "\(log.level.visualQueue) [\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] [\(log.file)] \(log.message)"
+            for log in logs {
+                var line = "\(log.level.visualCue) [\(formatter.string(from: log.timestamp))] [\(log.level.displayName.uppercased())] [\(log.category)] [\(log.file)] \(log.message)"
                 if let metadata = log.metadata, !metadata.isEmpty {
                     let metadataStr = metadata.map { "\($0.key)=\($0.value.stringValue)" }.joined(separator: ", ")
                     line += " {\(metadataStr)}"
                 }
                 text += line + "\n"
             }
-
-            baseData = text.data(using: .utf8)
+            guard let data = text.data(using: .utf8) else {
+                throw LogExportError.encodingFailed
+            }
+            return data
         }
-
-        guard let data = baseData else { return nil }
-
-        return data
     }
+}
 
-    func logStatistics() -> LogStatistics {
-        guard !recentLogs.isEmpty else {
-            return .empty
-        }
+/// Computes aggregate ``LogStatistics`` off the main actor.
+enum LogStatisticsComputer {
+    @concurrent
+    static func compute(from logs: [LogEntry]) async -> LogStatistics {
+        guard !logs.isEmpty else { return .empty }
 
         let calendar = Calendar.current
         var countByLevel: [LogLevel: Int] = [:]
@@ -327,7 +375,7 @@ public extension LogRService {
         var minDate: Date?
         var maxDate: Date?
 
-        for log in recentLogs {
+        for log in logs {
             countByLevel[log.level, default: 0] += 1
             countByCategory[log.category, default: 0] += 1
 
@@ -349,7 +397,7 @@ public extension LogRService {
             nil
         }
 
-        return LogStatistics(totalCount: recentLogs.count,
+        return LogStatistics(totalCount: logs.count,
                              countByLevel: countByLevel,
                              countByCategory: countByCategory,
                              hourlyDistribution: hourlyDistribution,

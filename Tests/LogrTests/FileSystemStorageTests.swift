@@ -70,6 +70,41 @@ struct FileSystemStorageTests {
         cleanupTestStorage(fileName: uniqueFileName)
     }
 
+    @Test("Test reading and appending to a legacy JSON-array file")
+    func testReadsLegacyJSONArrayFile() async throws {
+        let uniqueFileName = "test_legacy_\(UUID().uuidString).json"
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        else {
+            Issue.record("Documents directory not found")
+            return
+        }
+        let fileURL = documentsPath.appendingPathComponent(uniqueFileName)
+
+        // Write a legacy file: a single JSON array of entries (the pre-NDJSON format).
+        let legacyEntries = (1 ... 3).map { index in
+            EncryptedLogEntry(id: "legacy-\(index)",
+                              timestamp: Date().addingTimeInterval(TimeInterval(index)),
+                              data: Data("d\(index)".utf8))
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(legacyEntries).write(to: fileURL, options: .atomic)
+
+        // Opening with FileSystemStorage should read the legacy entries…
+        let storage = try FileSystemStorage(fileName: uniqueFileName)
+        #expect(try await storage.count() == 3)
+
+        // …and appending a new entry should still work, preserving the legacy ones.
+        try await storage.store(EncryptedLogEntry(id: "new",
+                                                  timestamp: Date().addingTimeInterval(100),
+                                                  data: Data("new".utf8)))
+        let entries = try await storage.fetchEntries()
+        #expect(entries.count == 4)
+        #expect(Set(entries.map(\.id)) == Set(["legacy-1", "legacy-2", "legacy-3", "new"]))
+
+        cleanupTestStorage(fileName: uniqueFileName)
+    }
+
     // MARK: - Store Tests
 
     @Test("Test store single entry")
@@ -138,8 +173,8 @@ struct FileSystemStorageTests {
         #expect(count == 1)
     }
 
-    @Test("Test entries are sorted by timestamp after store")
-    func testEntriesAreSortedByTimestampAfterStore() async throws {
+    @Test("Test entries are returned in chronological (oldest-first) order after store")
+    func testEntriesAreReturnedInChronologicalOrderAfterStore() async throws {
         let storage = try createTestStorage()
 
         let now = Date()
@@ -154,15 +189,16 @@ struct FileSystemStorageTests {
             data: Data("new".utf8)
         )
 
-        try await storage.store(entry1)
-        try await storage.store(entry2)
+        try await storage.store(entry1) // older
+        try await storage.store(entry2) // newer
 
         let entries = try await storage.fetchEntries()
 
         #expect(entries.count == 2)
-        // Should be sorted newest first (descending)
-        #expect(entries[0].id == "entry-2")
-        #expect(entries[1].id == "entry-1")
+        // Append-only storage preserves insertion order, which is chronological
+        // (oldest first) — matching the LogRPersistence contract and SQLiteStorage.
+        #expect(entries[0].id == "entry-1")
+        #expect(entries[1].id == "entry-2")
     }
 
     // MARK: - Fetch Tests
@@ -187,6 +223,23 @@ struct FileSystemStorageTests {
         let fetchedEntries = try await storage.fetchEntries()
 
         #expect(fetchedEntries.count == 5)
+    }
+
+    @Test("fetchEntries(limit:) returns the latest entries, oldest-first")
+    func testFetchEntriesWithLimit() async throws {
+        let storage = try createTestStorage()
+        let now = Date()
+        for index in 1 ... 10 {
+            try await storage.store(EncryptedLogEntry(id: "e\(index)",
+                                                      timestamp: now.addingTimeInterval(TimeInterval(index)),
+                                                      data: Data("d\(index)".utf8)))
+        }
+
+        let latest = try await storage.fetchEntries(limit: 3)
+        #expect(latest.map(\.id) == ["e8", "e9", "e10"])
+
+        let all = try await storage.fetchEntries(limit: nil)
+        #expect(all.count == 10)
     }
 
     @Test("Test fetch entries from empty storage")
@@ -302,11 +355,11 @@ struct FileSystemStorageTests {
         let count = try await storage.count()
         #expect(count == 5)
 
-        // Verify we kept the most recent ones
+        // Verify we kept the most recent ones (entries 6-10), in chronological order.
         let entries = try await storage.fetchEntries()
         #expect(entries.count == 5)
-        // Should have entries 6-10 (newest)
-        #expect(entries[0].id == "entry-10")
+        #expect(Set(entries.map(\.id)) == Set((6 ... 10).map { "entry-\($0)" }))
+        #expect(entries.last?.id == "entry-10")
     }
 
     @Test("Test delete entries keeping latest with exact count")
@@ -703,5 +756,56 @@ struct FileSystemStorageTests {
         // Verify we can fetch all
         let entries = try await storage.fetchEntries()
         #expect(entries.count == 100)
+    }
+
+    // MARK: - NDJSON Robustness
+
+    @Test("A torn final NDJSON line is skipped while earlier entries survive")
+    func testTornFinalLineIsSkipped() async throws {
+        let uniqueFileName = "test_torn_\(UUID().uuidString).json"
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        else {
+            Issue.record("Documents directory not found")
+            return
+        }
+        let fileURL = documentsPath.appendingPathComponent(uniqueFileName)
+
+        let storage = try FileSystemStorage(fileName: uniqueFileName)
+        for index in 1 ... 3 {
+            try await storage.store(EncryptedLogEntry(id: "e\(index)",
+                                                      timestamp: Date().addingTimeInterval(TimeInterval(index)),
+                                                      data: Data("d\(index)".utf8)))
+        }
+
+        // Simulate a crash mid-append: a partial, undecodable trailing line with no newline.
+        let handle = try FileHandle(forWritingTo: fileURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"id":"partial","timestamp":"#.utf8))
+        try handle.close()
+
+        // A fresh instance reads the intact entries and skips the torn line instead of losing all.
+        let reopened = try FileSystemStorage(fileName: uniqueFileName)
+        let entries = try await reopened.fetchEntries()
+        #expect(entries.map(\.id) == ["e1", "e2", "e3"])
+        #expect(try await reopened.count() == 3)
+
+        cleanupTestStorage(fileName: uniqueFileName)
+    }
+
+    @Test("count() matches the decoded entry count even for newline-bearing payloads")
+    func testCountMatchesDecodedCountWithNewlinePayloads() async throws {
+        let storage = try createTestStorage()
+        for index in 1 ... 6 {
+            // The payload contains raw newlines; they must not inflate the newline-based count(),
+            // because `EncryptedLogEntry.data` is base64-encoded in the stored JSON.
+            try await storage.store(EncryptedLogEntry(id: "e\(index)",
+                                                      timestamp: Date(),
+                                                      data: Data("multi\nline\npayload \(index)".utf8)))
+        }
+
+        let counted = try await storage.count()
+        let fetched = try await storage.fetchEntries().count
+        #expect(counted == 6)
+        #expect(counted == fetched)
     }
 }

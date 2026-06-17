@@ -20,7 +20,7 @@ private func logMessage(logger: LogRService, level: LogLevel, message: String, c
     }
 }
 
-enum MockDataGenerator {
+actor MockDataGenerator {
     // MARK: - Configuration
 
     private static let networkEndpoints = [
@@ -88,18 +88,18 @@ enum MockDataGenerator {
                                           count: Int = 2_000,
                                           privacyIssues: Int = 25,
                                           errorPatterns: Int = 50) async {
-        logger.info("Starting mock data generation: \(count) logs", category: .debug)
+        await logger.info("Starting mock data generation: \(count) logs", category: .debug)
 
         await generateNormalOperationLogs(logger: logger, count: count - privacyIssues - errorPatterns)
         await generatePrivacyIssueLogs(logger: logger, count: privacyIssues)
         await generateErrorPatternLogs(logger: logger, count: errorPatterns)
         await generateAppLifecycleLogs(logger: logger)
 
-        logger.notice("Mock data generation completed", category: .debug)
+        await logger.notice("Mock data generation completed", category: .debug)
     }
 
     // MARK: - Normal Operation Logs
-
+@concurrent
     private static func generateNormalOperationLogs(logger: LogRService, count: Int) async {
         let levels: [(LogLevel, Int)] = [
             (.debug, 40),
@@ -110,13 +110,9 @@ enum MockDataGenerator {
         ]
 
         for i in 0..<count {
-            let level = weightedRandomLevel(levels)
+            let level =  weightedRandomLevel(levels)
             let (message, category) = generateNormalLogContent(index: i)
-            logMessage(logger: logger, level: level, message: message, category: category)
-
-            if i % 500 == 0, i > 0 {
-                try? await Task.sleep(for: .milliseconds(10))
-            }
+            await logMessage(logger: logger, level: level, message: message, category: category)
         }
     }
 
@@ -229,7 +225,7 @@ enum MockDataGenerator {
         for i in 0..<count {
             let (message, category) = generatePrivacyIssueContent(index: i)
             let level: LogLevel = [.debug, .info, .warning].randomElement()!
-            logMessage(logger: logger, level: level, message: message, category: category)
+            await logMessage(logger: logger, level: level, message: message, category: category)
         }
     }
 
@@ -270,14 +266,14 @@ enum MockDataGenerator {
             if i % 3 == 0 {
                 let (message, category) = recurringErrors.randomElement()!
                 let level: LogLevel = i % 6 == 0 ? .fault : .error
-                logMessage(logger: logger, level: level, message: message, category: category)
+                await logMessage(logger: logger, level: level, message: message, category: category)
             } else {
-                generateRandomError(logger: logger, index: i)
+                await generateRandomError(logger: logger, index: i)
             }
         }
     }
 
-    private static func generateRandomError(logger: LogRService, index: Int) {
+    private static func generateRandomError(logger: LogRService, index: Int) async {
         let errorMsg = errorMessages.randomElement()!
         let endpoint = networkEndpoints.randomElement()!
 
@@ -291,7 +287,7 @@ enum MockDataGenerator {
         ]
 
         let (msg, cat, level) = scenarios.randomElement()!
-        logMessage(logger: logger, level: level, message: msg, category: cat)
+        await logMessage(logger: logger, level: level, message: msg, category: cat)
     }
 
     // MARK: - App Lifecycle Logs
@@ -309,7 +305,7 @@ enum MockDataGenerator {
         ]
 
         for (message, level, category) in lifecycleEvents {
-            logMessage(logger: logger, level: level, message: message, category: category)
+            await logMessage(logger: logger, level: level, message: message, category: category)
         }
     }
 

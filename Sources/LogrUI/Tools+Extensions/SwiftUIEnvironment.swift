@@ -11,15 +11,16 @@ import SwiftUI
 // MARK: - Environment Key and Values
 
 public extension EnvironmentValues {
-    #if DEBUG
-    @Entry var logService: LogRService = MockLogR()
-    #else
-    @Entry var logService: LogRService = LogR()
-    #endif
+    /// The logging service available to `LogrUI` views.
+    ///
+    /// Defaults to a no-op ``DisabledLogR`` so views render a safe, empty state
+    /// when no logger has been injected. Provide a real service with
+    /// ``SwiftUICore/View/logRService(_:)`` (or `.environment(\.logService, logger)`).
+    @Entry var logService: any LogRService = DisabledLogR()
 }
 
 public struct LogRServiceModifier: ViewModifier {
-    let service: LogRService
+    let service: any LogRService
 
     public func body(content: Content) -> some View {
         content
@@ -28,8 +29,8 @@ public struct LogRServiceModifier: ViewModifier {
 }
 
 public extension View {
-    /// Injects a LogRService into the SwiftUI environment
-    func logRService(_ service: LogRService) -> some View {
+    /// Injects a `LogRService` into the SwiftUI environment.
+    func logRService(_ service: any LogRService) -> some View {
         modifier(LogRServiceModifier(service: service))
     }
 }

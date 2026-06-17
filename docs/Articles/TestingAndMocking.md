@@ -195,7 +195,7 @@ func testLoggingOnError() async throws {
 ```swift
 func testDebugLogsDisabledInProduction() {
     // Given
-    let productionLogger = LogR(
+    let productionLogger = try LogR(
         configuration: LogrConfiguration(
             enabledLevels: [.info, .warning, .error, .fault]
         )
@@ -353,7 +353,7 @@ class LogRIntegrationTests: XCTestCase {
             databaseURL: testDirectory.appendingPathComponent("test.db")
         )
 
-        logger = LogR(storage: storage)
+        logger = try LogR(storage: storage)
     }
 
     override func tearDown() {
@@ -380,7 +380,7 @@ func testLogsPersistAcrossInstances() async throws {
     let storage = SQLiteStorage(
         databaseURL: testDirectory.appendingPathComponent("test.db")
     )
-    let newLogger = LogR(storage: storage)
+    let newLogger = try LogR(storage: storage)
 
     // Wait for initialization
     try await Task.sleep(for: .seconds(1))
@@ -401,7 +401,7 @@ func testAutomaticCleanup() async throws {
         cleanupInterval: 2 // 2 seconds
     )
 
-    let logger = LogR(
+    let logger = try LogR(
         storage: SQLiteStorage(),
         configuration: config
     )
@@ -424,7 +424,7 @@ func testLogsAreEncrypted() async throws {
     let storage = SQLiteStorage(
         databaseURL: testDirectory.appendingPathComponent("test.db")
     )
-    let logger = LogR(storage: storage)
+    let logger = try LogR(storage: storage)
 
     logger.info("Secret message", category: .system)
     await logger.flush()
@@ -601,7 +601,7 @@ func testQueryPerformance() {
 // ❌ Bad - slow, file I/O in previews
 #Preview {
     ContentView()
-        .environment(\.logService, LogR(storage: SQLiteStorage()))
+        .environment(\.logService, try LogR(storage: SQLiteStorage()))
 }
 ```
 
@@ -645,7 +645,7 @@ func testOnlyLogsEnabledLevels() {
     let config = LogrConfiguration(
         enabledLevels: [.error, .fault]
     )
-    let logger = LogR(configuration: config)
+    let logger = try LogR(configuration: config)
 
     logger.debug("Debug", category: .debug)
     logger.info("Info", category: .system)
@@ -682,7 +682,7 @@ func testAsyncLogging() async throws {
 ```swift
 func testWithVerboseLogging() {
     let config = LogrConfiguration(logVerbosity: .verbose)
-    let logger = LogR(configuration: config)
+    let logger = try LogR(configuration: config)
 
     logger.info("Test message", category: .test)
 

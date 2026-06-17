@@ -66,7 +66,8 @@ import UniformTypeIdentifiers
 ///
 /// @main
 /// struct MyApp: App {
-///     let logger = LogR(storage: SQLiteStorage())
+///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
+///     let logger = try! LogR(storage: SQLiteStorage())
 ///
 ///     var body: some Scene {
 ///         WindowGroup {
@@ -104,6 +105,10 @@ public struct LogViewer: View {
     @State private var debouncedQuery = ""
     @State private var showError: Error?
     @State private var functionalityFilter = Set(LogViewer.Functionalities.allCases)
+    @State private var compactStatistics: LogStatistics = .empty
+    /// Share payloads precomputed off the main actor (export serialization is now `async`), so the
+    /// `ShareLink`s — which need their item at view-build time — read a ready value.
+    @State private var shareItems: [ExportFormat: ShareItem] = [:]
 
     enum SheetDestination: Identifiable {
         case filters
@@ -154,7 +159,8 @@ public struct LogViewer: View {
     ///
     /// @main
     /// struct MyApp: App {
-    ///     let logger = LogR()
+    ///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
+    ///     let logger = try! LogR()
     ///
     ///     var body: some Scene {
     ///         WindowGroup {
@@ -221,30 +227,30 @@ public struct LogViewer: View {
         }
     }
 
-    private var filteredLogs: [LogEntry] {
-        filterData()
-    }
 }
 
 // MARK: - Main Content View
 
 private extension LogViewer {
     var mainContent: some View {
-        List {
+        // Filter once per body pass and reuse everywhere below. Reading it repeatedly would
+        // re-run the O(n) filter several times per update — costly on a large buffer.
+        let logs = filterData()
+        return List {
             // Statistics panel (collapsible)
-            if logFilterPreferences.showStatisticsPanel, !filteredLogs.isEmpty {
+            if logFilterPreferences.showStatisticsPanel, !logs.isEmpty {
                 Section {
-                    CompactLogStatisticsView(statistics: logr.logStatistics())
+                    CompactLogStatisticsView(statistics: compactStatistics)
                 }
             }
 
             // Log entries with optional grouping
             if logFilterPreferences.timeGrouping == .none {
-                ForEach(filteredLogs) { entry in
+                ForEach(logs) { entry in
                     logEntryRow(entry)
                 }
             } else {
-                ForEach(filteredLogs.grouped(by: logFilterPreferences.timeGrouping)) { group in
+                ForEach(logs.grouped(by: logFilterPreferences.timeGrouping)) { group in
                     Section {
                         ForEach(group.logs) { entry in
                             logEntryRow(entry)
@@ -262,6 +268,11 @@ private extension LogViewer {
             }
         }
         .searchable(text: $searchText, prompt: "Search logs...")
+        .task(id: logr.recentLogs.count) {
+            // Recompute derived data (stats + share payloads) off the main actor when the cache
+            // size changes, rather than synchronously on every body pass.
+            await refreshDerivedData()
+        }
         .task(id: searchText) {
             // Skip debounce for empty string (immediate clear)
             if searchText.isEmpty {
@@ -278,11 +289,10 @@ private extension LogViewer {
             toolbarContent
         }
         .overlay {
-            overlayContent
+            overlayContent(logs: logs)
         }
     }
 
-    @ViewBuilder
     private func logEntryRow(_ entry: LogEntry) -> some View {
         #if os(macOS)
         LogEntryRow(entry: entry, displayState: $logFilterPreferences.allExpanded)
@@ -297,8 +307,8 @@ private extension LogViewer {
 
 private extension LogViewer {
     @ViewBuilder
-    var overlayContent: some View {
-        if filteredLogs.isEmpty, !searchText.isEmpty {
+    func overlayContent(logs: [LogEntry]) -> some View {
+        if logs.isEmpty, !searchText.isEmpty {
             VStack(spacing: 20) {
                 Spacer()
                 Text("Couldn't find any logs corresponding to your search criteria \"\(searchText)\"")
@@ -314,7 +324,7 @@ private extension LogViewer {
             }
             .frame(maxHeight: .infinity)
             .padding(.horizontal)
-        } else if filteredLogs.isEmpty, debouncedQuery.isEmpty {
+        } else if logs.isEmpty, debouncedQuery.isEmpty {
             ContentUnavailableView {
                 Image(systemName: "text.page.badge.magnifyingglass")
                     .resizable()
@@ -429,7 +439,7 @@ private extension LogViewer {
             Menu("Export & Share") {
                 ForEach(ExportFormat.allCases) { format in
                     let fileName = format.formatName
-                    ShareLink(item: prepareShareItem(format: format, fileName: fileName),
+                    ShareLink(item: shareItems[format] ?? .empty,
                               preview: SharePreview("LogR Export")) {
                         Label("Share \(fileName)", systemImage: "square.and.arrow.up")
                     }
@@ -451,12 +461,21 @@ private extension LogViewer {
 // MARK: - Logic actions
 
 private extension LogViewer {
-    func prepareShareItem(format: ExportFormat, fileName: String) -> ShareItem {
-        guard let data = logr.exportLogs(format: format) else {
-            return .empty
-        }
+    /// Refreshes the off-main–computed derived data: the compact statistics and, when sharing is
+    /// enabled, the per-format share payloads. Serialization no longer runs on the main actor.
+    func refreshDerivedData() async {
+        compactStatistics = await logr.logStatistics()
 
-        return ShareItem(data: data, fileName: fileName, contentType: format.contentType)
+        guard functionalityFilter.contains(.sharing), !logr.recentLogs.isEmpty else {
+            shareItems = [:]
+            return
+        }
+        var items: [ExportFormat: ShareItem] = [:]
+        for format in ExportFormat.allCases {
+            guard let data = try? await logr.exportLogs(format: format), !data.isEmpty else { continue }
+            items[format] = ShareItem(data: data, fileName: format.formatName, contentType: format.contentType)
+        }
+        shareItems = items
     }
 
     func clearAllLogs() {

@@ -288,7 +288,7 @@ class CloudStorage: LogRPersistence {
     // Implement other methods...
 }
 
-let logger = LogR(storage: CloudStorage())
+let logger = try LogR(storage: CloudStorage())
 ```
 
 ### Custom Crypto
@@ -327,7 +327,7 @@ class CustomAI: LogAIAnalyzer {
     }
 }
 
-let logger = LogR(logAnalyser: CustomAI())
+let logger = try LogR(logAnalyser: CustomAI())
 ```
 
 ## Design Principles

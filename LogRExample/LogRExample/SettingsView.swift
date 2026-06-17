@@ -8,6 +8,7 @@
 import Logr
 import SwiftUI
 import UniformTypeIdentifiers
+import LogrUI
 
 struct SettingsView: View {
     @Environment(\.logService) private var logger
@@ -85,7 +86,7 @@ struct SettingsView: View {
                 DisclosureGroup("Enabled Levels (\(logr.configuration.enabledLevels.count))") {
                     ForEach(LogLevel.allCases) { level in
                         HStack {
-                            Text(level.visualQueue)
+                            Text(level.visualCue)
                             Text(level.displayName)
                             Spacer()
                             if logr.configuration.enabledLevels.contains(level) {
@@ -155,7 +156,7 @@ struct SettingsView: View {
             }
 
             Button {
-                exportLogs()
+                Task { await exportLogs() }
             } label: {
                 Label("Export Logs", systemImage: "square.and.arrow.up")
             }
@@ -187,12 +188,7 @@ struct SettingsView: View {
         }
     }
 
-    private func exportLogs() {
-        guard let data = logger.exportLogs(format: selectedExportFormat) else {
-            exportError = "Failed to export logs"
-            return
-        }
-
+    private func exportLogs() async {
         let fileExtension = switch selectedExportFormat {
         case .json: "json"
         case .csv: "csv"
@@ -203,6 +199,11 @@ struct SettingsView: View {
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
 
         do {
+            let data = try await logger.exportLogs(format: selectedExportFormat)
+            guard !data.isEmpty else {
+                exportError = "Failed to export logs"
+                return
+            }
             try data.write(to: tempURL)
             exportedFileURL = tempURL
             logger.info("Logs exported successfully: \(filename)", category: .fileSystem)

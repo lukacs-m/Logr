@@ -39,6 +39,8 @@ struct ConcurrentLoggingTests {
             await group.waitForAll()
         }
 
+        await logr.flush()
+
         // Verify all logs were captured
         let expectedTotal = logCount * threadCount
         #expect(logr.recentLogs.count == expectedTotal)

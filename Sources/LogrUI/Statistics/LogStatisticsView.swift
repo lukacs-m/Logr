@@ -30,9 +30,7 @@ import SwiftUI
 public struct LogStatisticsView: View {
     @Environment(\.logService) private var logr
 
-    private var statistics: LogStatistics {
-        logr.logStatistics()
-    }
+    @State private var statistics: LogStatistics = .empty
 
     public init() {}
 
@@ -47,6 +45,12 @@ public struct LogStatisticsView: View {
             .padding()
         }
         .navigationTitle("Log Statistics")
+        // Recompute off the main actor when the number of cached logs changes, instead of on every
+        // body pass: the previous computed property re-ran the full aggregation (a Calendar op per
+        // entry, up to `maxLogEntries`) on each SwiftUI update.
+        .task(id: logr.recentLogs.count) {
+            statistics = await logr.logStatistics()
+        }
     }
 
     @ViewBuilder
@@ -99,7 +103,7 @@ public struct LogStatisticsView: View {
 
                 HStack {
                     Circle()
-                        .fill(colorForLevel(level))
+                        .fill(level.tint)
                         .frame(width: 12, height: 12)
 
                     Text(level.displayName.capitalized)
@@ -186,22 +190,6 @@ public struct LogStatisticsView: View {
         .cornerRadius(12)
     }
 
-    private func colorForLevel(_ level: LogLevel) -> Color {
-        switch level {
-        case .debug:
-            .gray
-        case .info:
-            .blue
-        case .notice:
-            .cyan
-        case .warning:
-            .orange
-        case .error:
-            .red
-        case .fault:
-            .purple
-        }
-    }
 }
 
 // MARK: - Stat Card
@@ -264,7 +252,7 @@ public struct CompactLogStatisticsView: View {
                             .foregroundStyle(.secondary)
                         Text("\(statistics.countByLevel[.error] ?? 0)")
                             .font(.headline.monospacedDigit())
-                            .foregroundStyle(.red)
+                            .foregroundStyle(LogLevel.error.tint)
                     }
                     Divider()
                     VStack {
@@ -273,7 +261,7 @@ public struct CompactLogStatisticsView: View {
                             .foregroundStyle(.secondary)
                         Text("\(statistics.countByLevel[.warning] ?? 0)")
                             .font(.headline.monospacedDigit())
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(LogLevel.warning.tint)
                     }
                 }
                 .padding()
@@ -298,13 +286,15 @@ public struct CompactLogStatisticsView: View {
 
 #Preview("Log Statistics") {
     @Previewable @State var mock = MockLogR()
+    @Previewable @State var compactStats = LogStatistics.empty
     NavigationStack {
         List {
-            CompactLogStatisticsView(statistics: mock.logStatistics())
+            CompactLogStatisticsView(statistics: compactStats)
                 .padding()
             LogStatisticsView()
         }
         .listStyle(.plain)
     }
     .environment(\.logService, mock)
+    .task { compactStats = await mock.logStatistics() }
 }

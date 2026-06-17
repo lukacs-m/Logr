@@ -22,7 +22,7 @@ Logr provides flexible storage options for persisting logs. All stored logs are 
 Use Logr without persistent storage:
 
 ```swift
-let logger = LogR()
+let logger = try LogR()
 ```
 
 **When to use:**
@@ -40,7 +40,7 @@ let logger = LogR()
 Simple JSON-based file storage:
 
 ```swift
-let logger = LogR(storage: FileSystemStorage())
+let logger = try LogR(storage: FileSystemStorage())
 ```
 
 **Features:**
@@ -68,7 +68,7 @@ Documents/
 High-performance SQLite database:
 
 ```swift
-let logger = LogR(storage: SQLiteStorage())
+let logger = try LogR(storage: SQLiteStorage())
 ```
 
 **Features:**
@@ -102,13 +102,13 @@ CREATE INDEX idx_timestamp ON encrypted_logs(timestamp);
 import Logr
 
 // SQLite (recommended)
-let logger = LogR(storage: SQLiteStorage())
+let logger = try LogR(storage: SQLiteStorage())
 
 // FileSystem
-let logger = LogR(storage: FileSystemStorage())
+let logger = try LogR(storage: FileSystemStorage())
 
 // No storage
-let logger = LogR()
+let logger = try LogR()
 ```
 
 ### Custom Storage Location
@@ -122,7 +122,7 @@ let documentsURL = FileManager.default
 let customURL = documentsURL.appendingPathComponent("MyLogs")
 
 let storage = FileSystemStorage(directoryURL: customURL)
-let logger = LogR(storage: storage)
+let logger = try LogR(storage: storage)
 ```
 
 ### App Group Storage
@@ -134,7 +134,7 @@ let groupURL = FileManager.default
     .containerURL(forSecurityApplicationGroupIdentifier: "group.com.myapp")!
 let storage = SQLiteStorage(databaseURL: groupURL.appendingPathComponent("logs.db"))
 
-let logger = LogR(storage: storage)
+let logger = try LogR(storage: storage)
 ```
 
 ## Custom Storage Implementation
@@ -207,7 +207,7 @@ class CloudStorage: LogRPersistence {
 
 // Use it
 let cloudStorage = CloudStorage(apiClient: myAPIClient)
-let logger = LogR(storage: cloudStorage)
+let logger = try LogR(storage: cloudStorage)
 ```
 
 ### Core Data Storage Example
@@ -273,13 +273,13 @@ class CoreDataStorage: LogRPersistence {
 
 ```swift
 // For production apps with high volumes
-let logger = LogR(storage: SQLiteStorage())
+let logger = try LogR(storage: SQLiteStorage())
 
 // For simple apps or prototyping
-let logger = LogR(storage: FileSystemStorage())
+let logger = try LogR(storage: FileSystemStorage())
 
 // For development without persistence needs
-let logger = LogR()
+let logger = try LogR()
 ```
 
 ### 2. Configure Retention Appropriately
@@ -291,7 +291,7 @@ let config = LogrConfiguration(
     cleanupInterval: 60 * 60     // Regular cleanup
 )
 
-let logger = LogR(
+let logger = try LogR(
     storage: SQLiteStorage(),
     configuration: config
 )

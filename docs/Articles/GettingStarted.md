@@ -52,7 +52,7 @@ import Logr
 
 @main
 struct MyApp: App {
-    let logger = LogR()
+    let logger = try! LogR()
 
     var body: some Scene {
         WindowGroup {
@@ -74,10 +74,10 @@ import Logr
 @main
 struct MyApp: App {
     // SQLite storage (recommended for large volumes)
-    let logger = LogR(storage: SQLiteStorage())
+    let logger = try LogR(storage: SQLiteStorage())
 
     // Or FileSystem storage (simple JSON files)
-    // let logger = LogR(storage: FileSystemStorage())
+    // let logger = try! LogR(storage: FileSystemStorage())
 
     var body: some Scene {
         WindowGroup {
@@ -220,7 +220,7 @@ import LogrUI
 
 @main
 struct MyApp: App {
-    let logger = LogR(storage: SQLiteStorage())
+    let logger = try! LogR(storage: SQLiteStorage())
 
     var body: some Scene {
         WindowGroup {
@@ -257,7 +257,7 @@ let config = LogrConfiguration(
     logVerbosity: .normal              // Normal verbosity (no source location)
 )
 
-let logger = LogR(
+let logger = try LogR(
     storage: SQLiteStorage(),
     configuration: config
 )
@@ -289,7 +289,7 @@ struct MyApp: App {
         )
         #endif
 
-        return LogR(storage: SQLiteStorage(), configuration: config)
+        return try LogR(storage: SQLiteStorage(), configuration: config)
     }()
 
     var body: some Scene {
@@ -361,7 +361,7 @@ func performRequest() async throws -> Response {
 @main
 struct MyApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    let logger = LogR(storage: SQLiteStorage())
+    let logger = try! LogR(storage: SQLiteStorage())
 
     var body: some Scene {
         WindowGroup {

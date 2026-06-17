@@ -177,11 +177,33 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     let currentKeyVersion: any MutexProtected<KeyVersion> = SafeMutex.create(.default)
 
-    /// Private envelope to store encrypted data with key version
+    /// Private envelope to store encrypted data with key version.
+    ///
+    /// Decoding is tolerant of envelopes written before the `algorithm` field existed: those
+    /// were always ChaCha20-Poly1305, so an absent `algorithm` key decodes as `.chacha` rather
+    /// than failing. This keeps logs persisted by earlier versions readable after an upgrade.
     private struct CryptoEnvelope: Codable {
         let version: Int
         let data: Data
         let algorithm: CryptoAlgo
+
+        enum CodingKeys: String, CodingKey {
+            case version, data, algorithm
+        }
+
+        init(version: Int, data: Data, algorithm: CryptoAlgo) {
+            self.version = version
+            self.data = data
+            self.algorithm = algorithm
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            version = try container.decode(Int.self, forKey: .version)
+            data = try container.decode(Data.self, forKey: .data)
+            // Legacy envelopes predate the algorithm field and were always ChaCha20-Poly1305.
+            algorithm = try container.decodeIfPresent(CryptoAlgo.self, forKey: .algorithm) ?? .chacha
+        }
     }
 
     public enum CryptoAlgo: Sendable, Codable {
@@ -224,9 +246,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
         }
 
         let payload = try encoder.encode(object)
-        guard let encryptedPayload = try symmetricKey.encrypt(payload, algo: encryptionAlgo) else {
-            throw LoggerCryptoError.encryptionFailed
-        }
+        let encryptedPayload = try symmetricKey.encrypt(payload, algo: encryptionAlgo)
 
         let envelope = CryptoEnvelope(version: currentKeyVersion.value.value, data: encryptedPayload,
                                       algorithm: encryptionAlgo)
@@ -312,12 +332,18 @@ private extension Data {
 }
 
 private extension SymmetricKey {
-    func encrypt(_ clearData: Data, algo: LoggerCryptoService.CryptoAlgo) throws -> Data? {
+    func encrypt(_ clearData: Data, algo: LoggerCryptoService.CryptoAlgo) throws -> Data {
         switch algo {
         case .chacha:
-            try ChaChaPoly.seal(clearData, using: self).combined
+            // `ChaChaPoly.SealedBox.combined` is non-optional.
+            return try ChaChaPoly.seal(clearData, using: self).combined
         case .aes256gcm:
-            try AES.GCM.seal(clearData, using: self).combined
+            // `AES.GCM.SealedBox.combined` is `Data?` — non-nil only for a 96-bit nonce, which the
+            // nonce-less `seal` always generates. Surface the contract as a throw rather than `nil`.
+            guard let combined = try AES.GCM.seal(clearData, using: self).combined else {
+                throw LoggerCryptoError.encryptionFailed
+            }
+            return combined
         }
     }
 
