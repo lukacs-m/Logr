@@ -44,6 +44,30 @@ actor FlakyStorage: LogRPersistence {
     func count() async throws -> Int { entries.count }
 }
 
+/// In-memory storage that delays every write, so entries pile up in the writer's pending buffer
+/// faster than they drain. Used to exercise backpressure.
+actor SlowStorage: LogRPersistence {
+    private let delay: Duration
+    private(set) var entries: [EncryptedLogEntry] = []
+
+    init(delay: Duration) { self.delay = delay }
+
+    var storedCount: Int { entries.count }
+
+    func store(_ entry: EncryptedLogEntry) async throws { try await store([entry]) }
+
+    func store(_ newEntries: [EncryptedLogEntry]) async throws {
+        try? await Task.sleep(for: delay)
+        entries.append(contentsOf: newEntries)
+    }
+
+    func fetchEntries() async throws -> [EncryptedLogEntry] { entries }
+    func deleteEntries(olderThan date: Date) async throws {}
+    func deleteEntries(keepingLatest count: Int) async throws {}
+    func clear() async throws { entries.removeAll() }
+    func count() async throws -> Int { entries.count }
+}
+
 @MainActor
 @Suite("Writer Reliability")
 struct WriterReliabilityTests {
@@ -78,5 +102,48 @@ struct WriterReliabilityTests {
 
         let stored = await storage.storedCount
         #expect(stored == 120)
+    }
+
+    @Test("droppedLogCount surfaces persistence loss through the LogRService existential")
+    func testDroppedLogCountVisibleViaExistential() async throws {
+        // Fails enough times to exhaust the writer's retries, so the batch is dropped and reported.
+        let storage = FlakyStorage(failingFirst: 3)
+        let service: any LogRService = LogR(storage: storage, cryptoService: try makeCrypto())
+
+        service.info("x")
+        await service.flush()
+
+        // onDrop hops to the main actor via a Task, so allow the pending update to apply.
+        for _ in 0 ..< 50 where service.droppedLogCount == 0 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(service.droppedLogCount == 1)
+    }
+
+    @Test("Backpressure bounds the pending buffer and accounts every shed entry")
+    func testBackpressureBoundsBufferAndAccountsDrops() async throws {
+        // Storage can't keep up: with a tiny pending cap, a fast burst must shed the excess.
+        let storage = SlowStorage(delay: .milliseconds(50))
+        let droppedBox = SafeMutex.create(0)
+        let writer = LogWriterActor(storage: storage,
+                                    cryptoService: try makeCrypto(),
+                                    configuration: .default,
+                                    batchSize: 5,
+                                    maxRetries: 1,
+                                    maxPendingWrites: 10)
+        await writer.setOnDrop { count in droppedBox.modify { $0 += count } }
+
+        let total = 200
+        for index in 0 ..< total {
+            writer.ingest(LogEntry(level: .info, category: .system, subsystem: "t", message: "m\(index)"))
+        }
+        await writer.flush()
+
+        let stored = await storage.storedCount
+        let dropped = droppedBox.value
+        // Every entry is either persisted or accounted as a backpressure drop — none vanish silently.
+        #expect(stored + dropped == total)
+        // The buffer shed load instead of growing without bound.
+        #expect(dropped > 0)
     }
 }

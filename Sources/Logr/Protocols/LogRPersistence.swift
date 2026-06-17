@@ -161,6 +161,19 @@ public protocol LogRPersistence: Sendable {
 }
 
 public extension LogRPersistence {
+    /// Default implementation: stores each entry via the single-entry primitive.
+    ///
+    /// Keeps ``store(_:)-batch`` an additive, non-breaking requirement for existing conformers —
+    /// a custom backend that only implements the single-entry `store(_:)` still compiles.
+    /// Built-in backends (``SQLiteStorage``, ``FileSystemStorage``) override this with a single
+    /// batched write, which is far more efficient and should be preferred whenever the backend
+    /// supports it.
+    func store(_ entries: [EncryptedLogEntry]) async throws {
+        for entry in entries {
+            try await store(entry)
+        }
+    }
+
     /// Default implementation: fetches all entries and returns the latest `limit`,
     /// preserving the oldest-first order. Override for storage that can apply the limit
     /// natively.

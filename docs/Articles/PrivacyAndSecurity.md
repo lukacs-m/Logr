@@ -50,11 +50,11 @@ Encryption happens automatically when using storage:
 
 ```swift
 // With SQLite
-let logger = LogR(storage: SQLiteStorage())
+let logger = try LogR(storage: SQLiteStorage())
 logger.info("Sensitive data") // Automatically encrypted before storage
 
 // With FileSystem
-let logger = LogR(storage: FileSystemStorage())
+let logger = try LogR(storage: FileSystemStorage())
 logger.info("User action") // Automatically encrypted before storage
 ```
 
@@ -82,7 +82,7 @@ Encryption keys are managed securely by the `LoggerCryptoService`.
 
 ```swift
 // Keys are generated automatically on first use
-let logger = LogR(storage: SQLiteStorage())
+let logger = try LogR(storage: SQLiteStorage())
 // On first run, a new key is generated and stored in Keychain
 ```
 
@@ -340,10 +340,10 @@ Always use storage with encryption in production:
 
 ```swift
 // ✅ Production
-let logger = LogR(storage: SQLiteStorage())
+let logger = try LogR(storage: SQLiteStorage())
 
 // ❌ Only for development
-let logger = LogR()
+let logger = try LogR()
 ```
 
 ### 2. Configure Appropriate Retention
@@ -424,7 +424,7 @@ Never extract or export encryption keys:
 let key = cryptoService.getCurrentKey() // Don't do this
 
 // ✅ Good - keys stay in crypto service
-let logger = LogR(storage: SQLiteStorage()) // Keys managed internally
+let logger = try LogR(storage: SQLiteStorage()) // Keys managed internally
 ```
 
 ### 8. Use Categories Wisely

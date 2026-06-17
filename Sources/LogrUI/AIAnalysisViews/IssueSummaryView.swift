@@ -280,13 +280,9 @@ struct IssueRow: View {
             .cornerRadius(6)
     }
 
+    // Single source of truth — see `LogSeverity.tint` in Presentation.swift.
     private var severityColor: Color {
-        switch issue.severity {
-        case .critical: .red
-        case .high: .orange
-        case .medium: .yellow
-        default: .blue
-        }
+        issue.severity.tint
     }
 }
 

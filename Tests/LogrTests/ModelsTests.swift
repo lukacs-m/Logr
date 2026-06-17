@@ -91,14 +91,14 @@ struct ModelsTests {
             }
         }
 
-        @Test("Test log level visual queue")
-        func testLogLevelVisualQueue() {
-            #expect(LogLevel.debug.visualQueue == "🟣")
-            #expect(LogLevel.info.visualQueue == "🔵")
-            #expect(LogLevel.notice.visualQueue == "🔵")
-            #expect(LogLevel.warning.visualQueue == "🟡")
-            #expect(LogLevel.error.visualQueue == "🔴")
-            #expect(LogLevel.fault.visualQueue == "🔴")
+        @Test("Test log level visual cue")
+        func testLogLevelVisualCue() {
+            #expect(LogLevel.debug.visualCue == "🟣")
+            #expect(LogLevel.info.visualCue == "🔵")
+            #expect(LogLevel.notice.visualCue == "🔵")
+            #expect(LogLevel.warning.visualCue == "🟡")
+            #expect(LogLevel.error.visualCue == "🔴")
+            #expect(LogLevel.fault.visualCue == "🔴")
         }
 
         @Test("Test log level CaseIterable")

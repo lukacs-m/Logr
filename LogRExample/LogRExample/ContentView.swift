@@ -7,6 +7,7 @@
 
 import Logr
 import SwiftUI
+import LogrUI
 
 struct ContentView: View {
     @Environment(\.logService) private var logger
@@ -14,10 +15,7 @@ struct ContentView: View {
     @State private var isGenerating = false
     @State private var generationProgress = ""
     @State private var showClearConfirmation = false
-
-    private var logCount: Int {
-        logger.recentLogs.count
-    }
+    @State private var stats: LogStatistics = .empty
 
     var body: some View {
         ScrollView {
@@ -44,6 +42,10 @@ struct ContentView: View {
         .onAppear {
             logger.info("ContentView appeared - Home tab loaded", category: .ui)
         }
+        .task(id: logger.recentLogs.count) {
+            // Statistics are computed off the main actor; refresh when the cache size changes.
+            stats = await logger.logStatistics()
+        }
     }
 
     // MARK: - Header
@@ -67,35 +69,32 @@ struct ContentView: View {
     // MARK: - Stats
 
     private var statsSection: some View {
+        // `stats` is computed off the main actor in `.task` and refreshed on cache-size change.
         VStack(spacing: 16) {
             HStack(spacing: 12) {
                 StatCard(title: "Total Logs",
-                         value: "\(logCount)",
+                         value: "\(stats.totalCount)",
                          icon: "doc.text.fill",
                          color: .blue)
 
                 StatCard(title: "In Memory",
-                         value: "\(logger.recentLogs.count)",
+                         value: "\(stats.totalCount)",
                          icon: "memorychip.fill",
                          color: .green)
             }
 
             HStack(spacing: 12) {
                 StatCard(title: "Errors",
-                         value: "\(countLogs(level: .error))",
+                         value: "\(stats.countByLevel[.error] ?? 0)",
                          icon: "exclamationmark.circle.fill",
                          color: .orange)
 
                 StatCard(title: "Faults",
-                         value: "\(countLogs(level: .fault))",
+                         value: "\(stats.countByLevel[.fault] ?? 0)",
                          icon: "xmark.octagon.fill",
                          color: .red)
             }
         }
-    }
-
-    private func countLogs(level: LogLevel) -> Int {
-        logger.recentLogs.count(where: { $0.level == level })
     }
 
     // MARK: - Quick Actions

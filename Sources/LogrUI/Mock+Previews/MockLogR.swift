@@ -131,6 +131,8 @@ public final class MockLogR: LogRService, Sendable {
 
     public var canAnalyseLogs: Bool = true
 
+    public var droppedLogCount = 0
+
     public private(set) var recentLogs = Deque<LogEntry>()
     public private(set) var isCleanupRunning = false
 

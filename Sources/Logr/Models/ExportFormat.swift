@@ -8,7 +8,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-public enum ExportFormat: CaseIterable, Identifiable {
+public enum ExportFormat: CaseIterable, Identifiable, Sendable {
     /// Standard JSON format.
     case json
     /// Comma-separated values format.

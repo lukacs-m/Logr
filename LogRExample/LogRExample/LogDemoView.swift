@@ -7,6 +7,7 @@
 
 import Logr
 import SwiftUI
+import LogrUI
 
 struct LogDemoView: View {
     @Environment(\.logService) private var logger
@@ -68,7 +69,7 @@ struct LogDemoView: View {
                     logAtLevel(level)
                 } label: {
                     HStack {
-                        Text(level.visualQueue)
+                        Text(level.visualCue)
                         Text(level.displayName)
                             .foregroundStyle(colorForLevel(level))
                         Spacer()

@@ -57,7 +57,7 @@ import OSLog
 /// - ``osLogType``
 /// - ``displayName``
 /// - ``priority``
-/// - ``visualQueue``
+/// - ``visualCue``
 public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable, Identifiable, Equatable {
     /// Debug-level messages for development and active debugging.
     ///
@@ -151,7 +151,7 @@ public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable, Identif
     /// - info/notice: 🔵 (blue)
     /// - warning: 🟡 (yellow)
     /// - error/fault: 🔴 (red)
-    public var visualQueue: String {
+    public var visualCue: String {
         switch self {
         case .debug: "🟣"
         case .info, .notice: "🔵"

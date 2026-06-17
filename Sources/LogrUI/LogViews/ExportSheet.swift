@@ -30,11 +30,10 @@ struct ExportSheet: View {
         }
     }
 
-    private func exportLogs(format: ExportFormat) {
+    private func exportLogs(format: ExportFormat) async {
         do {
-            guard let data = logr.exportLogs(format: format) else {
-                return
-            }
+            let data = try await logr.exportLogs(format: format)
+            guard !data.isEmpty else { return }
             let fileName = "logs_\(Date().timeIntervalSince1970).\(format.fileExtension)"
 
             // Save to app's Documents directory
@@ -88,8 +87,10 @@ private extension ExportSheet {
     var exportingActionsSection: some View {
         Section {
             Button("Export to Files App") {
-                exportLogs(format: selectedFormat)
-                dismiss()
+                Task {
+                    await exportLogs(format: selectedFormat)
+                    dismiss()
+                }
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }

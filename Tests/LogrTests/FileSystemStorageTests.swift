@@ -757,4 +757,55 @@ struct FileSystemStorageTests {
         let entries = try await storage.fetchEntries()
         #expect(entries.count == 100)
     }
+
+    // MARK: - NDJSON Robustness
+
+    @Test("A torn final NDJSON line is skipped while earlier entries survive")
+    func testTornFinalLineIsSkipped() async throws {
+        let uniqueFileName = "test_torn_\(UUID().uuidString).json"
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        else {
+            Issue.record("Documents directory not found")
+            return
+        }
+        let fileURL = documentsPath.appendingPathComponent(uniqueFileName)
+
+        let storage = try FileSystemStorage(fileName: uniqueFileName)
+        for index in 1 ... 3 {
+            try await storage.store(EncryptedLogEntry(id: "e\(index)",
+                                                      timestamp: Date().addingTimeInterval(TimeInterval(index)),
+                                                      data: Data("d\(index)".utf8)))
+        }
+
+        // Simulate a crash mid-append: a partial, undecodable trailing line with no newline.
+        let handle = try FileHandle(forWritingTo: fileURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"id":"partial","timestamp":"#.utf8))
+        try handle.close()
+
+        // A fresh instance reads the intact entries and skips the torn line instead of losing all.
+        let reopened = try FileSystemStorage(fileName: uniqueFileName)
+        let entries = try await reopened.fetchEntries()
+        #expect(entries.map(\.id) == ["e1", "e2", "e3"])
+        #expect(try await reopened.count() == 3)
+
+        cleanupTestStorage(fileName: uniqueFileName)
+    }
+
+    @Test("count() matches the decoded entry count even for newline-bearing payloads")
+    func testCountMatchesDecodedCountWithNewlinePayloads() async throws {
+        let storage = try createTestStorage()
+        for index in 1 ... 6 {
+            // The payload contains raw newlines; they must not inflate the newline-based count(),
+            // because `EncryptedLogEntry.data` is base64-encoded in the stored JSON.
+            try await storage.store(EncryptedLogEntry(id: "e\(index)",
+                                                      timestamp: Date(),
+                                                      data: Data("multi\nline\npayload \(index)".utf8)))
+        }
+
+        let counted = try await storage.count()
+        let fetched = try await storage.fetchEntries().count
+        #expect(counted == 6)
+        #expect(counted == fetched)
+    }
 }

@@ -27,7 +27,7 @@ import Logr
 
 @main
 struct MyApp: App {
-    let logger = LogR(storage: SQLiteStorage())
+    let logger = try! LogR(storage: SQLiteStorage())
 
     var body: some Scene {
         WindowGroup {
@@ -86,7 +86,7 @@ struct LogsView: View {
 ```swift
 @main
 struct MyApp: App {
-    let logger = LogR(storage: SQLiteStorage())
+    let logger = try! LogR(storage: SQLiteStorage())
 
     var body: some Scene {
         WindowGroup {
@@ -529,7 +529,7 @@ Create one logger instance per app:
 @main
 struct MyApp: App {
     // Single instance
-    let logger = LogR(storage: SQLiteStorage())
+    let logger = try! LogR(storage: SQLiteStorage())
 
     var body: some Scene {
         WindowGroup {

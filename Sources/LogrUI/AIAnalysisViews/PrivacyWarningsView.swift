@@ -205,21 +205,10 @@ private struct PrivacyWarningRow: View {
         .padding(.vertical, 8)
     }
 
+    // Single source of truth — see `LogSeverity.tint`/`symbolName` in Presentation.swift.
     private var severityIcon: some View {
-        switch warning.severity {
-        case .critical:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-        case .high:
-            Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(.orange)
-        case .medium:
-            Image(systemName: "exclamationmark.circle")
-                .foregroundStyle(.yellow)
-        default:
-            Image(systemName: "info.circle")
-                .foregroundStyle(.blue)
-        }
+        Image(systemName: warning.severity.symbolName)
+            .foregroundStyle(warning.severity.tint)
     }
 }
 

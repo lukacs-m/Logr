@@ -35,7 +35,7 @@ import Foundation
 /// ```swift
 /// if #available(iOS 26.0, *) {
 ///     let analyzer = AIAnalyzer()
-///     let logger = LogR(logAnalyser: analyzer)
+///     let logger = try LogR(logAnalyser: analyzer)
 ///
 ///     // Check availability
 ///     if logger.canAnalyseLogs {
@@ -92,7 +92,7 @@ public protocol LogAIAnalyzer: Sendable {
     ///
     /// ```swift
     /// if #available(iOS 26.0, *) {
-    ///     let logger = LogR(logAnalyser: AIAnalyzer())
+    ///     let logger = try LogR(logAnalyser: AIAnalyzer())
     ///
     ///     if logger.canAnalyseLogs {
     ///         // AI features available

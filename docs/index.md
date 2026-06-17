@@ -35,7 +35,7 @@ import SwiftUI
 
 @main
 struct MyApp: App {
-    @State private var logger = LogR(storage: SQLiteStorage())
+    @State private var logger = try! LogR(storage: SQLiteStorage())
 
     var body: some Scene {
         WindowGroup {

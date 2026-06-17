@@ -106,6 +106,9 @@ struct LogrTests {
         logr.error("Error")
         logr.fault("Fault")
 
+        // Publish the coalesced buffer before inspecting `recentLogs` directly.
+        await logr.flush()
+
         #expect(logr.recentLogs.count == 5)
 
         // Verify logs are in reverse chronological order (newest first)
@@ -114,6 +117,32 @@ struct LogrTests {
         #expect(logr.recentLogs[2].message == "Notice")
         #expect(logr.recentLogs[3].message == "Info")
         #expect(logr.recentLogs[4].message == "Debug")
+    }
+
+    // MARK: - Existential read consistency (A1 regression)
+
+    @Test("Reads through the LogRService existential reflect a burst with no await")
+    func testExistentialReadsReflectBurstImmediately() async throws {
+        // LogrUI and consumers hold the service as `any LogRService`. A burst of logs
+        // within the coalescing window must be visible to every read API immediately —
+        // the synchronous reads without any intervening `await`, through the existential,
+        // not just the concrete type.
+        let service: any LogRService = LogR(cryptoService: cryptoService)
+
+        service.info("a")
+        service.info("b")
+        service.info("c")
+
+        // Synchronous reads see the burst with no await — the core source-of-truth guarantee.
+        #expect(service.recentLogs.count == 3)
+        #expect(try service.getLogs().count == 3)
+        #expect(try service.getLogs(limit: 2).count == 2)
+
+        // Export/statistics now run off the main actor (so they're `async`), but still reflect the
+        // burst — the async is about *where* the work runs, not whether the data is current.
+        let exported = try await service.exportLogs()
+        #expect(!exported.isEmpty)
+        #expect(await service.logStatistics().totalCount == 3)
     }
 
     // MARK: - Lazy Evaluation Tests
@@ -222,6 +251,44 @@ struct LogrTests {
     }
 
     // MARK: - Configuration Tests
+
+    @Test("LogrConfiguration decodes JSON missing the 1.2.0 fields by falling back to defaults")
+    func testConfigDecodesJSONWithoutNewFields() throws {
+        // Round-trip the default config, then strip the fields added in 1.2.0 to simulate a config
+        // encoded by an earlier release. Decoding must succeed (defaults applied), not throw.
+        let encoded = try JSONEncoder().encode(LogrConfiguration.default)
+        var object = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "coalesceWindowMillis")
+        object.removeValue(forKey: "mirrorToOSLog")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let config = try JSONDecoder().decode(LogrConfiguration.self, from: legacy)
+
+        #expect(config.coalesceWindowMillis == LogrConfiguration.default.coalesceWindowMillis)
+        #expect(config.mirrorToOSLog == LogrConfiguration.default.mirrorToOSLog)
+        #expect(config.maxLogEntries == LogrConfiguration.default.maxLogEntries)
+        #expect(config.subsystem == LogrConfiguration.default.subsystem)
+    }
+
+    @Test("LogrConfiguration round-trips through Codable")
+    func testConfigCodableRoundTrip() throws {
+        let original = LogrConfiguration(maxLogEntries: 42,
+                                         enabledLevels: [.warning, .error],
+                                         subsystem: "com.test.roundtrip",
+                                         logVerbosity: .normal,
+                                         coalesceWindowMillis: 250,
+                                         mirrorToOSLog: false)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(LogrConfiguration.self, from: data)
+
+        #expect(decoded.maxLogEntries == 42)
+        #expect(decoded.enabledLevels == [.warning, .error])
+        #expect(decoded.subsystem == "com.test.roundtrip")
+        #expect(decoded.logVerbosity == .normal)
+        #expect(decoded.coalesceWindowMillis == 250)
+        #expect(decoded.mirrorToOSLog == false)
+    }
+
     @Test("Test custom configuration max log entries")
     func testMaxLogEntriesConfiguration() async throws {
         let config = LogrConfiguration(maxLogEntries: 3)
@@ -231,6 +298,8 @@ struct LogrTests {
         logr.info("Message 2")
         logr.info("Message 3")
         logr.info("Message 4")
+
+        await logr.flush()
 
         // Should only keep the 3 most recent logs
         #expect(logr.recentLogs.count == 3)
@@ -250,6 +319,8 @@ struct LogrTests {
         logr.notice("Notice message")
         logr.error("Error message")
         logr.fault("Fault message")
+
+        await logr.flush()
 
         // Should only have error and fault logs
         #expect(logr.recentLogs.count == 2)
@@ -404,13 +475,13 @@ struct LogrTests {
     // MARK: - Export Tests
 
     @Test("Test export logs as JSON")
-    func testExportLogsAsJSON() throws {
+    func testExportLogsAsJSON() async throws {
         let logr = LogR(cryptoService: cryptoService)
 
         logr.info("Test message 1", category: .system)
         logr.error("Test message 2", category: .network)
 
-        let jsonData = try #require(logr.exportLogs(format: .json))
+        let jsonData = try await logr.exportLogs(format: .json)
 
         #expect(!jsonData.isEmpty)
 
@@ -423,13 +494,13 @@ struct LogrTests {
     }
 
     @Test("Test export logs as CSV")
-    func testExportLogsAsCSV() throws {
+    func testExportLogsAsCSV() async throws {
         let logr = LogR(cryptoService: cryptoService)
 
         logr.info("Test message 1", category: .system)
         logr.error("Test message 2", category: .network)
 
-        let csvData = try #require(logr.exportLogs(format: .csv))
+        let csvData = try await logr.exportLogs(format: .csv)
 
         #expect(!csvData.isEmpty)
 
@@ -448,7 +519,7 @@ struct LogrTests {
         logr.info("Test message 1", category: .system)
         logr.error("Test message 2", category: .network)
 
-        let txtData = try #require(logr.exportLogs(format: .txt))
+        let txtData = try await logr.exportLogs(format: .txt)
 
         #expect(!txtData.isEmpty)
 
@@ -461,13 +532,13 @@ struct LogrTests {
     }
 
     @Test("Test export with special characters in CSV")
-    func testExportWithSpecialCharactersInCSV() throws {
+    func testExportWithSpecialCharactersInCSV() async throws {
         let logr = LogR(cryptoService: cryptoService)
 
         logr.info("Message with \"quotes\"", category: .system)
         logr.info("Message with, commas", category: .system)
 
-        let csvData =  try #require(logr.exportLogs(format: .csv))
+        let csvData = try await logr.exportLogs(format: .csv)
         let csvString = String(data: csvData, encoding: .utf8)
 
         #expect(csvString != nil)
@@ -484,6 +555,8 @@ struct LogrTests {
         logr.info("Message 1")
         logr.info("Message 2")
         logr.info("Message 3")
+
+        await logr.flush()
 
         #expect(logr.recentLogs.count == 3)
 
@@ -503,6 +576,8 @@ struct LogrTests {
         logr.info("Database message", category: .database)
         logr.info("UI message", category: .ui)
         logr.info("Custom message", category: .custom("MyCategory"))
+
+        await logr.flush()
 
         #expect(logr.recentLogs.count == 5)
 
@@ -525,13 +600,15 @@ struct LogrTests {
         #expect(logs.isEmpty)
     }
 
-    @Test("Test export on empty logs")
-    func testExportOnEmptyLogs() throws {
+    @Test("Test export on empty logs returns empty data (not nil)")
+    func testExportOnEmptyLogs() async throws {
         let logr = LogR(cryptoService: cryptoService)
 
-        let jsonData = logr.exportLogs(format: .json)
+        // Empty cache now yields empty `Data` rather than `nil`, so callers can distinguish
+        // "no logs" from a genuine encoding failure (which throws).
+        let jsonData = try await logr.exportLogs(format: .json)
 
-        #expect(jsonData == nil)
+        #expect(jsonData.isEmpty)
     }
 
     // MARK: - Metadata Tests
@@ -591,6 +668,8 @@ struct LogrTests {
         for i in 1...100 {
             logr.info("Message \(i)")
         }
+
+        await logr.flush()
 
         #expect(logr.recentLogs.count == 100)
     }

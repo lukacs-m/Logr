@@ -79,7 +79,7 @@ import SwiftUI
 
 @main
 struct MyApp: App {
-    let logger = LogR()
+    let logger = try! LogR()
 
     var body: some Scene {
         WindowGroup {
@@ -119,10 +119,10 @@ import Logr
 @main
 struct MyApp: App {
     // Using SQLite storage (recommended for large volumes)
-    let logger = LogR(storage: SQLiteStorage())
+    let logger = try LogR(storage: SQLiteStorage())
 
     // Or using FileSystem storage
-    // let logger = LogR(storage: FileSystemStorage())
+    // let logger = try! LogR(storage: FileSystemStorage())
 
     var body: some Scene {
         WindowGroup {
@@ -236,7 +236,7 @@ logger.debug("Feature flag enabled", category: .custom("feature-flags"))
 
 ```swift
 // Uses sensible defaults
-let logger = LogR()
+let logger = try LogR()
 
 // Default configuration:
 // - maxLogEntries: 10,000
@@ -259,7 +259,7 @@ let config = LogrConfiguration(
     logVerbosity: .normal              // Normal verbosity (less detailed)
 )
 
-let logger = LogR(configuration: config)
+let logger = try LogR(configuration: config)
 ```
 
 #### Configuration Options
@@ -284,7 +284,7 @@ import SwiftUI
 import LogrUI
 
 struct ContentView: View {
-  @State private var logger = LogR(storage: SQLiteStorage())
+  @State private var logger = try! LogR(storage: SQLiteStorage())
   
     var body: some View {
         NavigationStack {
@@ -332,7 +332,7 @@ Automatically detect potential privacy issues in your logs:
 if #available(iOS 26.0, macOS 26.0, *) {
     // Create logger with AI analyzer
     let analyzer = AIAnalyzer()
-    let logger = LogR(logAnalyser: analyzer)
+    let logger = try LogR(logAnalyser: analyzer)
 
     // Scan for privacy issues
     Task {
@@ -395,7 +395,7 @@ LogR supports multiple storage backends with built-in encryption.
 
 ```swift
 // Logs only to OSLog, no persistent storage
-let logger = LogR()
+let logger = try LogR()
 ```
 
 ### FileSystem Storage
@@ -405,7 +405,7 @@ import Logr
 
 // Simple file-based storage
 let storage = FileSystemStorage()
-let logger = LogR(storage: storage)
+let logger = try LogR(storage: storage)
 ```
 
 Features:
@@ -421,7 +421,7 @@ import Logr
 
 // High-performance SQLite storage
 let storage = SQLiteStorage()
-let logger = LogR(storage: storage)
+let logger = try LogR(storage: storage)
 ```
 
 Features:
@@ -464,7 +464,7 @@ class CloudStorage: LogRPersistence {
     }
 }
 
-let logger = LogR(storage: CloudStorage())
+let logger = try LogR(storage: CloudStorage())
 ```
 
 ## Privacy & Security
@@ -480,7 +480,7 @@ All stored logs are automatically encrypted using:
 
 ```swift
 // Encryption is automatic with storage
-let logger = LogR(storage: SQLiteStorage())
+let logger = try LogR(storage: SQLiteStorage())
 
 // Logs are encrypted before storage
 logger.info("Sensitive operation completed")
@@ -607,7 +607,7 @@ let config = LogrConfiguration(logVerbosity: .verbose)
 let config = LogrConfiguration(logVerbosity: .normal)
 // Output: "Button tapped"
 
-let logger = LogR(configuration: config)
+let logger = try LogR(configuration: config)
 ```
 
 ### Dependency Injection
@@ -621,7 +621,7 @@ protocol AppDependencies {
 }
 
 class ProductionDependencies: AppDependencies {
-    lazy var logger: LogRService = LogR(
+    lazy var logger: LogRService = try! LogR(
         storage: SQLiteStorage(),
         configuration: LogrConfiguration(
             subsystem: "com.myapp.main"

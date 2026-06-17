@@ -29,6 +29,8 @@ final class DisabledLogR: LogRService {
 
     var canAnalyseLogs: Bool { false }
 
+    var droppedLogCount: Int { 0 }
+
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     var privacyAnalysisResult: PrivacyAnalysisResult? { nil }
 

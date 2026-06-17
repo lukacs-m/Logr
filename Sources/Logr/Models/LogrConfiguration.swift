@@ -53,7 +53,7 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 ///
 /// ```swift
 /// // Use default configuration
-/// let logger = LogR()
+/// let logger = try LogR()
 ///
 /// // Custom configuration for production
 /// let config = LogrConfiguration(
@@ -64,7 +64,7 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 ///     cleanupInterval: 30 * 60,  // 30 minutes
 ///     logVerbosity: .normal
 /// )
-/// let logger = LogR(configuration: config)
+/// let logger = try LogR(configuration: config)
 /// ```
 ///
 /// ## Topics
@@ -151,6 +151,28 @@ public struct LogrConfiguration: Sendable, Codable {
     /// Default: `.verbose`
     public let logVerbosity: LogVerbosity
 
+    /// Minimum interval, in milliseconds, between SwiftUI observation notifications for `recentLogs`.
+    ///
+    /// `recentLogs` is updated synchronously on every log, so every reader — including reads through
+    /// the `any LogRService` existential and `getLogs`/`exportLogs`/`logStatistics` — always sees the
+    /// latest entry immediately. This window throttles only how often *observers* (SwiftUI views) are
+    /// notified, coalescing a burst of logs into at most one view invalidation per window. It
+    /// decouples the redraw rate from the logging rate, keeping the UI responsive under high volume.
+    /// A larger value means fewer redraws but more latency before a burst is reflected on screen;
+    /// `0` notifies on every log.
+    ///
+    /// Default: 100 (≈10 notifications per second during a burst).
+    public let coalesceWindowMillis: Int
+
+    /// Whether each log is mirrored to Apple's unified logging system (OSLog) synchronously.
+    ///
+    /// When `true` (the default) every log is also written to OSLog so it appears in Console.app.
+    /// High-volume apps that rely on LogR's own persistent store can set this to `false` to avoid the
+    /// per-call OSLog cost during bursts.
+    ///
+    /// Default: `true`.
+    public let mirrorToOSLog: Bool
+
     /// Creates a new LogR configuration.
     ///
     /// All parameters have sensible defaults. Only specify the values you want to customize.
@@ -163,6 +185,8 @@ public struct LogrConfiguration: Sendable, Codable {
     ///   - subsystem: OSLog subsystem identifier. Default: Bundle identifier
     ///   - cleanupInterval: Cleanup frequency in seconds. Default: 1 hour
     ///   - logVerbosity: Output verbosity. Default: `.verbose`
+    ///   - coalesceWindowMillis: Min interval between `recentLogs` publications. Default: 100ms
+    ///   - mirrorToOSLog: Mirror each log to OSLog. Default: `true`
     public init(maxLogEntries: Int = LogrConfiguration.default.maxLogEntries,
                 maxLogAge: TimeInterval = LogrConfiguration.default.maxLogAge,
                 enabledLevels: Set<LogLevel> = LogrConfiguration.default.enabledLevels,
@@ -170,7 +194,9 @@ public struct LogrConfiguration: Sendable, Codable {
                     .categoryLevelOverrides,
                 subsystem: String = LogrConfiguration.default.subsystem,
                 cleanupInterval: TimeInterval = LogrConfiguration.default.cleanupInterval,
-                logVerbosity: LogVerbosity = LogrConfiguration.default.logVerbosity) {
+                logVerbosity: LogVerbosity = LogrConfiguration.default.logVerbosity,
+                coalesceWindowMillis: Int = LogrConfiguration.default.coalesceWindowMillis,
+                mirrorToOSLog: Bool = LogrConfiguration.default.mirrorToOSLog) {
         self.maxLogEntries = maxLogEntries
         self.maxLogAge = maxLogAge
         self.enabledLevels = enabledLevels
@@ -178,6 +204,41 @@ public struct LogrConfiguration: Sendable, Codable {
         self.subsystem = subsystem
         self.cleanupInterval = cleanupInterval
         self.logVerbosity = logVerbosity
+        self.coalesceWindowMillis = coalesceWindowMillis
+        self.mirrorToOSLog = mirrorToOSLog
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxLogEntries, maxLogAge, enabledLevels, categoryLevelOverrides
+        case subsystem, cleanupInterval, logVerbosity, coalesceWindowMillis, mirrorToOSLog
+    }
+
+    /// Forward-compatible decoding: any key absent from the payload falls back to its default
+    /// rather than throwing. This keeps configs encoded by an earlier version (which lacks fields
+    /// added later, e.g. `coalesceWindowMillis`/`mirrorToOSLog`) decodable, so adding a field stays
+    /// a non-breaking change. The synthesized `encode(to:)` continues to write every key.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = LogrConfiguration.default
+        maxLogEntries = try container.decodeIfPresent(Int.self, forKey: .maxLogEntries)
+            ?? defaults.maxLogEntries
+        maxLogAge = try container.decodeIfPresent(TimeInterval.self, forKey: .maxLogAge)
+            ?? defaults.maxLogAge
+        enabledLevels = try container.decodeIfPresent(Set<LogLevel>.self, forKey: .enabledLevels)
+            ?? defaults.enabledLevels
+        categoryLevelOverrides = try container
+            .decodeIfPresent([LogCategory: LogLevel].self, forKey: .categoryLevelOverrides)
+            ?? defaults.categoryLevelOverrides
+        subsystem = try container.decodeIfPresent(String.self, forKey: .subsystem)
+            ?? defaults.subsystem
+        cleanupInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .cleanupInterval)
+            ?? defaults.cleanupInterval
+        logVerbosity = try container.decodeIfPresent(LogVerbosity.self, forKey: .logVerbosity)
+            ?? defaults.logVerbosity
+        coalesceWindowMillis = try container.decodeIfPresent(Int.self, forKey: .coalesceWindowMillis)
+            ?? defaults.coalesceWindowMillis
+        mirrorToOSLog = try container.decodeIfPresent(Bool.self, forKey: .mirrorToOSLog)
+            ?? defaults.mirrorToOSLog
     }
 
     /// Default configuration with sensible values for most applications.
@@ -196,5 +257,7 @@ public struct LogrConfiguration: Sendable, Codable {
                                                     categoryLevelOverrides: nil,
                                                     subsystem: Bundle.main.bundleIdentifier ?? "com.logr.default",
                                                     cleanupInterval: 60 * 60,
-                                                    logVerbosity: .verbose)
+                                                    logVerbosity: .verbose,
+                                                    coalesceWindowMillis: 100,
+                                                    mirrorToOSLog: true)
 }

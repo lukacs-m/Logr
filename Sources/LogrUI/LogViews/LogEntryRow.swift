@@ -23,11 +23,13 @@ struct LogEntryRow: View, @MainActor Equatable {
                     DetailRow("Timestamp", entry.timestamp.formatted(.iso8601))
                 }
                 .font(.caption)
+                .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .init(horizontal: .leading, vertical: .top))
                 .foregroundStyle(.secondary)
             }
         } label: {
             mainRowContent
         }
+        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .init(horizontal: .leading, vertical: .top))
         .onChange(of: displayState) { _, newGlobalState in
             isExpanded = newGlobalState
         }
@@ -40,34 +42,31 @@ struct LogEntryRow: View, @MainActor Equatable {
 
 private extension LogEntryRow {
     var mainRowContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                LogLevelBadge(level: entry.level)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(entry.category.displayName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Spacer()
-
-                        Text(entry.timestamp, style: .time)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Text(entry.message)
-                        .fontWeight(.semibold)
-                        .lineLimit(isExpanded ? nil : 3)
-                }
-
-                Spacer()
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
+        Button {
                 isExpanded.toggle()
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    LogLevelBadge(level: entry.level)
+                    Text(entry.category.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text(entry.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .fontWeight(.semibold)
+                Text(entry.message)
+                    .fontWeight(.semibold)
+                    .lineLimit(isExpanded ? nil : 3)
             }
+            .contentShape(.rect)
+            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .init(horizontal: .leading, vertical: .top))
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -105,14 +104,7 @@ struct LogLevelBadge: View {
     }
 
     private var backgroundColor: Color {
-        switch level {
-        case .debug: .gray
-        case .info: .blue
-        case .notice: .green
-        case .error: .orange
-        case .fault: .red
-        case .warning: .yellow
-        }
+        level.tint
     }
 
     private var foregroundColor: Color {

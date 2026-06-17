@@ -31,7 +31,7 @@ import Logr
 
 if #available(iOS 26.0, *) {
     let analyzer = AIAnalyzer()
-    let logger = LogR(
+    let logger = try LogR(
         storage: SQLiteStorage(),
         logAnalyser: analyzer
     )
@@ -355,7 +355,7 @@ class CustomAIAnalyzer: LogAIAnalyzer {
 // Use it
 if #available(iOS 26.0, *) {
     let customAnalyzer = CustomAIAnalyzer()
-    let logger = LogR(logAnalyser: customAnalyzer)
+    let logger = try LogR(logAnalyser: customAnalyzer)
 }
 ```
 

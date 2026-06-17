@@ -39,7 +39,7 @@ public actor FileSystemStorage: LogRPersistence {
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
 
-        try prepareFile()
+        try Self.prepareFile(at: fileURL, encoder: encoder, decoder: decoder)
     }
 
     public func store(_ entry: EncryptedLogEntry) async throws {
@@ -65,13 +65,13 @@ public actor FileSystemStorage: LogRPersistence {
 
     public func deleteEntries(olderThan date: Date) async throws {
         let remaining = Self.readEntries(at: fileURL, using: decoder).filter { $0.timestamp > date }
-        try writeAll(remaining)
+        try Self.writeAll(remaining, to: fileURL, using: encoder)
     }
 
     public func deleteEntries(keepingLatest count: Int) async throws {
         guard count >= 0 else { return }
         let sorted = Self.readEntries(at: fileURL, using: decoder).sorted { $0.timestamp < $1.timestamp }
-        try writeAll(Array(sorted.suffix(count)))
+        try Self.writeAll(Array(sorted.suffix(count)), to: fileURL, using: encoder)
     }
 
     public func clear() async throws {
@@ -88,27 +88,31 @@ public actor FileSystemStorage: LogRPersistence {
 
 private extension FileSystemStorage {
     /// Creates the file if missing, or migrates a legacy single-JSON-array file to NDJSON.
-    nonisolated func prepareFile() throws {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            try Data().write(to: fileURL, options: .atomic)
+    ///
+    /// `static` (like ``readEntries(at:using:)``) so the throwing initializer can call it without
+    /// crossing actor isolation, and so a file-mutating helper never depends on — or appears to
+    /// escape — the actor's isolation.
+    static func prepareFile(at url: URL, encoder: JSONEncoder, decoder: JSONDecoder) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            try Data().write(to: url, options: .atomic)
             return
         }
-        guard let data = try? Data(contentsOf: fileURL), data.first == Self.openBracket else {
+        guard let data = try? Data(contentsOf: url), data.first == openBracket else {
             return // already NDJSON (or empty)
         }
         // Legacy format detected: rewrite the JSON array as NDJSON.
         let entries = (try? decoder.decode([EncryptedLogEntry].self, from: data)) ?? []
-        try writeAll(entries)
+        try writeAll(entries, to: url, using: encoder)
     }
 
     /// Rewrites the whole file as NDJSON. Used only by migration and cleanup.
-    nonisolated func writeAll(_ entries: [EncryptedLogEntry]) throws {
+    static func writeAll(_ entries: [EncryptedLogEntry], to url: URL, using encoder: JSONEncoder) throws {
         var data = Data()
         for entry in entries {
             try data.append(encoder.encode(entry))
-            data.append(Self.newline)
+            data.append(newline)
         }
-        try data.write(to: fileURL, options: .atomic)
+        try data.write(to: url, options: .atomic)
     }
 
     static func readEntries(at url: URL, using decoder: JSONDecoder) -> [EncryptedLogEntry] {
