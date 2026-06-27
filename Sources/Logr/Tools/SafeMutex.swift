@@ -19,7 +19,7 @@ import os
 /// which any `Sendable` value satisfies). So when you raise the floor to iOS 18,
 /// swapping `import os` for `import Synchronization` is mechanical: anything that
 /// compiles against this compiles against the real type.
-struct SafeMutex<Value: Sendable>: ~Copyable, Sendable {
+struct SafeMutex<Value: Sendable>: ~Copyable {
     private let lock: OSAllocatedUnfairLock<Value>
 
     init(_ initialValue: Value) {
@@ -36,7 +36,7 @@ struct SafeMutex<Value: Sendable>: ~Copyable, Sendable {
         try lock.withLockIfAvailable(body)
     }
 }
- 
+
 extension SafeMutex where Value: Copyable {
     /// Snapshot the current value. Each access takes the lock.
     var value: Value {
