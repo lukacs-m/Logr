@@ -161,5 +161,7 @@ public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable, Identif
     }
 
     /// Conformance to `Identifiable` for SwiftUI list rendering.
-    public var id: Self { self }
+    public var id: Self {
+        self
+    }
 }

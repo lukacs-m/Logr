@@ -164,8 +164,14 @@ public final class MockLogR: LogRService, Sendable {
                                 line: Int = #line,
                                 metadata: [String: LogMetadataValue]? = nil) {
         // Evaluate the message synchronously (preserving lazy semantics), then hop the insert to
-        // the main actor where the observable cache lives. Previews don't rely on synchronous
-        // read-after-write, so the deferred insert is fine.
+        // the main actor where the observable cache lives.
+        //
+        // NOTE: unlike `LogR`, this insert is *deferred*. `recentLogs` is not updated before
+        // `log()` returns (no synchronous read-after-write), and because separate `Task`s are not
+        // guaranteed to run in enqueue order, entries logged in a tight burst may be inserted out
+        // of order. That is fine for the previews/sample data this mock exists for; a test that
+        // asserts on `recentLogs` right after `log()` must first hop to the main actor (e.g.
+        // `await Task { @MainActor in }.value`) to observe the entry.
         let entry = LogEntry(level: level,
                              category: category,
                              subsystem: "com.logr.mock",

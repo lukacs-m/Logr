@@ -117,7 +117,9 @@ public struct LogViewer: View {
         case issuesSummary
         case statistics
 
-        var id: Self { self }
+        var id: Self {
+            self
+        }
     }
 
     public enum Functionalities: Equatable, CaseIterable {
@@ -178,20 +180,20 @@ public struct LogViewer: View {
 
     public var body: some View {
         mainContent
-        .errorAlert(error: $showError)
-        .sheet(item: $presentedSheet) { destination in
-            sheetView(destination: destination)
-        }
-        .confirmationDialog("Clear All Logs",
-                            isPresented: $showingDeleteConfirmation,
-                            titleVisibility: .visible) {
-            Button("Clear All Logs", role: .destructive) {
-                clearAllLogs()
+            .errorAlert(error: $showError)
+            .sheet(item: $presentedSheet) { destination in
+                sheetView(destination: destination)
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will permanently delete all stored log entries. This action cannot be undone.")
-        }
+            .confirmationDialog("Clear All Logs",
+                                isPresented: $showingDeleteConfirmation,
+                                titleVisibility: .visible) {
+                Button("Clear All Logs", role: .destructive) {
+                    clearAllLogs()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will permanently delete all stored log entries. This action cannot be undone.")
+            }
     }
 
     @ViewBuilder
@@ -224,7 +226,6 @@ public struct LogViewer: View {
             }
         }
     }
-
 }
 
 // MARK: - Main Content View
@@ -266,30 +267,32 @@ private extension LogViewer {
             }
         }
         .navigationTitle("LogR Viewer")
-        .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $searchText, prompt: "Search logs...")
-        .task(id: logr.recentLogs.count) {
-            // Recompute derived data (stats + share payloads) off the main actor when the cache
-            // size changes, rather than synchronously on every body pass.
-            await refreshDerivedData()
-        }
-        .task(id: searchText) {
-            // Skip debounce for empty string (immediate clear)
-            if searchText.isEmpty {
-                debouncedQuery = ""
-                return
+        #if os(iOS)
+            .navigationBarTitleDisplayMode(.large)
+        #endif
+            .searchable(text: $searchText, prompt: "Search logs...")
+            .task(id: logr.recentLogs.count) {
+                // Recompute derived data (stats + share payloads) off the main actor when the cache
+                // size changes, rather than synchronously on every body pass.
+                await refreshDerivedData()
             }
-            // Debounce
-            try? await Task.sleep(for: .milliseconds(300))
-            if Task.isCancelled { return }
-            debouncedQuery = searchText
-        }
-        .toolbar {
-            toolbarContent
-        }
-        .overlay {
-            overlayContent(logs: logs)
-        }
+            .task(id: searchText) {
+                // Skip debounce for empty string (immediate clear)
+                if searchText.isEmpty {
+                    debouncedQuery = ""
+                    return
+                }
+                // Debounce
+                try? await Task.sleep(for: .milliseconds(300))
+                if Task.isCancelled { return }
+                debouncedQuery = searchText
+            }
+            .toolbar {
+                toolbarContent
+            }
+            .overlay {
+                overlayContent(logs: logs)
+            }
     }
 
     private func logEntryRow(_ entry: LogEntry) -> some View {
@@ -489,7 +492,7 @@ private extension LogViewer {
 
     func filterData() -> [LogEntry] {
         let debouncedQuery = debouncedQuery.lowercased()
-       return logr.recentLogs.filter { entry in
+        return logr.recentLogs.filter { entry in
             guard logFilterPreferences.selectedLevels.contains(entry.level) else { return false }
 
             if !logFilterPreferences.selectedCategories.isEmpty,
@@ -534,4 +537,3 @@ private extension ExportFormat {
         "logs.\(fileExtension)"
     }
 }
-

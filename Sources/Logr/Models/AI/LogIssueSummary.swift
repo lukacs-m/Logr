@@ -11,7 +11,9 @@ import FoundationModels
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 @Generable(description: "Individual issue detected in application logs")
 public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
-    public var id: String { "\(category):\(file):\(line)" }
+    public var id: String {
+        "\(category):\(file):\(line)"
+    }
 
     @Guide(description: "Category of the issue: error, warning, crash, performance, or other")
     public var category: String

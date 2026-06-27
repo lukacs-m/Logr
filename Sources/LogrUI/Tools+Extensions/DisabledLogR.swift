@@ -24,20 +24,32 @@ import Logr
 /// `.environment(\.logService, logger)`) to enable functionality.
 @Observable
 final class DisabledLogR: LogRService {
-    var recentLogs: Deque<LogEntry> { Deque() }
+    var recentLogs: Deque<LogEntry> {
+        Deque()
+    }
 
-    var canAnalyseLogs: Bool { false }
+    var canAnalyseLogs: Bool {
+        false
+    }
 
-    var droppedLogCount: Int { 0 }
+    var droppedLogCount: Int {
+        0
+    }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var privacyAnalysisResult: PrivacyAnalysisResult? { nil }
+    var privacyAnalysisResult: PrivacyAnalysisResult? {
+        nil
+    }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var logIssueSummary: LogIssueSummary? { nil }
+    var logIssueSummary: LogIssueSummary? {
+        nil
+    }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var analysisProgress: AnalysisProgress? { nil }
+    var analysisProgress: AnalysisProgress? {
+        nil
+    }
 
     init() {}
 

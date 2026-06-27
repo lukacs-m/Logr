@@ -93,7 +93,9 @@ public enum LoggerCryptoError: Error {
 
 public struct KeyVersion: Codable, Sendable, Hashable {
     public let value: Int
-    public init(_ value: Int) { self.value = value }
+    public init(_ value: Int) {
+        self.value = value
+    }
 
     static var `default`: KeyVersion {
         KeyVersion(1)
@@ -172,10 +174,10 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
     private let keySize = 32 // 256 bits
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
-    private let cacheKeys: any MutexProtected<[KeyVersion: SymmetricKey]> = SafeMutex.create([:])
+    private let cacheKeys: SafeMutex<[KeyVersion: SymmetricKey]> = .init([:])
     private let encryptionAlgo: CryptoAlgo
 
-    let currentKeyVersion: any MutexProtected<KeyVersion> = SafeMutex.create(.default)
+    let currentKeyVersion: SafeMutex<KeyVersion> = .init(.default)
 
     /// Private envelope to store encrypted data with key version.
     ///
@@ -219,7 +221,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
         self.encryptionAlgo = encryptionAlgo
         if let versionData = try? store.data(forKey: currentKeyRef),
            let version = try? decoder.decode(KeyVersion.self, from: versionData) {
-            currentKeyVersion.modify {
+            currentKeyVersion.withLock {
                 $0 = version
             }
         } else {
@@ -228,10 +230,10 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
                 let key = try Self.generateKey(version: newKeyVersion, store: store, keyPrefix: keyPrefix,
                                                keySize: keySize)
                 try store.set(encoder.encode(newKeyVersion), forKey: currentKeyRef)
-                currentKeyVersion.modify {
+                currentKeyVersion.withLock {
                     $0 = newKeyVersion
                 }
-                cacheKeys.modify {
+                cacheKeys.withLock {
                     $0[newKeyVersion] = key
                 }
             } catch {
@@ -274,14 +276,14 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
         try store.set(encoder.encode(newVersion), forKey: currentKeyRef)
         if removeOldKeys {
             try? store.remove(forKey: keyName(for: currentKeyVersion.value))
-            cacheKeys.modify {
+            cacheKeys.withLock {
                 $0.removeValue(forKey: currentKeyVersion.value)
             }
         }
-        currentKeyVersion.modify {
+        currentKeyVersion.withLock {
             $0 = newVersion
         }
-        cacheKeys.modify {
+        cacheKeys.withLock {
             $0[newVersion] = newKey
         }
     }
@@ -302,7 +304,7 @@ private extension LoggerCryptoService {
             return nil
         }
         let symmetricKey = SymmetricKey(data: keyData)
-        cacheKeys.modify {
+        cacheKeys.withLock {
             $0[version] = symmetricKey
         }
         return symmetricKey

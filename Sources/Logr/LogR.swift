@@ -1,6 +1,6 @@
 import Collections
-import DequeModule
 import Combine
+import DequeModule
 import Foundation
 import Observation
 import OSLog
@@ -14,7 +14,7 @@ public final class LogR: LogRService {
     /// actor and coalesced (see ``scheduleObservation()``). A burst of logs therefore triggers at
     /// most one SwiftUI invalidation per `coalesceWindowMillis` window, without ever hiding a
     /// logged entry from a reader — including reads made through the `any LogRService` existential.
-    private struct CacheState: Sendable {
+    private struct CacheState {
         var entries = Deque<LogEntry>()
         /// True while a coalescing window is open; guards against scheduling more than one
         /// notification task per window. Flipped under the same lock as `entries`.
@@ -27,7 +27,7 @@ public final class LogR: LogRService {
     }
 
     @ObservationIgnored
-    private let cache: any MutexProtected<CacheState> = SafeMutex.create(CacheState())
+    private let cache: SafeMutex<CacheState> = .init(CacheState())
 
     /// Thread-safe and `nonisolated`: callable from any domain. The getter records the observation
     /// dependency (`access`) and returns an O(1) copy-on-write snapshot taken under the lock.
@@ -130,7 +130,8 @@ public final class LogR: LogRService {
                             logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
                             cryptoService: LoggerCryptoServicing,
                             configuration: LogrConfiguration = .default) {
-        self.init(storage: storage, cryptoService: cryptoService, configuration: configuration, analyser: logAnalyser)
+        self.init(storage: storage, cryptoService: cryptoService, configuration: configuration,
+                  analyser: logAnalyser)
     }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
@@ -185,7 +186,7 @@ public final class LogR: LogRService {
         // observation *notification* is dispatched to the main actor on a coalesced schedule, so a
         // burst produces a handful of SwiftUI invalidations instead of one per entry, without ever
         // hiding an entry from a reader. The `modify` returns whether this call opened the window.
-        let shouldSchedule = cache.modify { state -> Bool in
+        let shouldSchedule = cache.withLock { state -> Bool in
             state.entries.prepend(entry)
             while state.entries.count > configuration.maxLogEntries {
                 state.entries.removeLast()
@@ -224,7 +225,7 @@ private extension LogR {
                 try? await Task.sleep(for: .milliseconds(windowMillis))
             }
             // Close the window before the final notify so a log arriving afterwards reopens one.
-            cache.modify { $0.notificationScheduled = false }
+            cache.withLock { $0.notificationScheduled = false }
             notifyObservers()
         }
     }
@@ -244,7 +245,7 @@ public extension LogR {
         // Wipe the in-memory cache synchronously under the lock, *before* the suspension below — no
         // `log()` can interleave mid-removal. Reset the coalescing guard too; any in-flight
         // notification task is harmless (it merely re-reads the now-empty cache).
-        cache.modify { state in
+        cache.withLock { state in
             state.entries.removeAll()
             state.notificationScheduled = false
             // Supersede any in-flight startup load so it can't merge cleared entries back in.
@@ -253,11 +254,14 @@ public extension LogR {
         await MainActor.run { notifyObservers() }
         // Clear persisted storage *through the writer* so the clear is ordered against in-flight
         // writes: every entry ingested before this call (including any still buffered in the writer)
-        // is discarded, while an entry from a `log()` that races this `await` is ingested *after* the
-        // clear marker and therefore survives in both storage and `recentLogs` — they stay
-        // consistent. The writer exists exactly when storage does, so this fully covers wiping
-        // persisted entries. (If `storage.clear()` fails the error propagates; the in-memory cache is
-        // already cleared and storage reloads on next launch.)
+        // is discarded. A `log()` that races this `await` is the one ambiguous case: if its
+        // `writer.ingest` lands *after* the clear marker, the entry survives in both storage and
+        // `recentLogs`; if it lands *before* the marker (the in-memory wipe above has already
+        // happened), the entry remains in `recentLogs` but is dropped from storage, so it won't
+        // reload on next launch. Losing a single entry logged mid-clear is acceptable and the two
+        // stores reconverge on relaunch. The writer exists exactly when storage does, so this fully
+        // covers wiping persisted entries. (If `storage.clear()` fails the error propagates; the
+        // in-memory cache is already cleared and storage reloads on next launch.)
         try await writer?.clearPending()
     }
 
@@ -276,14 +280,17 @@ public extension LogR {
             throw AIAnalyzerError.missingAnalyzer
         }
 
-        // Reset progress at start
-        _analysisProgress = AnalysisProgress.starting(totalLogs: recentLogs.count)
+        // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/toArray below.
+        let snapshot = recentLogs
 
-        let result: PrivacyAnalysisResult = if recentLogs.isEmpty {
+        // Reset progress at start
+        _analysisProgress = AnalysisProgress.starting(totalLogs: snapshot.count)
+
+        let result: PrivacyAnalysisResult = if snapshot.isEmpty {
             PrivacyAnalysisResult.empty
         } else {
-            try await analyser.scanForPrivacyIssues(logs: recentLogs.toArray) { progress in
-                Task { @MainActor [weak self] in self?._analysisProgress = progress }
+            try await analyser.scanForPrivacyIssues(logs: snapshot.toArray) { [weak self] progress in
+                self?._analysisProgress = progress
             }
         }
 
@@ -299,14 +306,17 @@ public extension LogR {
             throw AIAnalyzerError.missingAnalyzer
         }
 
-        // Reset progress at start
-        _analysisProgress = AnalysisProgress.starting(totalLogs: recentLogs.count)
+        // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/toArray below.
+        let snapshot = recentLogs
 
-        let result: LogIssueSummary = if recentLogs.isEmpty {
+        // Reset progress at start
+        _analysisProgress = AnalysisProgress.starting(totalLogs: snapshot.count)
+
+        let result: LogIssueSummary = if snapshot.isEmpty {
             LogIssueSummary.empty
         } else {
-            try await analyser.summarizeIssues(logs: recentLogs.toArray) { progress in
-                Task { @MainActor [weak self] in self?._analysisProgress = progress }
+            try await analyser.summarizeIssues(logs: snapshot.toArray) { [weak self] progress in
+                self?._analysisProgress = progress
             }
         }
 
@@ -352,7 +362,7 @@ extension LogR {
 
 private extension LogR {
     func setup() {
-        cache.modify { $0.entries.reserveCapacity(configuration.maxLogEntries) }
+        cache.withLock { $0.entries.reserveCapacity(configuration.maxLogEntries) }
 
         startCleanupTimer()
         if let writer {
@@ -398,7 +408,7 @@ private extension LogR {
     @MainActor
     func performCleanup() {
         let cutoffDate = Date().addingTimeInterval(-configuration.maxLogAge)
-        cache.modify { Self.trimExpiredEntries(&$0.entries, olderThan: cutoffDate) }
+        cache.withLock { Self.trimExpiredEntries(&$0.entries, olderThan: cutoffDate) }
         notifyObservers()
         guard cleanupTask == nil else { return }
         cleanupTask = Task {
@@ -459,7 +469,7 @@ private extension LogR {
                     .warning("Failed to decrypt \(decryptionFailures) of \(encryptedLogs.count) log entries")
             }
             let loaded = logs
-            let didMerge = cache.modify { state -> Bool in
+            let didMerge = cache.withLock { state -> Bool in
                 guard state.generation == generationAtStart else { return false }
                 Self.mergeLoaded(loaded, into: &state.entries, cap: configuration.maxLogEntries)
                 return true
@@ -505,7 +515,7 @@ actor LogWriterActor {
     /// Mutex-guarded backpressure state, shared between the nonisolated `ingest` producer and the
     /// actor-isolated consumer. `inFlight` counts entries yielded but not yet consumed; `pendingDrops`
     /// accumulates shed entries until the consumer can report them via `onDrop`.
-    private struct Backlog: Sendable {
+    private struct Backlog {
         var inFlight = 0
         var pendingDrops = 0
     }
@@ -518,7 +528,7 @@ actor LogWriterActor {
     private let maxPendingWrites: Int
     private let continuation: AsyncStream<Event>.Continuation
     /// `let` of a `Sendable` type, so the nonisolated producer can touch it without hopping actors.
-    private let backlog: any MutexProtected<Backlog> = SafeMutex.create(Backlog())
+    private let backlog: SafeMutex<Backlog> = .init(Backlog())
     private var onDrop: (@Sendable (Int) -> Void)?
 
     init(storage: LogRPersistence,
@@ -549,7 +559,7 @@ actor LogWriterActor {
     /// it) when the pending buffer is already at `maxPendingWrites`, so memory stays bounded.
     nonisolated func ingest(_ entry: LogEntry) {
         let cap = maxPendingWrites
-        let accepted = backlog.modify { state -> Bool in
+        let accepted = backlog.withLock { state -> Bool in
             guard state.inFlight < cap else {
                 state.pendingDrops += 1
                 return false
@@ -630,7 +640,7 @@ private extension LogWriterActor {
     /// Decrements the in-flight count for the entry just consumed and forwards any entries shed
     /// under backpressure since the last report to `onDrop`, so callers can surface the loss.
     func reportBackpressureDrops(consumedInFlight: Int) {
-        let dropped = backlog.modify { state -> Int in
+        let dropped = backlog.withLock { state -> Int in
             state.inFlight -= consumedInFlight
             let pending = state.pendingDrops
             state.pendingDrops = 0

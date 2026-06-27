@@ -162,7 +162,9 @@ public enum LogTimeGrouping: String, CaseIterable, Identifiable, Sendable {
     /// Group by hour.
     case hourly
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var displayName: String {
         switch self {

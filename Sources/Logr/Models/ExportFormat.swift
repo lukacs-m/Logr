@@ -16,7 +16,9 @@ public enum ExportFormat: CaseIterable, Identifiable, Sendable {
     /// Plain text format.
     case txt
 
-    public var id: Self { self }
+    public var id: Self {
+        self
+    }
 
     /// The file extension for this format.
     public var fileExtension: String {

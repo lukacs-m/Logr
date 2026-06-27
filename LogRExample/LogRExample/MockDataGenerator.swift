@@ -8,7 +8,7 @@
 import Foundation
 import Logr
 
-// Helper to log with level and category using convenience methods
+/// Helper to log with level and category using convenience methods
 private func logMessage(logger: LogRService, level: LogLevel, message: String, category: LogCategory) {
     switch level {
     case .debug: logger.debug(message, category: category)
@@ -88,18 +88,19 @@ actor MockDataGenerator {
                                           count: Int = 2_000,
                                           privacyIssues: Int = 25,
                                           errorPatterns: Int = 50) async {
-        await logger.info("Starting mock data generation: \(count) logs", category: .debug)
+        logger.info("Starting mock data generation: \(count) logs", category: .debug)
 
         await generateNormalOperationLogs(logger: logger, count: count - privacyIssues - errorPatterns)
         await generatePrivacyIssueLogs(logger: logger, count: privacyIssues)
         await generateErrorPatternLogs(logger: logger, count: errorPatterns)
         await generateAppLifecycleLogs(logger: logger)
 
-        await logger.notice("Mock data generation completed", category: .debug)
+        logger.notice("Mock data generation completed", category: .debug)
     }
 
     // MARK: - Normal Operation Logs
-@concurrent
+
+    @concurrent
     private static func generateNormalOperationLogs(logger: LogRService, count: Int) async {
         let levels: [(LogLevel, Int)] = [
             (.debug, 40),
@@ -110,7 +111,7 @@ actor MockDataGenerator {
         ]
 
         for i in 0..<count {
-            let level =  weightedRandomLevel(levels)
+            let level = weightedRandomLevel(levels)
             let (message, category) = generateNormalLogContent(index: i)
             await logMessage(logger: logger, level: level, message: message, category: category)
         }

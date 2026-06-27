@@ -6,8 +6,8 @@
 //
 
 import Collections
-import Foundation
 import DequeModule
+import Foundation
 
 /// The main logging service protocol that defines all logging operations.
 ///
@@ -217,7 +217,7 @@ public protocol LogRService: Observable, Sendable {
     /// }
     /// ```
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    @discardableResult func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult
+    @MainActor @discardableResult func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult
 
     /// Generates an AI-powered summary of critical issues in logs (iOS 26+).
     ///
@@ -242,7 +242,7 @@ public protocol LogRService: Observable, Sendable {
     /// }
     /// ```
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    @discardableResult func summarizeIssues() async throws -> LogIssueSummary
+    @MainActor @discardableResult func summarizeIssues() async throws -> LogIssueSummary
 }
 
 // MARK: - Utils implementations
@@ -251,7 +251,9 @@ public extension LogRService {
     /// Default: no drops reported. Concrete services that track persistence loss (e.g. ``LogR``)
     /// override this; providing a default keeps `droppedLogCount` an additive, non-breaking
     /// requirement for existing conformers.
-    @MainActor var droppedLogCount: Int { 0 }
+    @MainActor var droppedLogCount: Int {
+        0
+    }
 
     nonisolated func log(level: LogLevel,
                          message: @autoclosure () -> String,
@@ -331,14 +333,15 @@ enum LogExporter {
 
         case .csv:
             let formatter = ISO8601DateFormatter()
-            var rows: [String] = ["Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata"]
+            var rows = ["Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata"]
             for log in logs {
                 let timestamp = formatter.string(from: log.timestamp)
                 let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
                 let metadataStr = log.metadata?.map { "\($0.key)=\($0.value.stringValue)" }
                     .joined(separator: "; ") ?? ""
                 let escapedMetadata = metadataStr.replacingOccurrences(of: "\"", with: "\"\"")
-                rows.append("\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line),\"\(escapedMetadata)\"")
+                rows
+                    .append("\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line),\"\(escapedMetadata)\"")
             }
             guard let data = rows.joined(separator: "\n").data(using: .utf8) else {
                 throw LogExportError.encodingFailed

@@ -91,7 +91,8 @@ public actor AIAnalyzer: LogAIAnalyzer {
     }
 
     public func scanForPrivacyIssues(logs: [LogEntry],
-                                     onProgress: @escaping @Sendable (AnalysisProgress) -> Void) async throws
+                                     onProgress: @escaping @MainActor @Sendable (AnalysisProgress)
+                                         -> Void) async throws
         -> PrivacyAnalysisResult {
         guard !logs.isEmpty else {
             throw AIAnalyzerError.noLogsToAnalyze
@@ -108,7 +109,7 @@ public actor AIAnalyzer: LogAIAnalyzer {
     }
 
     public func summarizeIssues(logs: [LogEntry],
-                                onProgress: @escaping @Sendable (AnalysisProgress) -> Void) async throws
+                                onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void) async throws
         -> LogIssueSummary {
         guard !logs.isEmpty else {
             throw AIAnalyzerError.noLogsToAnalyze
@@ -117,7 +118,6 @@ public actor AIAnalyzer: LogAIAnalyzer {
         try ensureAvailable()
         return try await processInChunks(logs: logs, analysisType: .issues, onProgress: onProgress)
     }
-
 }
 
 // MARK: - Setup & Utils
@@ -176,19 +176,19 @@ private extension AIAnalyzer {
 private extension AIAnalyzer {
     func processInChunks<T: Generable & Sendable>(logs: [LogEntry],
                                                   analysisType: AnalysisType,
-                                                  onProgress: @escaping @Sendable (AnalysisProgress)
+                                                  onProgress: @escaping @MainActor @Sendable (AnalysisProgress)
                                                       -> Void) async throws -> T {
         let chunks = logs.chunked(into: configuration.maxLogsPerRequest)
         let totalLogs = logs.count
 
         // Report initial progress
-        onProgress(AnalysisProgress.starting(totalLogs: totalLogs))
+        await onProgress(AnalysisProgress.starting(totalLogs: totalLogs))
 
         // Fast path for single chunk
         guard chunks.count > 1 else {
-            let session = getSession()
+            let session = await getSession()
             let result: T = try await analyzeChunk(chunks[0], with: session, type: analysisType)
-            onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: totalLogs))
+            await onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: totalLogs))
             return result
         }
 
@@ -206,19 +206,19 @@ private extension AIAnalyzer {
         }
 
         // Merge results
-        guard let result = mergeResults(results, type: analysisType) else {
+        guard let result = await mergeResults(results, type: analysisType) else {
             throw AIAnalyzerError.mergeError
         }
 
         // Report completion
-        onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: totalLogs))
+        await onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: totalLogs))
         return result
     }
 
     func processChunksParallel<T: Generable & Sendable>(_ chunks: [[LogEntry]],
                                                         type: AnalysisType,
                                                         totalLogs: Int,
-                                                        onProgress: @escaping @Sendable (AnalysisProgress)
+                                                        onProgress: @escaping @MainActor @Sendable (AnalysisProgress)
                                                             -> Void) async throws -> [T] {
         let maxConcurrent = configuration.maxConcurrentChunks
 
@@ -249,7 +249,7 @@ private extension AIAnalyzer {
             for try await (chunkIndex, chunkSize, result) in group {
                 results[chunkIndex] = result
                 analyzedCount += chunkSize
-                onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: analyzedCount))
+                await onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: analyzedCount))
 
                 // Add next chunk if available
                 if nextChunkIndex < chunks.count {
@@ -273,7 +273,7 @@ private extension AIAnalyzer {
     func processChunksSequential<T: Generable & Sendable>(_ chunks: [[LogEntry]],
                                                           type: AnalysisType,
                                                           totalLogs: Int,
-                                                          onProgress: @escaping @Sendable (AnalysisProgress)
+                                                          onProgress: @escaping @MainActor @Sendable (AnalysisProgress)
                                                               -> Void) async throws -> [T] {
         var results: [T] = []
         var analyzedCount = 0
@@ -283,7 +283,7 @@ private extension AIAnalyzer {
             let result: T = try await analyzeChunk(chunk, with: session, type: type)
             results.append(result)
             analyzedCount += chunk.count
-            onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: analyzedCount))
+            await onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: analyzedCount))
         }
 
         return results
@@ -294,9 +294,9 @@ private extension AIAnalyzer {
                                                type: AnalysisType) async throws -> T {
         let logsText = logs.formatLogsForAnalysis
         let prompt: String = if case .issues = type {
-            promptForIssuesAnalysing(logs: logs, logsText: logsText)
+            await promptForIssuesAnalysing(logs: logs, logsText: logsText)
         } else {
-            promptForPrivacyCheck(logs: logs, logsText: logsText)
+            await promptForPrivacyCheck(logs: logs, logsText: logsText)
         }
 
         do {
@@ -313,7 +313,7 @@ private extension AIAnalyzer {
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 private extension AIAnalyzer {
     func promptForPrivacyCheck(logs: [LogEntry], logsText: String) -> String {
-        let prompt = """
+        """
         You are a security expert analyzing application logs for privacy concerns.
 
         Carefully scan the following logs for any exposed sensitive information:
@@ -338,7 +338,6 @@ private extension AIAnalyzer {
 
         Analyze thoroughly and return structured results. If no privacy issues are detected, return empty warnings array with appropriate summary and zero counts.
         """
-        return prompt
     }
 
     func promptForIssuesAnalysing(logs: [LogEntry], logsText: String) -> String {
@@ -384,7 +383,7 @@ private extension AIAnalyzer {
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 private extension AIAnalyzer {
     func mergeResults<T: Generable & Sendable>(_ results: [T],
-                         type: AnalysisType) -> T? {
+                                               type: AnalysisType) -> T? {
         switch type {
         case .privacy:
             guard let results = results as? [PrivacyAnalysisResult] else {

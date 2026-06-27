@@ -6,8 +6,8 @@
 //
 
 import Logr
-import SwiftUI
 import LogrUI
+import SwiftUI
 
 struct ContentView: View {
     @Environment(\.logService) private var logger
@@ -32,7 +32,7 @@ struct ContentView: View {
         .navigationTitle("LogR Example")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showSettings.toggle()} label: {
+                Button { showSettings.toggle() } label: {
                     Text("Settings")
                 }
             }
@@ -57,7 +57,6 @@ struct ContentView: View {
             // Statistics are computed off the main actor; refresh when the cache size changes.
             stats = await logger.logStatistics()
         }
-        
     }
 
     // MARK: - Header
@@ -376,25 +375,21 @@ private struct FeatureRow: View {
     .environment(\.logService, try! LogR())
 }
 
-
 struct Settings: View {
     @State private var router = Router()
-    
-    
+
     var body: some View {
         NavigationStack(path: $router.path) {
             VStack {
                 Spacer()
-
                 Button { router.navigate(to: .logs) } label: {
                     Text("See logs")
                 }
                 .padding()
                 .glassEffect(in: .rect(cornerRadius: 16.0))
                 Spacer()
-
             }
-            .frame(maxWidth: .infinity,maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .routingProvided
         }
         .navigationTitle(Text("Settings"))
@@ -421,7 +416,6 @@ final class Router {
 enum RouterDestination: Hashable {
     case logs
 }
-
 
 public extension View {
     var routingProvided: some View {
