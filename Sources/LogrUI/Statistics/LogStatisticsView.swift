@@ -235,6 +235,7 @@ public struct CompactLogStatisticsView: View {
             Text("Logs summary")
                 .fontWeight(.semibold)
             HStack(spacing: 16) {
+                Spacer()
                 VStack(alignment: .leading) {
                     Text("Total:")
                         .font(.caption2)

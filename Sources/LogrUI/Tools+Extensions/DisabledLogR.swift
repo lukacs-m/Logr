@@ -23,7 +23,6 @@ import Logr
 /// Inject a real service with ``SwiftUICore/View/logRService(_:)`` (or
 /// `.environment(\.logService, logger)`) to enable functionality.
 @Observable
-@MainActor
 final class DisabledLogR: LogRService {
     var recentLogs: Deque<LogEntry> { Deque() }
 
@@ -42,13 +41,13 @@ final class DisabledLogR: LogRService {
 
     init() {}
 
-    func log(level: LogLevel,
-             message: @autoclosure () -> String,
-             category: LogCategory,
-             file: String,
-             function: String,
-             line: Int,
-             metadata: [String: LogMetadataValue]?) {}
+    nonisolated func log(level: LogLevel,
+                         message: @autoclosure () -> String,
+                         category: LogCategory,
+                         file: String,
+                         function: String,
+                         line: Int,
+                         metadata: [String: LogMetadataValue]?) {}
 
     func clearLogs() async throws {}
 

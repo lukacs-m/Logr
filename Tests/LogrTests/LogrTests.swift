@@ -145,6 +145,31 @@ struct LogrTests {
         #expect(await service.logStatistics().totalCount == 3)
     }
 
+    // MARK: - Off-main-actor logging (isolation decoupling)
+
+    @Test("log() is callable from off the main actor with no await")
+    func testLoggingFromOffMainActor() async throws {
+        // `LogR` and `LogRService.log(_:)` are nonisolated, so a logger created on the main actor
+        // can be handed to a detached (non-main) task and logged into with no `await` and no
+        // isolation hop. This is the capability this isolation refactor unlocks.
+        let logr = LogR(cryptoService: cryptoService)
+        let service: any LogRService = logr
+
+        await Task.detached {
+            // No `await` on these calls — they would not compile if `log()` were `@MainActor`.
+            service.info("from a detached task", category: .system)
+            service.error("also from a detached task", category: .network)
+            logr.debug("concrete-typed call off main", category: .debug)
+        }.value
+
+        // The lock-backed cache is updated synchronously inside `log()`, so the entries are
+        // already visible once the task finishes (no flush required); flush is harmless.
+        await logr.flush()
+        #expect(logr.recentLogs.count == 3)
+        #expect(logr.recentLogs.contains { $0.message == "from a detached task" })
+        #expect(logr.recentLogs.contains { $0.message == "concrete-typed call off main" })
+    }
+
     // MARK: - Lazy Evaluation Tests
 
     @Test("Disabled log level does not evaluate the message autoclosure")

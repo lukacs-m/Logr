@@ -17,8 +17,11 @@ import DequeModule
 /// ## Overview
 ///
 /// The service maintains an in-memory cache of recent logs and optionally persists them
-/// to storage with automatic encryption. All operations are `@MainActor` isolated for
-/// thread safety and SwiftUI integration.
+/// to storage with automatic encryption. Logging (`log(_:)` and the convenience methods)
+/// is `nonisolated`, so it can be called from any isolation domain without `await`. The
+/// observable state that drives SwiftUI (``recentLogs`` and friends) is `@MainActor`
+/// isolated, and the underlying cache is updated in a thread-safe way so synchronous reads
+/// remain consistent.
 ///
 /// ## Example Usage
 ///
@@ -75,7 +78,6 @@ import DequeModule
 /// ### AI Analysis
 /// - ``scanForPrivacyIssues()``
 /// - ``summarizeIssues()``
-@MainActor
 public protocol LogRService: Observable, Sendable {
     /// Recent logs maintained in memory for quick access.
     ///
@@ -83,13 +85,13 @@ public protocol LogRService: Observable, Sendable {
     /// The logs are automatically updated as new entries are added and old entries are cleaned up.
     ///
     /// - Note: This is an in-memory cache. For persistent storage, configure a storage backend.
-    var recentLogs: Deque<LogEntry> { get }
+    @MainActor var recentLogs: Deque<LogEntry> { get }
 
     /// Indicates whether AI analysis features are available.
     ///
     /// This property returns `true` when running on iOS 26+ or macOS 26+ with an AI analyzer configured.
     /// When `false`, calling `scanForPrivacyIssues()` or `summarizeIssues()` will throw an error.
-    var canAnalyseLogs: Bool { get }
+    @MainActor var canAnalyseLogs: Bool { get }
 
     /// The number of log entries that could not be persisted.
     ///
@@ -97,7 +99,7 @@ public protocol LogRService: Observable, Sendable {
     /// retries, or an entry is shed under backpressure (storage falling behind a sustained burst).
     /// `0` when no storage is configured or nothing has been dropped. Observe it to surface
     /// silent log loss in diagnostics UI.
-    var droppedLogCount: Int { get }
+    @MainActor var droppedLogCount: Int { get }
 
     /// The most recent privacy analysis result (iOS 26+).
     ///
@@ -106,7 +108,7 @@ public protocol LogRService: Observable, Sendable {
     ///
     /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var privacyAnalysisResult: PrivacyAnalysisResult? { get }
+    @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? { get }
 
     /// The most recent AI-generated issue summary (iOS 26+).
     ///
@@ -115,7 +117,7 @@ public protocol LogRService: Observable, Sendable {
     ///
     /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var logIssueSummary: LogIssueSummary? { get }
+    @MainActor var logIssueSummary: LogIssueSummary? { get }
 
     /// The current progress of an ongoing AI analysis operation (iOS 26+).
     ///
@@ -124,7 +126,7 @@ public protocol LogRService: Observable, Sendable {
     ///
     /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var analysisProgress: AnalysisProgress? { get }
+    @MainActor var analysisProgress: AnalysisProgress? { get }
 
     /// Logs a message with the specified level, category, and source information.
     ///
@@ -141,13 +143,14 @@ public protocol LogRService: Observable, Sendable {
     ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// - Note: The message is only evaluated if the log level is enabled in the configuration.
-    func log(level: LogLevel,
-             message: @autoclosure () -> String,
-             category: LogCategory,
-             file: String,
-             function: String,
-             line: Int,
-             metadata: [String: LogMetadataValue]?)
+    /// - Note: `nonisolated` — callable from any isolation domain without `await`.
+    nonisolated func log(level: LogLevel,
+                         message: @autoclosure () -> String,
+                         category: LogCategory,
+                         file: String,
+                         function: String,
+                         line: Int,
+                         metadata: [String: LogMetadataValue]?)
 
     /// Exports all recent logs in the specified format.
     ///
@@ -248,21 +251,22 @@ public extension LogRService {
     /// Default: no drops reported. Concrete services that track persistence loss (e.g. ``LogR``)
     /// override this; providing a default keeps `droppedLogCount` an additive, non-breaking
     /// requirement for existing conformers.
-    var droppedLogCount: Int { 0 }
+    @MainActor var droppedLogCount: Int { 0 }
 
-    func log(level: LogLevel,
-             message: @autoclosure () -> String,
-             category: LogCategory,
-             file: String = #file,
-             function: String = #function,
-             line: Int = #line,
-             metadata: [String: LogMetadataValue]? = nil) {
+    nonisolated func log(level: LogLevel,
+                         message: @autoclosure () -> String,
+                         category: LogCategory,
+                         file: String = #file,
+                         function: String = #function,
+                         line: Int = #line,
+                         metadata: [String: LogMetadataValue]? = nil) {
         log(level: level, message: message(), category: category, file: file, function: function, line: line,
             metadata: metadata)
     }
 
     /// Returns logged entries, optionally filtered. `recentLogs` is always current (the concrete
-    /// service updates it synchronously), so no flush is required before reading.
+    /// service updates it synchronously under a lock), so no flush is required before reading.
+    @MainActor
     func getLogs(levels: Set<LogLevel>? = nil,
                  categories: Set<LogCategory>? = nil,
                  subsystems: Set<String>? = nil,
@@ -288,14 +292,15 @@ public extension LogRService {
     }
 
     func exportLogs(format: ExportFormat = .json) async throws -> Data {
-        // Snapshot on the main actor, then serialize off it.
-        let snapshot = Array(recentLogs)
+        // Snapshot on the main actor (where `recentLogs` is isolated), then serialize off it.
+        let snapshot = await MainActor.run { Array(recentLogs) }
         return try await LogExporter.serialize(snapshot, format: format)
     }
 
     func logStatistics() async -> LogStatistics {
-        // Snapshot on the main actor, then compute the per-entry aggregates off it.
-        let snapshot = Array(recentLogs)
+        // Snapshot on the main actor (where `recentLogs` is isolated), then compute the
+        // per-entry aggregates off it.
+        let snapshot = await MainActor.run { Array(recentLogs) }
         return await LogStatisticsComputer.compute(from: snapshot)
     }
 }
@@ -429,12 +434,12 @@ public extension LogRService {
     /// logger.debug("Cache hit for key: \(key)", category: .cache)
     /// logger.debug("User profile loaded", category: .user, metadata: ["userId": .string("123")])
     /// ```
-    func debug(_ message: @autoclosure () -> String,
-               category: LogCategory = .debug,
-               file: String = #file,
-               function: String = #function,
-               line: Int = #line,
-               metadata: [String: LogMetadataValue]? = nil) {
+    nonisolated func debug(_ message: @autoclosure () -> String,
+                           category: LogCategory = .debug,
+                           file: String = #file,
+                           function: String = #function,
+                           line: Int = #line,
+                           metadata: [String: LogMetadataValue]? = nil) {
         log(level: .debug, message: message(), category: category, file: file, function: function, line: line,
             metadata: metadata)
     }
@@ -457,12 +462,12 @@ public extension LogRService {
     /// logger.info("User logged in successfully", category: .authentication, metadata: ["method": "oauth"])
     /// logger.info("Data sync completed", category: .sync)
     /// ```
-    func info(_ message: @autoclosure () -> String,
-              category: LogCategory = .system,
-              file: String = #file,
-              function: String = #function,
-              line: Int = #line,
-              metadata: [String: LogMetadataValue]? = nil) {
+    nonisolated func info(_ message: @autoclosure () -> String,
+                          category: LogCategory = .system,
+                          file: String = #file,
+                          function: String = #function,
+                          line: Int = #line,
+                          metadata: [String: LogMetadataValue]? = nil) {
         log(level: .info, message: message(), category: category, file: file, function: function, line: line,
             metadata: metadata)
     }
@@ -485,12 +490,12 @@ public extension LogRService {
     /// logger.notice("Payment processed successfully", category: .payment, metadata: ["amount": .double(99.99)])
     /// logger.notice("Configuration updated", category: .configuration)
     /// ```
-    func notice(_ message: @autoclosure () -> String,
-                category: LogCategory = .system,
-                file: String = #file,
-                function: String = #function,
-                line: Int = #line,
-                metadata: [String: LogMetadataValue]? = nil) {
+    nonisolated func notice(_ message: @autoclosure () -> String,
+                            category: LogCategory = .system,
+                            file: String = #file,
+                            function: String = #function,
+                            line: Int = #line,
+                            metadata: [String: LogMetadataValue]? = nil) {
         log(level: .notice, message: message(), category: category, file: file, function: function, line: line,
             metadata: metadata)
     }
@@ -513,12 +518,12 @@ public extension LogRService {
     /// logger.warning("API response slow: 3.2s", category: .network, metadata: ["endpoint": "/api/users"])
     /// logger.warning("Low memory warning received", category: .memory)
     /// ```
-    func warning(_ message: @autoclosure () -> String,
-                 category: LogCategory = .system,
-                 file: String = #file,
-                 function: String = #function,
-                 line: Int = #line,
-                 metadata: [String: LogMetadataValue]? = nil) {
+    nonisolated func warning(_ message: @autoclosure () -> String,
+                             category: LogCategory = .system,
+                             file: String = #file,
+                             function: String = #function,
+                             line: Int = #line,
+                             metadata: [String: LogMetadataValue]? = nil) {
         log(level: .warning, message: message(), category: category, file: file, function: function, line: line,
             metadata: metadata)
     }
@@ -541,12 +546,12 @@ public extension LogRService {
     /// logger.error("Failed to load user data: \(error)", category: .database, metadata: ["errorCode": .int(500)])
     /// logger.error("Network request failed", category: .network)
     /// ```
-    func error(_ message: @autoclosure () -> String,
-               category: LogCategory = .system,
-               file: String = #file,
-               function: String = #function,
-               line: Int = #line,
-               metadata: [String: LogMetadataValue]? = nil) {
+    nonisolated func error(_ message: @autoclosure () -> String,
+                           category: LogCategory = .system,
+                           file: String = #file,
+                           function: String = #function,
+                           line: Int = #line,
+                           metadata: [String: LogMetadataValue]? = nil) {
         log(level: .error, message: message(), category: category, file: file, function: function, line: line,
             metadata: metadata)
     }
@@ -569,12 +574,12 @@ public extension LogRService {
     /// logger.fault("Database connection lost", category: .database, metadata: ["retryCount": .int(3)])
     /// logger.fault("Invariant violation detected", category: .system)
     /// ```
-    func fault(_ message: @autoclosure () -> String,
-               category: LogCategory = .system,
-               file: String = #file,
-               function: String = #function,
-               line: Int = #line,
-               metadata: [String: LogMetadataValue]? = nil) {
+    nonisolated func fault(_ message: @autoclosure () -> String,
+                           category: LogCategory = .system,
+                           file: String = #file,
+                           function: String = #function,
+                           line: Int = #line,
+                           metadata: [String: LogMetadataValue]? = nil) {
         log(level: .fault, message: message(), category: category, file: file, function: function, line: line,
             metadata: metadata)
     }

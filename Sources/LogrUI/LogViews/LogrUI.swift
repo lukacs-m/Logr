@@ -177,9 +177,7 @@ public struct LogViewer: View {
     }
 
     public var body: some View {
-        NavigationStack {
-            mainContent
-        }
+        mainContent
         .errorAlert(error: $showError)
         .sheet(item: $presentedSheet) { destination in
             sheetView(destination: destination)
@@ -267,6 +265,8 @@ private extension LogViewer {
                 }
             }
         }
+        .navigationTitle("LogR Viewer")
+        .navigationBarTitleDisplayMode(.large)
         .searchable(text: $searchText, prompt: "Search logs...")
         .task(id: logr.recentLogs.count) {
             // Recompute derived data (stats + share payloads) off the main actor when the cache
@@ -284,7 +284,6 @@ private extension LogViewer {
             if Task.isCancelled { return }
             debouncedQuery = searchText
         }
-        .navigationTitle("LogR Viewer")
         .toolbar {
             toolbarContent
         }

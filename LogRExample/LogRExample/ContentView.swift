@@ -384,12 +384,17 @@ struct Settings: View {
     var body: some View {
         NavigationStack(path: $router.path) {
             VStack {
+                Spacer()
+
                 Button { router.navigate(to: .logs) } label: {
                     Text("See logs")
                 }
                 .padding()
                 .glassEffect(in: .rect(cornerRadius: 16.0))
+                Spacer()
+
             }
+            .frame(maxWidth: .infinity,maxHeight: .infinity)
             .routingProvided
         }
         .navigationTitle(Text("Settings"))
