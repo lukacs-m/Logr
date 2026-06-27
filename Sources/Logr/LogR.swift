@@ -19,10 +19,11 @@ public final class LogR: LogRService {
         /// True while a coalescing window is open; guards against scheduling more than one
         /// notification task per window. Flipped under the same lock as `entries`.
         var notificationScheduled = false
-        /// Bumped by ``clearLogs()``. A startup ``loadRecentLogs()`` that began before a clear must
-        /// not merge its now-wiped historical entries back in (which would resurrect cleared data),
-        /// so it checks this value didn't change while it was fetching. Replaces the implicit
-        /// main-actor ordering the previously `@MainActor`-isolated load relied on.
+        /// Bumped by ``clearLogs()``. The one-shot startup ``loadRecentLogs()`` merges persisted
+        /// history only while this is still `0` (no clear has happened), so it can't resurrect
+        /// entries a clear has wiped — regardless of how its fetch interleaves with the clear.
+        /// Replaces the implicit main-actor ordering the previously `@MainActor`-isolated load
+        /// relied on.
         var generation = 0
     }
 
@@ -446,10 +447,6 @@ private extension LogR {
 private extension LogR {
     private func loadRecentLogs() async {
         do {
-            // Snapshot the cache generation before fetching. If a `clearLogs()` bumps it while we
-            // load, the merge below is skipped — the loaded history was cleared from storage too,
-            // so resurrecting it in memory would be a bug (see ``CacheState/generation``).
-            let generationAtStart = cache.withLock { $0.generation }
             // Load at most as many entries as the in-memory cache holds, rather than the
             // entire persisted history.
             guard let encryptedLogs = try await storage?.fetchEntries(limit: configuration.maxLogEntries)
@@ -470,7 +467,11 @@ private extension LogR {
             }
             let loaded = logs
             let didMerge = cache.withLock { state -> Bool in
-                guard state.generation == generationAtStart else { return false }
+                // Merge persisted history only if no `clearLogs()` has run since init. `generation`
+                // starts at 0 and is bumped only by `clearLogs()`; checking it here (under the same
+                // lock as the wipe) closes the race where the load sampled generation *after* a clear
+                // bumped it but *before* the clear wiped storage — which resurrected cleared entries.
+                guard state.generation == 0 else { return false }
                 Self.mergeLoaded(loaded, into: &state.entries, cap: configuration.maxLogEntries)
                 return true
             }
