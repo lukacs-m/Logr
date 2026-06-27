@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var generationProgress = ""
     @State private var showClearConfirmation = false
     @State private var stats: LogStatistics = .empty
+    @State private var showSettings = false
 
     var body: some View {
         ScrollView {
@@ -29,6 +30,13 @@ struct ContentView: View {
             .padding()
         }
         .navigationTitle("LogR Example")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showSettings.toggle()} label: {
+                    Text("Settings")
+                }
+            }
+        }
         .confirmationDialog("Clear All Logs", isPresented: $showClearConfirmation) {
             Button("Clear All", role: .destructive) {
                 Task {
@@ -42,10 +50,14 @@ struct ContentView: View {
         .onAppear {
             logger.info("ContentView appeared - Home tab loaded", category: .ui)
         }
+        .sheet(isPresented: $showSettings) {
+            Settings()
+        }
         .task(id: logger.recentLogs.count) {
             // Statistics are computed off the main actor; refresh when the cache size changes.
             stats = await logger.logStatistics()
         }
+        
     }
 
     // MARK: - Header
@@ -362,4 +374,57 @@ private struct FeatureRow: View {
         ContentView()
     }
     .environment(\.logService, try! LogR())
+}
+
+
+struct Settings: View {
+    @State private var router = Router()
+    
+    
+    var body: some View {
+        NavigationStack(path: $router.path) {
+            VStack {
+                Button { router.navigate(to: .logs) } label: {
+                    Text("See logs")
+                }
+                .padding()
+                .glassEffect(in: .rect(cornerRadius: 16.0))
+            }
+            .routingProvided
+        }
+        .navigationTitle(Text("Settings"))
+    }
+}
+
+@Observable
+final class Router {
+    var path = NavigationPath()
+
+    func navigate(to: RouterDestination) {
+        path.append(to)
+    }
+
+    func popToRoot() {
+        path.removeLast(path.count)
+    }
+
+    func back(to numberOfScreen: Int = 1) {
+        path.removeLast(numberOfScreen)
+    }
+}
+
+enum RouterDestination: Hashable {
+    case logs
+}
+
+
+public extension View {
+    var routingProvided: some View {
+        navigationDestination(for: RouterDestination.self) { destination in
+            switch destination {
+            case .logs:
+                LogViewer()
+            }
+        }
+    }
 }
