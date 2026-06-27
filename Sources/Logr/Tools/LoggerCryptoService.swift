@@ -276,7 +276,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
         try store.set(encoder.encode(newVersion), forKey: currentKeyRef)
         if removeOldKeys {
             try? store.remove(forKey: keyName(for: currentKeyVersion.value))
-            cacheKeys.withLock {
+            _ = cacheKeys.withLock {
                 $0.removeValue(forKey: currentKeyVersion.value)
             }
         }
