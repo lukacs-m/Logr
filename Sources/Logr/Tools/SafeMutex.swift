@@ -7,83 +7,39 @@
 
 import Foundation
 import os
-import Synchronization
 
-/// A type-erasing protocol for mutex implementations
-protocol MutexProtected<Value>: Sendable {
-    associatedtype Value: Sendable
-
-    var value: Value { get }
-
-    func withLock<T: Sendable>(_ block: @Sendable (Value) throws -> T) rethrows -> T
-
-    @discardableResult
-    func modify<T: Sendable>(_ block: @Sendable (inout Value) throws -> T) rethrows -> T
-}
-
-/// Legacy mutex implementation using OSAllocatedUnfairLock
-final class LegacyMutex<Value: Sendable>: MutexProtected {
+/// Stand-in for `Synchronization.Mutex` on the iOS 17 floor, for the common
+/// case where the protected value is `Sendable`. No unsafe code, no manual
+/// `deinit`, checked `Sendable`. `~Copyable`, so it enforces the same
+/// unique-ownership discipline as the real type — share it via a class/borrow,
+/// not by copying.
+///
+/// Constraining the closure result to `Sendable` keeps this shim strictly
+/// no-more-permissive than `Synchronization.Mutex` (whose result is `sending`,
+/// which any `Sendable` value satisfies). So when you raise the floor to iOS 18,
+/// swapping `import os` for `import Synchronization` is mechanical: anything that
+/// compiles against this compiles against the real type.
+struct SafeMutex<Value: Sendable>: ~Copyable {
     private let lock: OSAllocatedUnfairLock<Value>
 
-    init(_ value: Value) {
-        lock = .init(uncheckedState: value)
+    init(_ initialValue: Value) {
+        lock = OSAllocatedUnfairLock(initialState: initialValue)
     }
 
-    var value: Value {
-        lock.withLock { $0 }
+    borrowing func withLock<Result: Sendable>(_ body: @Sendable (inout Value) throws -> Result) rethrows
+        -> Result {
+        try lock.withLock(body)
     }
 
-    func withLock<T: Sendable>(_ block: @Sendable (Value) throws -> T) rethrows -> T {
-        try lock.withLock { value in
-            try block(value)
-        }
-    }
-
-    @discardableResult
-    func modify<T: Sendable>(_ block: @Sendable (inout Value) throws -> T) rethrows -> T {
-        try lock.withLock { state in
-            try block(&state)
-        }
+    borrowing func withLockIfAvailable<Result: Sendable>(_ body: @Sendable (inout Value) throws
+        -> Result) rethrows -> Result? {
+        try lock.withLockIfAvailable(body)
     }
 }
 
-@available(iOS 18.0, macOS 15.0, watchOS 11.0, tvOS 18.0, *)
-final class NativeMutex<Value: Sendable>: MutexProtected {
-    private let mutex: Mutex<Value>
-
-    init(_ value: Value) {
-        mutex = Mutex(value)
-    }
-
+extension SafeMutex where Value: Copyable {
+    /// Snapshot the current value. Each access takes the lock.
     var value: Value {
-        mutex.withLock { $0 }
-    }
-
-    func withLock<T: Sendable>(_ block: @Sendable (Value) throws -> T) rethrows -> T {
-        try mutex.withLock { value in
-            try block(value)
-        }
-    }
-
-    @discardableResult
-    func modify<T: Sendable>(_ block: @Sendable (inout Value) throws -> T) rethrows -> T {
-        try mutex.withLock { value in
-            try block(&value)
-        }
-    }
-}
-
-/// Factory that creates the appropriate mutex implementation based on availability
-enum SafeMutex {
-    /// Creates a thread-safe mutex wrapper for the provided value
-    /// using the most appropriate implementation based on platform availability.
-    /// - Parameter value: The initial value to protect
-    /// - Returns: A thread-safe wrapper conforming to MutexProtocol
-    static func create<Value: Sendable>(_ value: Value) -> any MutexProtected<Value> {
-        if #available(iOS 18.0, macOS 15.0, watchOS 11.0, tvOS 18.0, *) {
-            NativeMutex(value)
-        } else {
-            LegacyMutex(value)
-        }
+        withLock { $0 }
     }
 }

@@ -9,7 +9,7 @@ import Foundation
 import SQLiteData
 
 @Table("EncryptedLogEntryDAO")
-struct EncryptedLogEntryDAO: Identifiable, Sendable {
+struct EncryptedLogEntryDAO: Identifiable {
     @Column(primaryKey: true) var id: String
     @Column var data: Data // For storing encrypted log data
     @Column var timestamp: TimeInterval

@@ -14,7 +14,6 @@ struct FilterSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var availableCategories: [LogCategory] = []
 
-
     var body: some View {
         NavigationStack {
             List {

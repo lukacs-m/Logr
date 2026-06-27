@@ -23,32 +23,43 @@ import Logr
 /// Inject a real service with ``SwiftUICore/View/logRService(_:)`` (or
 /// `.environment(\.logService, logger)`) to enable functionality.
 @Observable
-@MainActor
 final class DisabledLogR: LogRService {
-    var recentLogs: Deque<LogEntry> { Deque() }
+    var recentLogs: Deque<LogEntry> {
+        Deque()
+    }
 
-    var canAnalyseLogs: Bool { false }
+    var canAnalyseLogs: Bool {
+        false
+    }
 
-    var droppedLogCount: Int { 0 }
+    var droppedLogCount: Int {
+        0
+    }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var privacyAnalysisResult: PrivacyAnalysisResult? { nil }
+    var privacyAnalysisResult: PrivacyAnalysisResult? {
+        nil
+    }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var logIssueSummary: LogIssueSummary? { nil }
+    var logIssueSummary: LogIssueSummary? {
+        nil
+    }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var analysisProgress: AnalysisProgress? { nil }
+    var analysisProgress: AnalysisProgress? {
+        nil
+    }
 
     init() {}
 
-    func log(level: LogLevel,
-             message: @autoclosure () -> String,
-             category: LogCategory,
-             file: String,
-             function: String,
-             line: Int,
-             metadata: [String: LogMetadataValue]?) {}
+    nonisolated func log(level: LogLevel,
+                         message: @autoclosure () -> String,
+                         category: LogCategory,
+                         file: String,
+                         function: String,
+                         line: Int,
+                         metadata: [String: LogMetadataValue]?) {}
 
     func clearLogs() async throws {}
 

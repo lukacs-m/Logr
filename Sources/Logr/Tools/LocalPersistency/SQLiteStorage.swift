@@ -69,11 +69,9 @@ public final class SQLiteStorage: LogRPersistence {
         }
 
         migrator.registerMigration("add_timestamp_index") { db in
-            try db.create(
-                index: "EncryptedLogEntryDAO_timestamp",
-                on: "EncryptedLogEntryDAO",
-                columns: ["timestamp"]
-            )
+            try db.create(index: "EncryptedLogEntryDAO_timestamp",
+                          on: "EncryptedLogEntryDAO",
+                          columns: ["timestamp"])
         }
 
         try migrator.migrate(database)
@@ -136,13 +134,13 @@ public extension SQLiteStorage {
     func deleteEntries(keepingLatest count: Int) async throws {
         try await database.write { db in
             let sql = """
-              DELETE FROM EncryptedLogEntryDAO
-              WHERE id NOT IN (
-                  SELECT id FROM EncryptedLogEntryDAO
-                  ORDER BY timestamp DESC
-                  LIMIT ?
-              )
-              """
+            DELETE FROM EncryptedLogEntryDAO
+            WHERE id NOT IN (
+                SELECT id FROM EncryptedLogEntryDAO
+                ORDER BY timestamp DESC
+                LIMIT ?
+            )
+            """
             try db.execute(sql: sql, arguments: [count])
         }
     }

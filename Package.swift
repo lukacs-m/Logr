@@ -51,5 +51,6 @@ let package = Package(
             name: "LogrTests",
             dependencies: ["Logr"]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

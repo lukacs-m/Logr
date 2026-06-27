@@ -423,7 +423,9 @@ public enum LogCategory: Sendable, Codable, Hashable, Equatable {
 }
 
 extension LogCategory: Identifiable {
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 }
 
 extension LogCategory: CaseIterable {

@@ -53,7 +53,6 @@ public struct LogStatisticsView: View {
         }
     }
 
-    @ViewBuilder
     private var summarySection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Summary")
@@ -89,7 +88,6 @@ public struct LogStatisticsView: View {
         .cornerRadius(12)
     }
 
-    @ViewBuilder
     private var levelBreakdownSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Level Breakdown")
@@ -125,7 +123,6 @@ public struct LogStatisticsView: View {
         .cornerRadius(12)
     }
 
-    @ViewBuilder
     private var hourlyDistributionSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Hourly Distribution")
@@ -158,7 +155,6 @@ public struct LogStatisticsView: View {
         .cornerRadius(12)
     }
 
-    @ViewBuilder
     private var topCategoriesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Top Categories")
@@ -189,7 +185,6 @@ public struct LogStatisticsView: View {
         .background(.background.secondary)
         .cornerRadius(12)
     }
-
 }
 
 // MARK: - Stat Card
@@ -235,6 +230,7 @@ public struct CompactLogStatisticsView: View {
             Text("Logs summary")
                 .fontWeight(.semibold)
             HStack(spacing: 16) {
+                Spacer()
                 VStack(alignment: .leading) {
                     Text("Total:")
                         .font(.caption2)

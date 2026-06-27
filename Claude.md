@@ -32,21 +32,21 @@ SwiftFormat is integrated as a build plugin. Configuration is in `.swiftformat`:
 
 ### Core Design
 
-**LogR** is the central `@Observable @MainActor` class implementing `LogRService`. It:
-- Maintains an in-memory `Deque<LogEntry>` cache (configurable max, default 10,000)
+**LogR** is the central `@Observable` (nonisolated) class implementing `LogRService`. It:
+- Maintains an in-memory `Deque<LogEntry>` cache (configurable max, default 10,000) behind a `SafeMutex`, so logging and reads are thread-safe from any isolation domain; the `@Observable` change notification is dispatched (coalesced) to the main actor
 - Delegates persistent writes to **LogWriterActor** (background actor, batched writes of 50)
 - Integrates with OSLog for system-level logging
 - Coordinates encryption and cleanup automatically
 
 **Key protocols:**
-- `LogRService` — public logging API (`@MainActor`, `@Observable`)
+- `LogRService` — public logging API (`@Observable`, `Sendable`). Logging (`log`/`debug`/`info`/…) and `init` are `nonisolated` (callable from any domain); the observable state that drives SwiftUI (`recentLogs`, `droppedLogCount`, `canAnalyseLogs`, AI results) is `@MainActor`
 - `LogRPersistence` — storage abstraction (FileSystem or SQLite implementations)
 - `LoggerCryptoServicing` — AES-256-GCM / ChaCha20-Poly1305 encryption with Keychain-backed keys
 - `LogAIAnalyzer` — Apple Intelligence analysis (iOS 26+ only, via `FoundationModels`)
 
 ### Data Flow
 
-Logging calls → `LogR` (main actor, in-memory cache) → `LogWriterActor` (background batching) → `LogRPersistence` (encrypted storage via `LoggerCryptoService`)
+Logging calls (nonisolated, any domain) → `LogR` (lock-protected in-memory cache) → `LogWriterActor` (background batching) → `LogRPersistence` (encrypted storage via `LoggerCryptoService`)
 
 ### Storage Options
 
@@ -55,7 +55,8 @@ Logging calls → `LogR` (main actor, in-memory cache) → `LogWriterActor` (bac
 
 ### Concurrency Model
 
-- All public API is `@MainActor` isolated
+- Logging (`init`, `log`, and the convenience methods) is `nonisolated` — callable from any isolation domain with no `await`. `LogR` is `@Observable` but not `@MainActor`; its `recentLogs` cache lives behind a `SafeMutex`, so synchronous read-after-write holds from any thread
+- Only the `@Observable` state read by SwiftUI is `@MainActor` (`recentLogs`, `droppedLogCount`, `canAnalyseLogs`, the AI results + analysis methods); the change notification is coalesced and emitted on the main actor
 - Background storage writes happen on dedicated `LogWriterActor`
 - `LogrUI` target uses `@defaultIsolation(MainActor.self)`
 - Both targets enable `NonisolatedNonsendingByDefault` and `InferIsolatedConformances` upcoming features

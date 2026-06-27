@@ -55,7 +55,6 @@ public struct GenerationConfig {
 }
 
 @Observable
-@MainActor
 public final class MockLogR: LogRService, Sendable {
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     public var privacyAnalysisResult: PrivacyAnalysisResult? {
@@ -129,15 +128,16 @@ public final class MockLogR: LogRService, Sendable {
         nil
     }
 
-    public var canAnalyseLogs: Bool = true
+    @MainActor public var canAnalyseLogs: Bool = true
 
-    public var droppedLogCount = 0
+    @MainActor public var droppedLogCount = 0
 
-    public private(set) var recentLogs = Deque<LogEntry>()
-    public private(set) var isCleanupRunning = false
+    @MainActor public private(set) var recentLogs = Deque<LogEntry>()
+    @MainActor public private(set) var isCleanupRunning = false
 
-    private var mockLogs = Deque<LogEntry>()
+    @MainActor private var mockLogs = Deque<LogEntry>()
 
+    @MainActor
     public init(empty: Bool = false,
                 config: GenerationConfig = GenerationConfig(),
                 mode: GenerationMode = .instant) {
@@ -156,13 +156,22 @@ public final class MockLogR: LogRService, Sendable {
 
     // MARK: - LogRService Implementation
 
-    public func log(level: LogLevel,
-                    message: @autoclosure () -> String,
-                    category: LogCategory,
-                    file: String = #file,
-                    function: String = #function,
-                    line: Int = #line,
-                    metadata: [String: LogMetadataValue]? = nil) {
+    public nonisolated func log(level: LogLevel,
+                                message: @autoclosure () -> String,
+                                category: LogCategory,
+                                file: String = #file,
+                                function: String = #function,
+                                line: Int = #line,
+                                metadata: [String: LogMetadataValue]? = nil) {
+        // Evaluate the message synchronously (preserving lazy semantics), then hop the insert to
+        // the main actor where the observable cache lives.
+        //
+        // NOTE: unlike `LogR`, this insert is *deferred*. `recentLogs` is not updated before
+        // `log()` returns (no synchronous read-after-write), and because separate `Task`s are not
+        // guaranteed to run in enqueue order, entries logged in a tight burst may be inserted out
+        // of order. That is fine for the previews/sample data this mock exists for; a test that
+        // asserts on `recentLogs` right after `log()` must first hop to the main actor (e.g.
+        // `await Task { @MainActor in }.value`) to observe the entry.
         let entry = LogEntry(level: level,
                              category: category,
                              subsystem: "com.logr.mock",
@@ -171,7 +180,11 @@ public final class MockLogR: LogRService, Sendable {
                              function: function,
                              line: line,
                              metadata: metadata)
+        Task { @MainActor in append(entry) }
+    }
 
+    @MainActor
+    private func append(_ entry: LogEntry) {
         mockLogs.insert(entry, at: 0)
         recentLogs.insert(entry, at: 0)
 
@@ -184,6 +197,7 @@ public final class MockLogR: LogRService, Sendable {
         }
     }
 
+    @MainActor
     public func clearLogs() async throws {
         mockLogs.removeAll()
         recentLogs.removeAll()
@@ -260,6 +274,7 @@ public final class MockLogR: LogRService, Sendable {
 
     // MARK: - Instant Generation
 
+    @MainActor
     private func generateMockData(config: GenerationConfig) {
         let now = Date()
         let totalProbability = config.levelDistribution.values.reduce(0, +)
@@ -292,6 +307,7 @@ public final class MockLogR: LogRService, Sendable {
 
     // MARK: - Streaming Generation
 
+    @MainActor
     private func streamMockData(config: GenerationConfig, chunks: Int, delay: TimeInterval) async {
         let now = Date()
         let totalProbability = config.levelDistribution.values.reduce(0, +)

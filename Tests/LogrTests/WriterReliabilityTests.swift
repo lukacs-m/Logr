@@ -1,6 +1,7 @@
 import Testing
 @testable import Logr
 import Foundation
+import os
 
 /// In-memory storage whose batch `store` throws for the first `failingFirst` calls,
 /// then succeeds. Used to prove the background writer re-tries a failed batch instead
@@ -124,14 +125,16 @@ struct WriterReliabilityTests {
     func testBackpressureBoundsBufferAndAccountsDrops() async throws {
         // Storage can't keep up: with a tiny pending cap, a fast burst must shed the excess.
         let storage = SlowStorage(delay: .milliseconds(50))
-        let droppedBox = SafeMutex.create(0)
+        // A plain `OSAllocatedUnfairLock` rather than `SafeMutex`: the latter is `~Copyable`, so it
+        // can't be captured in the escaping `@Sendable` onDrop closure below.
+        let droppedBox = OSAllocatedUnfairLock(initialState: 0)
         let writer = LogWriterActor(storage: storage,
                                     cryptoService: try makeCrypto(),
                                     configuration: .default,
                                     batchSize: 5,
                                     maxRetries: 1,
                                     maxPendingWrites: 10)
-        await writer.setOnDrop { count in droppedBox.modify { $0 += count } }
+        await writer.setOnDrop { count in droppedBox.withLock { $0 += count } }
 
         let total = 200
         for index in 0 ..< total {
@@ -140,7 +143,7 @@ struct WriterReliabilityTests {
         await writer.flush()
 
         let stored = await storage.storedCount
-        let dropped = droppedBox.value
+        let dropped = droppedBox.withLock { $0 }
         // Every entry is either persisted or accounted as a backpressure drop — none vanish silently.
         #expect(stored + dropped == total)
         // The buffer shed load instead of growing without bound.

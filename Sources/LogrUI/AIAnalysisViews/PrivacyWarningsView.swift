@@ -205,7 +205,7 @@ private struct PrivacyWarningRow: View {
         .padding(.vertical, 8)
     }
 
-    // Single source of truth — see `LogSeverity.tint`/`symbolName` in Presentation.swift.
+    /// Single source of truth — see `LogSeverity.tint`/`symbolName` in Presentation.swift.
     private var severityIcon: some View {
         Image(systemName: warning.severity.symbolName)
             .foregroundStyle(warning.severity.tint)

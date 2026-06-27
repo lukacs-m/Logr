@@ -11,7 +11,9 @@ import FoundationModels
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 @Generable(description: "Privacy warning detected in application logs")
 public struct PrivacyWarning: Sendable, Identifiable, Hashable, Equatable {
-    public var id: String { "\(file):\(line):\(exposureType)" }
+    public var id: String {
+        "\(file):\(line):\(exposureType)"
+    }
 
     @Guide(description: "The source file where the exposure was detected")
     public var file: String
@@ -73,7 +75,9 @@ public struct PrivacyAnalysisResult: Sendable, Equatable {
         self.highCount = highCount
     }
 
-    public var isEmpty: Bool { warnings.isEmpty }
+    public var isEmpty: Bool {
+        warnings.isEmpty
+    }
 
     public static var empty: PrivacyAnalysisResult {
         PrivacyAnalysisResult(warnings: [], summary: "", criticalCount: 0, highCount: 0)

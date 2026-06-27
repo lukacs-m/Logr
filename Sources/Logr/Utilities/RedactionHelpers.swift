@@ -7,48 +7,48 @@
 import CryptoKit
 import Foundation
 
-/// Utilities for redacting sensitive information in log messages.
-///
-/// `RedactionHelpers` provides extension methods on `String` to mask or redact
-/// sensitive data such as emails, phone numbers, credit cards, and other PII
-/// before logging.
-///
-/// ## Overview
-///
-/// Privacy-conscious logging is critical for compliance with regulations like GDPR
-/// and PCI-DSS. These helpers make it easy to redact sensitive data while preserving
-/// enough information for debugging.
-///
-/// ## Example
-///
-/// ```swift
-/// logger.info("User email: \(email.redactedEmail())")
-/// // Output: "User email: j***@example.com"
-///
-/// logger.info("Card: \(cardNumber.maskedCreditCard())")
-/// // Output: "Card: ****-****-****-1234"
-///
-/// logger.info("Phone: \(phone.redactedPhone())")
-/// // Output: "Phone: ***-***-5678"
-/// ```
-///
-/// ## Topics
-///
-/// ### Email Redaction
-/// - ``Swift/String/redactedEmail(showDomain:)``
-///
-/// ### Credit Card Redaction
-/// - ``Swift/String/maskedCreditCard(visibleDigits:)``
-///
-/// ### Phone Number Redaction
-/// - ``Swift/String/redactedPhone(visibleDigits:)``
-///
-/// ### IP Address Redaction
-/// - ``Swift/String/redactedIP()``
-///
-/// ### Custom Redaction
-/// - ``Swift/String/redacted(keeping:position:)``
-/// - ``Swift/String/hashed(algorithm:)``
+// Utilities for redacting sensitive information in log messages.
+//
+// `RedactionHelpers` provides extension methods on `String` to mask or redact
+// sensitive data such as emails, phone numbers, credit cards, and other PII
+// before logging.
+//
+// ## Overview
+//
+// Privacy-conscious logging is critical for compliance with regulations like GDPR
+// and PCI-DSS. These helpers make it easy to redact sensitive data while preserving
+// enough information for debugging.
+//
+// ## Example
+//
+// ```swift
+// logger.info("User email: \(email.redactedEmail())")
+// // Output: "User email: j***@example.com"
+//
+// logger.info("Card: \(cardNumber.maskedCreditCard())")
+// // Output: "Card: ****-****-****-1234"
+//
+// logger.info("Phone: \(phone.redactedPhone())")
+// // Output: "Phone: ***-***-5678"
+// ```
+//
+// ## Topics
+//
+// ### Email Redaction
+// - ``Swift/String/redactedEmail(showDomain:)``
+//
+// ### Credit Card Redaction
+// - ``Swift/String/maskedCreditCard(visibleDigits:)``
+//
+// ### Phone Number Redaction
+// - ``Swift/String/redactedPhone(visibleDigits:)``
+//
+// ### IP Address Redaction
+// - ``Swift/String/redactedIP()``
+//
+// ### Custom Redaction
+// - ``Swift/String/redacted(keeping:position:)``
+// - ``Swift/String/hashed(algorithm:)``
 
 // MARK: - String Extensions for Redaction
 

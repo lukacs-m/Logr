@@ -6,9 +6,9 @@
 //
 
 import Logr
+import LogrUI
 import SwiftUI
 import UniformTypeIdentifiers
-import LogrUI
 
 struct SettingsView: View {
     @Environment(\.logService) private var logger

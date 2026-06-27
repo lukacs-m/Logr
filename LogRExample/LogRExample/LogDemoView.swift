@@ -6,8 +6,8 @@
 //
 
 import Logr
-import SwiftUI
 import LogrUI
+import SwiftUI
 
 struct LogDemoView: View {
     @Environment(\.logService) private var logger
@@ -121,7 +121,6 @@ struct LogDemoView: View {
         }
     }
 
-    @ViewBuilder
     private func categoryButtons(_ categories: [LogCategory]) -> some View {
         ForEach(categories) { category in
             Button {
