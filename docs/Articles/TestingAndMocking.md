@@ -13,36 +13,44 @@ Learn how to test your logging code and use MockLogR for development and testing
 
 ## Overview
 
-Logr provides comprehensive testing support through `MockLogR`, a full-featured mock implementation that works seamlessly in SwiftUI previews and unit tests.
+Logr provides comprehensive testing support through `MockLogR`, a full-featured mock
+implementation that works seamlessly in SwiftUI previews and unit tests. All examples use
+the Swift Testing framework (`@Suite`, `@Test`, `#expect`, `#require`) — the same framework
+Logr's own test suite uses.
 
 ## MockLogR
 
-The `MockLogR` class implements `LogRService` with in-memory storage and pre-populated sample data.
+The `MockLogR` class implements `LogRService` with in-memory storage and pre-populated
+sample data. It ships in the `LogrUI` product (`import LogrUI`), is created and read on the
+main actor, and its `log()` **defers** inserts to the main actor — there is no synchronous
+read-after-write (unlike the real `LogR`).
 
 ### Features
 
-- Full `LogRService` protocol compliance
-- Pre-populated with realistic sample logs
-- In-memory storage (no disk I/O)
-- All querying and filtering capabilities
-- Export functionality
-- Perfect for SwiftUI previews
-- Ideal for unit testing
+- Full `LogRService` protocol compliance (queries, export and statistics come from the protocol extensions)
+- Pre-populated with realistic sample logs — 5,000 generated entries by default; `MockLogR(empty: true)` for none
+- `GenerationConfig(totalEntries:timeRange:levelDistribution:categories:subsystems:)` and `GenerationMode.instant` / `.stream(chunks:delay:)` for custom data
+- In-memory storage (no disk I/O, no Keychain); cache capped at 100 entries
+- Canned AI results for the iOS 26+ views
+- Deferred inserts — hop to the main actor once before asserting
 
 ### Basic Usage
 
 ```swift
-import Logr
+import LogrUI
 
-// Create a mock logger
-let mock = MockLogR()
+@MainActor
+func demo() async {
+    let mock = MockLogR(empty: true)
 
-// Use it like a real logger
-mock.info("Test message", category: .network)
-mock.error("Test error", category: .database)
+    // Use it like a real logger
+    mock.info("Test message", category: .network)
+    mock.error("Test error", category: .database)
 
-// Access logs
-print("Total logs: \(mock.recentLogs.count)")
+    // Let the deferred inserts land, then read
+    await Task { @MainActor in }.value
+    print("Total logs: \(mock.recentLogs.count)")   // 2
+}
 ```
 
 ## SwiftUI Previews
@@ -64,12 +72,9 @@ Use `MockLogR` in SwiftUI previews for instant feedback without running the app.
 
 ```swift
 #Preview("Error Logs") {
-    let mock = MockLogR()
+    let mock = MockLogR(empty: true)
 
-    // Clear default logs
-    Task { try? await mock.clearLogs() }
-
-    // Add specific test logs
+    // Add specific test logs (inserts land asynchronously — fine for previews)
     mock.error("Network timeout", category: .network)
     mock.error("Database connection failed", category: .database)
     mock.fault("Critical system error", category: .system)
@@ -85,27 +90,39 @@ Use `MockLogR` in SwiftUI previews for instant feedback without running the app.
 
 ```swift
 #Preview("Empty State") {
-    let mock = MockLogR()
-    Task { try? await mock.clearLogs() }
-
-    return LogViewer()
-        .environment(\.logService, mock)
+    NavigationStack {
+        LogViewer()
+    }
+    .environment(\.logService, MockLogR(empty: true))
 }
 
 #Preview("With Logs") {
-    LogViewer()
-        .environment(\.logService, MockLogR())
+    NavigationStack {
+        LogViewer()
+    }
+    .environment(\.logService, MockLogR())
+}
+
+#Preview("Streaming") {
+    NavigationStack {
+        LogViewer()
+    }
+    .environment(\.logService,
+                 MockLogR(config: GenerationConfig(totalEntries: 2_000),
+                          mode: .stream(chunks: 20, delay: 0.5)))
 }
 
 #Preview("Many Errors") {
-    let mock = MockLogR()
+    let mock = MockLogR(empty: true)
 
     for i in 1...20 {
         mock.error("Error \(i)", category: .network)
     }
 
-    return LogViewer()
-        .environment(\.logService, mock)
+    return NavigationStack {
+        LogViewer()
+    }
+    .environment(\.logService, mock)
 }
 ```
 
@@ -123,7 +140,7 @@ struct MyLogView: View {
 }
 
 #Preview {
-    let mock = MockLogR()
+    let mock = MockLogR(empty: true)
     mock.error("Test error 1", category: .network)
     mock.error("Test error 2", category: .database)
 
@@ -134,194 +151,183 @@ struct MyLogView: View {
 
 ## Unit Testing
 
-Use `MockLogR` to test logging behavior in your code.
+Use `MockLogR` to test logging behavior in your code, and a real `LogR` (with an in-memory
+key store) when a test needs synchronous read-after-write.
 
 ### Setup
 
+Shared scaffolding for the examples below:
+
 ```swift
-import XCTest
+import Foundation
 import Logr
+import LogrUI          // MockLogR
+import Testing
+import os
 
-class MyViewModelTests: XCTestCase {
-    var mockLogger: MockLogR!
-    var viewModel: MyViewModel!
+/// Keeps tests off the real Keychain. The lock makes the class Sendable.
+final class InMemoryKeychainStore: KeychainStore, Sendable {
+    private let storage = OSAllocatedUnfairLock(initialState: [String: Data]())
+    func data(forKey key: String) throws -> Data? { storage.withLock { $0[key] } }
+    func set(_ data: Data, forKey key: String) throws { storage.withLock { $0[key] = data } }
+    func remove(forKey key: String) throws { storage.withLock { $0[key] = nil } }
+}
 
-    override func setUp() {
-        super.setUp()
-        mockLogger = MockLogR()
-        viewModel = MyViewModel(logger: mockLogger)
-    }
+func makeTestLogger(storage: LogRPersistence? = nil,
+                    configuration: LogrConfiguration = .default) throws -> LogR {
+    LogR(storage: storage,
+         cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
+         configuration: configuration)
+}
 
-    override func tearDown() {
-        mockLogger = nil
-        viewModel = nil
-        super.tearDown()
-    }
+/// MockLogR defers inserts to the main actor; awaiting a fresh main-actor task
+/// guarantees earlier inserts have landed before reading `recentLogs`.
+@MainActor
+func settle() async {
+    await Task { @MainActor in }.value
 }
 ```
+
+Mark suites that touch `MockLogR` as `@MainActor` (its `init` and `recentLogs` are
+main-actor isolated), and call `settle()` before asserting. A real `LogR` needs neither:
+its cache is updated synchronously under a lock.
 
 ### Testing Log Output
 
 ```swift
-func testLoggingOnSuccess() async throws {
-    // Given
-    await viewModel.performAction()
+@MainActor
+@Suite("MyViewModel logging")
+struct MyViewModelTests {
+    let mockLogger: MockLogR
+    let viewModel: MyViewModel
 
-    // Then
-    XCTAssertFalse(mockLogger.recentLogs.isEmpty)
+    init() {
+        mockLogger = MockLogR(empty: true)
+        viewModel = MyViewModel(logger: mockLogger)
+    }
 
-    let infoLogs = mockLogger.recentLogs.filter { $0.level == .info }
-    XCTAssertEqual(infoLogs.count, 1)
-    XCTAssertEqual(infoLogs.first?.message, "Action completed successfully")
-    XCTAssertEqual(infoLogs.first?.category, .user)
-}
+    @Test("Success path logs an info entry")
+    func logsOnSuccess() async {
+        await viewModel.performAction()
+        await settle()
 
-func testLoggingOnError() async throws {
-    // Given
-    viewModel.shouldFail = true
+        let infoLogs = mockLogger.recentLogs.filter { $0.level == .info }
+        #expect(infoLogs.count == 1)
+        #expect(infoLogs.first?.message == "Action completed successfully")
+        #expect(infoLogs.first?.category == .user)
+    }
 
-    // When
-    await viewModel.performAction()
+    @Test("Failure path logs an error")
+    func logsOnError() async {
+        viewModel.shouldFail = true
 
-    // Then
-    let errorLogs = mockLogger.recentLogs.filter { $0.level == .error }
-    XCTAssertGreaterThan(errorLogs.count, 0)
-    XCTAssertTrue(errorLogs.first?.message.contains("failed") ?? false)
+        await viewModel.performAction()
+        await settle()
+
+        let errorLogs = mockLogger.recentLogs.filter { $0.level == .error }
+        #expect(!errorLogs.isEmpty)
+        #expect(errorLogs.first?.message.contains("failed") == true)
+    }
 }
 ```
 
 ### Testing Log Levels
 
+Use a real `LogR` — read-after-write is synchronous:
+
 ```swift
-func testDebugLogsDisabledInProduction() {
-    // Given
-    let productionLogger = try LogR(
-        configuration: LogrConfiguration(
-            enabledLevels: [.info, .warning, .error, .fault]
-        )
-    )
+@MainActor
+@Suite("LogR behaviour")
+struct LogRBehaviourTests {
+    @Test("Disabled levels are dropped")
+    func disabledLevels() throws {
+        let logger = try makeTestLogger(
+            configuration: LogrConfiguration(enabledLevels: [.info, .warning, .error, .fault]))
 
-    // When
-    productionLogger.debug("Debug message", category: .debug)
+        logger.debug("Debug message", category: .debug)
+        logger.error("Error", category: .system)
 
-    // Then
-    let debugLogs = productionLogger.recentLogs.filter { $0.level == .debug }
-    XCTAssertEqual(debugLogs.count, 0, "Debug logs should be disabled in production")
+        #expect(logger.recentLogs.count == 1)
+        #expect(logger.recentLogs.first?.level == .error)
+    }
 }
 ```
 
 ### Testing Categories
 
 ```swift
-func testNetworkLogsUseCorrectCategory() async {
-    // When
+@Test("Network operations log to network categories")
+func networkCategories() async {
+    let mock = MockLogR(empty: true)
+    let viewModel = MyViewModel(logger: mock)
+
     await viewModel.fetchData()
+    await settle()
 
-    // Then
-    let networkLogs = mockLogger.recentLogs.filter {
-        $0.category == .network || $0.category == .api
-    }
-
-    XCTAssertGreaterThan(networkLogs.count, 0, "Network operations should log to network categories")
+    #expect(mock.recentLogs.contains { $0.category == .network || $0.category == .api })
 }
 ```
 
 ### Testing Log Queries
 
+`getLogs` is `@MainActor` and comes from the protocol extension:
+
 ```swift
-func testGetLogsByLevel() throws {
-    // Given
-    mockLogger.info("Info message", category: .system)
-    mockLogger.error("Error message", category: .system)
-    mockLogger.fault("Fault message", category: .system)
+@Test("getLogs filters by level, category and date")
+func queries() throws {
+    let logger = try makeTestLogger()
+    logger.info("Info message", category: .system)
+    logger.error("Error message", category: .network)
+    logger.fault("Fault message", category: .system)
 
-    // When
-    let errorLogs = try mockLogger.getLogs(levels: [.error, .fault])
-
-    // Then
-    XCTAssertEqual(errorLogs.count, 2)
-    XCTAssertTrue(errorLogs.allSatisfy { $0.level == .error || $0.level == .fault })
-}
-
-func testGetLogsByCategory() throws {
-    // Given
-    mockLogger.info("Network log", category: .network)
-    mockLogger.info("UI log", category: .ui)
-    mockLogger.info("Database log", category: .database)
-
-    // When
-    let networkLogs = try mockLogger.getLogs(categories: [.network])
-
-    // Then
-    XCTAssertEqual(networkLogs.count, 1)
-    XCTAssertEqual(networkLogs.first?.category, .network)
-}
-
-func testGetLogsByDateRange() throws {
-    // Given
-    let now = Date()
-    let oneHourAgo = now.addingTimeInterval(-3600)
-    let twoHoursAgo = now.addingTimeInterval(-7200)
-
-    // When
-    let recentLogs = try mockLogger.getLogs(
-        from: oneHourAgo,
-        to: now
-    )
-
-    // Then
-    XCTAssertTrue(recentLogs.allSatisfy { log in
-        log.timestamp >= oneHourAgo && log.timestamp <= now
-    })
+    #expect(try logger.getLogs(levels: [.error, .fault]).count == 2)
+    #expect(try logger.getLogs(categories: [.network]).map(\.message) == ["Error message"])
+    #expect(try logger.getLogs(from: .now.addingTimeInterval(-60), to: .now).count == 3)
 }
 ```
 
 ### Testing Export
 
+`exportLogs` is `async throws -> Data` and returns empty `Data` when there are no logs.
+JSON dates are ISO-8601; the CSV header is
+`Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata`.
+
 ```swift
-func testExportLogsAsJSON() {
-    // Given
-    mockLogger.info("Test log", category: .system)
+@Test("Exports JSON and CSV")
+func export() async throws {
+    let logger = try makeTestLogger()
+    logger.info("Test log", category: .system)
 
-    // When
-    let jsonData = mockLogger.exportLogs(format: .json)
-
-    // Then
-    XCTAssertNotNil(jsonData)
-
-    // Verify JSON is valid
+    let json = try await logger.exportLogs(format: .json)
     let decoder = JSONDecoder()
-    XCTAssertNoThrow(try decoder.decode([LogEntry].self, from: jsonData!))
+    decoder.dateDecodingStrategy = .iso8601
+    #expect(try decoder.decode([LogEntry].self, from: json).count == 1)
+
+    let csvData = try await logger.exportLogs(format: .csv)
+    let csv = try #require(String(data: csvData, encoding: .utf8))
+    #expect(csv.hasPrefix("Timestamp,Level,Category,Subsystem,Message"))
+    #expect(csv.contains("Test log"))
 }
 
-func testExportLogsAsCSV() {
-    // When
-    let csvData = mockLogger.exportLogs(format: .csv)
-
-    // Then
-    XCTAssertNotNil(csvData)
-
-    let csvString = String(data: csvData!, encoding: .utf8)
-    XCTAssertTrue(csvString?.contains("timestamp") ?? false)
-    XCTAssertTrue(csvString?.contains("level") ?? false)
-    XCTAssertTrue(csvString?.contains("message") ?? false)
+@Test("Export of an empty cache is empty Data, not an error")
+func emptyExport() async throws {
+    #expect(try await makeTestLogger().exportLogs(format: .json).isEmpty)
 }
 ```
 
 ### Testing Clear Logs
 
 ```swift
-func testClearLogs() async throws {
-    // Given
-    mockLogger.info("Log 1", category: .system)
-    mockLogger.info("Log 2", category: .system)
-    XCTAssertFalse(mockLogger.recentLogs.isEmpty)
+@Test("clearLogs empties the cache")
+func clear() async throws {
+    let logger = try makeTestLogger()
+    logger.info("Log 1", category: .system)
+    logger.info("Log 2", category: .system)
+    #expect(logger.recentLogs.count == 2)
 
-    // When
-    try await mockLogger.clearLogs()
+    try await logger.clearLogs()
 
-    // Then
-    XCTAssertTrue(mockLogger.recentLogs.isEmpty)
+    #expect(logger.recentLogs.isEmpty)
 }
 ```
 
@@ -331,110 +337,76 @@ Test the full Logr system with actual storage.
 
 ### Setup Test Storage
 
+Give every test its own temporary database path; `SQLiteStorage(databasePath:)` creates
+intermediate directories itself.
+
 ```swift
-class LogRIntegrationTests: XCTestCase {
-    var logger: LogR!
-    var testDirectory: URL!
-
-    override func setUp() {
-        super.setUp()
-
-        // Create temporary directory
-        testDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-
-        try! FileManager.default.createDirectory(
-            at: testDirectory,
-            withIntermediateDirectories: true
-        )
-
-        // Create logger with test storage
-        let storage = SQLiteStorage(
-            databaseURL: testDirectory.appendingPathComponent("test.db")
-        )
-
-        logger = try LogR(storage: storage)
-    }
-
-    override func tearDown() {
-        // Clean up test directory
-        try? FileManager.default.removeItem(at: testDirectory)
-
-        logger = nil
-        testDirectory = nil
-
-        super.tearDown()
+@MainActor
+@Suite("Integration", .serialized)
+struct LogRIntegrationTests {
+    private func temporaryDatabasePath() -> String {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("logr-\(UUID().uuidString).sqlite").path
     }
 }
 ```
 
 ### Testing Persistence
 
+The second instance must share the crypto service (or at least the key store) — a fresh
+random key cannot decrypt the first instance's entries. History is merged asynchronously
+after init, so poll briefly instead of sleeping a fixed second:
+
 ```swift
-func testLogsPersistAcrossInstances() async throws {
-    // Given
-    logger.info("Persistent log", category: .system)
-    await logger.flush()
+@Test("Entries persist and are reloaded by a fresh instance")
+func persistsAcrossInstances() async throws {
+    let path = temporaryDatabasePath()
+    let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
 
-    // When - create new logger with same storage
-    let storage = SQLiteStorage(
-        databaseURL: testDirectory.appendingPathComponent("test.db")
-    )
-    let newLogger = try LogR(storage: storage)
+    let first = LogR(storage: try SQLiteStorage(databasePath: path), cryptoService: crypto)
+    first.info("Persistent log", category: .system)
+    await first.flush()
 
-    // Wait for initialization
-    try await Task.sleep(for: .seconds(1))
+    let second = LogR(storage: try SQLiteStorage(databasePath: path), cryptoService: crypto)
+    for _ in 0..<50 where second.recentLogs.isEmpty {
+        try await Task.sleep(for: .milliseconds(20))
+    }
 
-    // Then
-    XCTAssertFalse(newLogger.recentLogs.isEmpty)
-    XCTAssertTrue(newLogger.recentLogs.contains { $0.message == "Persistent log" })
+    #expect(second.recentLogs.contains { $0.message == "Persistent log" })
 }
 ```
 
-### Testing Cleanup
+### Testing Retention
+
+Age-based cleanup runs on a main-run-loop timer every `cleanupInterval`, which is not
+deterministic in a test process — test retention through `maxLogEntries` instead, which is
+enforced synchronously on every `log()`:
 
 ```swift
-func testAutomaticCleanup() async throws {
-    // Given - configure short retention
-    let config = LogrConfiguration(
-        maxLogAge: 1, // 1 second
-        cleanupInterval: 2 // 2 seconds
-    )
+@Test("maxLogEntries caps the in-memory cache, newest first")
+func retentionCap() throws {
+    let logger = try makeTestLogger(configuration: LogrConfiguration(maxLogEntries: 3))
 
-    let logger = try LogR(
-        storage: SQLiteStorage(),
-        configuration: config
-    )
+    for i in 1...5 { logger.info("Message \(i)", category: .system) }
 
-    logger.info("Old log", category: .system)
-
-    // When - wait for cleanup
-    try await Task.sleep(for: .seconds(3))
-
-    // Then
-    XCTAssertTrue(logger.recentLogs.isEmpty, "Old logs should be cleaned up")
+    #expect(logger.recentLogs.map(\.message) == ["Message 5", "Message 4", "Message 3"])
 }
 ```
 
 ### Testing Encryption
 
 ```swift
-func testLogsAreEncrypted() async throws {
-    // Given
-    let storage = SQLiteStorage(
-        databaseURL: testDirectory.appendingPathComponent("test.db")
-    )
-    let logger = try LogR(storage: storage)
+@Test("Stored entries never contain the plaintext message")
+func storedEntriesAreEncrypted() async throws {
+    let storage = try SQLiteStorage(databasePath: temporaryDatabasePath())
+    let logger = try makeTestLogger(storage: storage)
 
     logger.info("Secret message", category: .system)
     await logger.flush()
 
-    // When - read raw database
-    let dbData = try Data(contentsOf: testDirectory.appendingPathComponent("test.db"))
-    let dbString = String(data: dbData, encoding: .utf8) ?? ""
-
-    // Then - plaintext message should not appear in database
-    XCTAssertFalse(dbString.contains("Secret message"), "Logs should be encrypted")
+    let stored = try await storage.fetchEntries()
+    #expect(stored.count == 1)
+    #expect(stored.allSatisfy { $0.data.range(of: Data("Secret message".utf8)) == nil })
 }
 ```
 
@@ -443,34 +415,27 @@ func testLogsAreEncrypted() async throws {
 ### Testing Custom Storage
 
 ```swift
-class CustomStorageTests: XCTestCase {
-    var storage: MyCustomStorage!
+@Suite("Custom storage")
+struct CustomStorageTests {
+    @Test("store / fetch round-trip, oldest first")
+    func storeAndFetch() async throws {
+        let storage = MyCustomStorage()   // your `actor MyCustomStorage: LogRPersistence`
 
-    func testStoreAndFetch() async throws {
-        // Given
-        storage = MyCustomStorage()
+        let entries = (1...3).map { i in
+            EncryptedLogEntry(id: "e\(i)",
+                              timestamp: Date().addingTimeInterval(Double(i)),
+                              data: Data("d\(i)".utf8))
+        }
 
-        let entry = EncryptedLogEntry(
-            id: UUID().uuidString,
-            timestamp: Date(),
-            data: Data("test".utf8)
-        )
+        try await storage.store(entries)          // batch requirement
+        #expect(try await storage.fetchEntries().map(\.id) == ["e1", "e2", "e3"])
+        #expect(try await storage.fetchEntries(limit: 2).map(\.id) == ["e2", "e3"])
 
-        // When
-        try await storage.store(entry)
-        let fetched = try await storage.fetchEntries()
+        try await storage.deleteEntries(keepingLatest: 1)
+        #expect(try await storage.count() == 1)
 
-        // Then
-        XCTAssertEqual(fetched.count, 1)
-        XCTAssertEqual(fetched.first?.id, entry.id)
-    }
-
-    func testDeleteOldEntries() async throws {
-        // Test deletion logic
-    }
-
-    func testClear() async throws {
-        // Test clear functionality
+        try await storage.clear()
+        #expect(try await storage.count() == 0)
     }
 }
 ```
@@ -478,26 +443,19 @@ class CustomStorageTests: XCTestCase {
 ### Testing Custom Crypto
 
 ```swift
-class CustomCryptoTests: XCTestCase {
-    var crypto: MyCustomCrypto!
+@Suite("Custom crypto")
+struct CustomCryptoTests {
+    @Test("encrypt / decrypt round-trip")
+    func roundTrip() throws {
+        let crypto = MyCustomCrypto(key: SymmetricKey(size: .bits256))
+        let original = LogEntry(level: .info, category: .system,
+                                subsystem: "test", message: "Test message")
 
-    func testEncryptDecrypt() throws {
-        // Given
-        crypto = MyCustomCrypto()
-        let original = LogEntry(
-            level: .info,
-            category: .system,
-            subsystem: "test",
-            message: "Test message"
-        )
-
-        // When
         let encrypted = try crypto.symmetricEncrypt(object: original)
         let decrypted: LogEntry = try crypto.symmetricDecrypt(encryptedData: encrypted)
 
-        // Then
-        XCTAssertEqual(decrypted.message, original.message)
-        XCTAssertEqual(decrypted.level, original.level)
+        #expect(decrypted == original)
+        #expect(encrypted.range(of: Data("Test message".utf8)) == nil)
     }
 }
 ```
@@ -507,27 +465,20 @@ class CustomCryptoTests: XCTestCase {
 ### Helper Extensions
 
 ```swift
+@MainActor
 extension MockLogR {
-    /// Clears all logs synchronously for testing
-    func clearLogsSync() {
-        Task {
-            try? await clearLogs()
-        }
-    }
-
-    /// Adds multiple test logs
-    func addTestLogs(count: Int) {
+    /// Adds `count` test logs and waits for the deferred inserts to land.
+    func addTestLogs(count: Int) async {
         for i in 1...count {
             info("Test log \(i)", category: .test)
         }
-    }
-
-    /// Gets logs matching a predicate
-    func getLogs(where predicate: (LogEntry) -> Bool) -> [LogEntry] {
-        recentLogs.filter(predicate)
+        await Task { @MainActor in }.value
     }
 }
 ```
+
+Prefer `try await mock.clearLogs()` over any fire-and-forget clearing — un-awaited clears
+are exactly what makes tests flaky.
 
 ### Test Fixtures
 
@@ -547,49 +498,50 @@ extension LogEntry {
     }
 }
 
-// Usage in tests
-func testSomething() {
+@Test func usesFixture() {
     let log = LogEntry.fixture(level: .error, message: "Test error")
-    // Test with fixture
+    #expect(log.level == .error)
 }
 ```
 
 ## Performance Testing
 
-### Measure Logging Performance
+Swift Testing has no `measure` API — time with `ContinuousClock` and keep hard timing
+assertions out of CI:
 
 ```swift
-func testLoggingPerformance() {
-    let logger = MockLogR()
+@Test("Logging throughput baseline")
+func loggingThroughput() async throws {
+    let logger = try makeTestLogger()
 
-    measure {
-        for _ in 1...1_000 {
-            logger.info("Performance test", category: .performance)
+    let elapsed = ContinuousClock().measure {
+        for i in 1...1_000 {
+            logger.info("Performance test \(i)", category: .performance)
         }
     }
+    await logger.flush()
+
+    print("Logged 1,000 entries in \(elapsed)")   // informational
 }
-```
 
-### Measure Query Performance
-
-```swift
-func testQueryPerformance() {
-    let logger = MockLogR()
-
-    // Add many logs
+@MainActor
+@Test("Query performance baseline")
+func queryThroughput() throws {
+    let logger = try makeTestLogger(configuration: LogrConfiguration(maxLogEntries: 10_000))
     for i in 1...10_000 {
         logger.info("Log \(i)", category: .system)
     }
 
-    measure {
+    let elapsed = ContinuousClock().measure {
         _ = try? logger.getLogs(levels: [.info])
     }
+    print("Query took \(elapsed)")
 }
 ```
 
 ## Best Practices
 
-### 1. Use MockLogR for UI Tests
+### 1. Use MockLogR for Previews and UI Tests
 
 ```swift
 // ✅ Good - fast, predictable
@@ -598,80 +550,53 @@ func testQueryPerformance() {
         .environment(\.logService, MockLogR())
 }
 
-// ❌ Bad - slow, file I/O in previews
+// ❌ Bad - touches the Keychain and disk in a preview
 #Preview {
     ContentView()
-        .environment(\.logService, try LogR(storage: SQLiteStorage()))
+        .environment(\.logService, try! LogR(storage: SQLiteStorage()))
 }
 ```
 
 ### 2. Clean Up Between Tests
 
-```swift
-override func setUp() {
-    super.setUp()
-    mockLogger = MockLogR()
-}
-
-override func tearDown() {
-    Task {
-        try? await mockLogger.clearLogs()
-    }
-    mockLogger = nil
-    super.tearDown()
-}
-```
+Swift Testing creates a fresh suite instance for every test, so a mock created in `init()`
+(or inline in the test) starts clean — there is nothing to tear down. Give integration
+tests a unique temporary database path each.
 
 ### 3. Test Edge Cases
 
 ```swift
-func testLoggingEmptyMessage() {
-    mockLogger.info("", category: .system)
-    XCTAssertFalse(mockLogger.recentLogs.isEmpty)
-}
+@Test("Empty and very long messages are kept")
+func edgeCases() throws {
+    let logger = try makeTestLogger()
 
-func testLoggingVeryLongMessage() {
-    let longMessage = String(repeating: "a", count: 10_000)
-    mockLogger.info(longMessage, category: .system)
+    logger.info("", category: .system)
+    logger.info(String(repeating: "a", count: 10_000), category: .system)
 
-    XCTAssertTrue(mockLogger.recentLogs.first?.message.count == 10_000)
+    #expect(logger.recentLogs.count == 2)
+    #expect(logger.recentLogs.first?.message.count == 10_000)
 }
 ```
 
 ### 4. Verify Log Levels
 
-```swift
-func testOnlyLogsEnabledLevels() {
-    let config = LogrConfiguration(
-        enabledLevels: [.error, .fault]
-    )
-    let logger = try LogR(configuration: config)
-
-    logger.debug("Debug", category: .debug)
-    logger.info("Info", category: .system)
-    logger.error("Error", category: .system)
-
-    XCTAssertEqual(logger.recentLogs.count, 1) // Only error logged
-    XCTAssertEqual(logger.recentLogs.first?.level, .error)
-}
-```
+Covered by `disabledLevels()` above — build the `LogrConfiguration` with the levels you
+expect in production and assert the filtered levels never reach `recentLogs`.
 
 ### 5. Test Async Operations
 
+`flush()` suspends until everything queued before it is persisted:
+
 ```swift
-func testAsyncLogging() async throws {
-    // Given
-    let expectation = XCTestExpectation(description: "Logs written")
+@Test("flush waits for pending writes")
+func flushWaits() async throws {
+    let storage = try SQLiteStorage(databasePath: temporaryDatabasePath())
+    let logger = try makeTestLogger(storage: storage)
 
-    // When
-    mockLogger.info("Async log", category: .system)
-    await mockLogger.flush()
+    logger.info("Async log", category: .system)
+    await logger.flush()
 
-    // Then
-    expectation.fulfill()
-    await fulfillment(of: [expectation], timeout: 1.0)
-
-    XCTAssertFalse(mockLogger.recentLogs.isEmpty)
+    #expect(try await storage.count() == 1)
 }
 ```
 
@@ -680,46 +605,39 @@ func testAsyncLogging() async throws {
 ### Enable Verbose Logging
 
 ```swift
-func testWithVerboseLogging() {
-    let config = LogrConfiguration(logVerbosity: .verbose)
-    let logger = try LogR(configuration: config)
+@Test func verboseLogging() throws {
+    let logger = try makeTestLogger(configuration: LogrConfiguration(logVerbosity: .verbose))
 
     logger.info("Test message", category: .test)
-
-    // Logs will include file, function, line in OSLog
+    // OSLog output includes file, function and line.
+    // Pass mirrorToOSLog: false instead to keep test output quiet.
 }
 ```
 
 ### Print Test Logs
 
 ```swift
-func testSomething() {
-    // When
-    viewModel.performAction()
-
-    // Debug - print all logs
-    print("\n=== Captured Logs ===")
-    for log in mockLogger.recentLogs {
-        print("[\(log.level)] \(log.message)")
-    }
-    print("=====================\n")
-
-    // Assert
-    XCTAssertFalse(mockLogger.recentLogs.isEmpty)
+// Inside a @MainActor test, after settle():
+print("\n=== Captured Logs ===")
+for log in mockLogger.recentLogs {
+    print("[\(log.level.rawValue)] \(log.message)")
 }
+print("=====================\n")
 ```
 
 ## Summary
 
 Logr provides comprehensive testing support:
 
-✅ **MockLogR** - Full mock implementation for testing
+✅ **MockLogR** - Full mock implementation for previews and tests (`import LogrUI`)
 ✅ **SwiftUI Previews** - Instant visual feedback
-✅ **Unit Tests** - Verify logging behavior
-✅ **Integration Tests** - Test with real storage
-✅ **Performance Tests** - Measure logging performance
+✅ **Swift Testing** - `@Suite` / `@Test` / `#expect` / `#require` throughout
+✅ **Integration Tests** - Real storage and encryption with an in-memory key store
+✅ **Performance Baselines** - `ContinuousClock().measure`
 
-Use `MockLogR` for fast, predictable tests, and real `LogR` instances for integration testing with actual storage and encryption.
+Use `MockLogR` for fast, predictable tests (remember its deferred inserts), and real `LogR`
+instances — with `InMemoryKeychainStore` — for read-after-write assertions and integration
+testing with actual storage and encryption.
 
 ## Related Documentation
 

@@ -30,7 +30,7 @@ Add Logr to your project using Swift Package Manager:
 **In Package.swift:**
 ```swift
 dependencies: [
-    .package(url: "https://github.com/lukacs-m/logr", from: "1.0.0")
+    .package(url: "https://github.com/lukacs-m/logr", from: "1.3.0")
 ],
 targets: [
     .target(
@@ -49,10 +49,19 @@ For quick setup without persistence (OSLog only):
 ```swift
 import SwiftUI
 import Logr
+import LogrUI
 
 @main
 struct MyApp: App {
-    let logger = try! LogR()
+    @State private var logger: LogR
+
+    init() {
+        do {
+            _logger = State(initialValue: try LogR())
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -70,14 +79,23 @@ For production apps with persistent, encrypted storage:
 ```swift
 import SwiftUI
 import Logr
+import LogrUI
 
 @main
 struct MyApp: App {
-    // SQLite storage (recommended for large volumes)
-    let logger = try LogR(storage: SQLiteStorage())
+    @State private var logger: LogR
 
-    // Or FileSystem storage (simple JSON files)
-    // let logger = try! LogR(storage: FileSystemStorage())
+    init() {
+        do {
+            // SQLite storage (recommended for large volumes)
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
+
+            // Or FileSystem storage (a single NDJSON file):
+            // _logger = State(initialValue: try LogR(storage: FileSystemStorage()))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -135,9 +153,9 @@ Keep a reference to the logger:
 import Logr
 
 class NetworkManager {
-    private let logger: LogRService
+    private let logger: any LogRService
 
-    init(logger: LogRService) {
+    init(logger: any LogRService) {
         self.logger = logger
     }
 
@@ -154,6 +172,41 @@ class NetworkManager {
         }
     }
 }
+```
+
+### From Any Thread or Actor
+
+Logging is `nonisolated`: call it from actors, `@concurrent` functions or any other
+background context with no `await`. The entry is visible in `recentLogs` immediately (the
+cache is lock-protected); only the SwiftUI change notification is coalesced onto the main
+actor.
+
+```swift
+actor SyncEngine {
+    let logger: any LogRService
+
+    func sync() {
+        logger.info("Sync started", category: .sync)   // no await
+    }
+}
+
+// Explicit background offloading (Swift 6.2): a @concurrent function runs off the
+// caller's actor on the concurrent thread pool; logging from it needs no hop back.
+@concurrent
+func processUploads(logger: any LogRService) async {
+    logger.warning("Upload batch is slow", category: .performance)
+}
+```
+
+### Attaching Metadata
+
+Every logging method accepts optional type-safe metadata, persisted and included in exports:
+
+```swift
+logger.info("Request completed", category: .network,
+            metadata: ["url": "/api/users", "status": 200, "duration": 0.523, "cached": false])
+// Literals map to LogMetadataValue (.string/.int/.double/.bool);
+// .date(Date), .array([...]) and .dictionary([:]) are also available.
 ```
 
 ## Using Log Levels
@@ -182,7 +235,7 @@ logger.fault("Database connection lost", category: .database)
 
 ## Using Categories
 
-Organize your logs using the 47+ predefined categories:
+Organize your logs using the 49 predefined categories:
 
 ```swift
 // Networking
@@ -220,7 +273,15 @@ import LogrUI
 
 @main
 struct MyApp: App {
-    let logger = try! LogR(storage: SQLiteStorage())
+    @State private var logger: LogR
+
+    init() {
+        do {
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -263,6 +324,10 @@ let logger = try LogR(
 )
 ```
 
+Three more options exist: `categoryLevelOverrides` (per-category minimum level, e.g.
+`[.network: .warning]`), `coalesceWindowMillis` (throttle for SwiftUI change notifications,
+default 100 ms) and `mirrorToOSLog` (set `false` to skip Console.app output entirely).
+
 ### Development vs Production
 
 Use different configurations for different environments:
@@ -270,7 +335,9 @@ Use different configurations for different environments:
 ```swift
 @main
 struct MyApp: App {
-    let logger: LogR = {
+    @State private var logger: LogR
+
+    init() {
         #if DEBUG
         // Development: verbose logging with all levels
         let config = LogrConfiguration(
@@ -289,8 +356,12 @@ struct MyApp: App {
         )
         #endif
 
-        return try LogR(storage: SQLiteStorage(), configuration: config)
-    }()
+        do {
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage(), configuration: config))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -361,7 +432,15 @@ func performRequest() async throws -> Response {
 @main
 struct MyApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    let logger = try! LogR(storage: SQLiteStorage())
+    @State private var logger: LogR
+
+    init() {
+        do {
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {

@@ -16,26 +16,35 @@ Logr is a comprehensive logging solution that combines the power of Apple's OSLo
 
 - **Persistent Logging**: Unlike standard OSLog entries that are cleared between sessions, Logr maintains logs persistently with optional encrypted storage
 - **AI-Powered Analysis** (iOS 26+): Automatic privacy issue detection and intelligent log issue summarization using Apple Intelligence
-- **Encryption**: Built-in ChaCha20-Poly1305 encryption for sensitive log data using secure Keychain storage
+- **Encryption**: Built-in AES-256-GCM (or ChaCha20-Poly1305) encryption for sensitive log data using secure Keychain storage
 - **SwiftUI Integration**: Beautiful, built-in log viewer (`LogViewer`) with filtering, search, sharing, and AI analysis
-- **Privacy-First**: Apple privacy system integration with automatic redaction of sensitive data in OSLog
+- **Privacy-First**: OSLog output keeps the system's default `<private>` redaction for interpolated messages; persistent storage is encrypted, and opt-in redaction helpers (`redactedEmail()`, `hashed()`, …) are included
 - **Configurable**: Flexible configuration for log retention, levels, cleanup intervals, and verbosity
 - **Modular Architecture**: Separate `Logr` core and `LogrUI` modules for flexibility
-- **47+ Categories**: Comprehensive enum-based categories organized into 9 logical groups
+- **49 Categories**: Comprehensive enum-based categories organized into 9 logical groups
 - **Testing Ready**: Full `MockLogR` implementation for SwiftUI previews and unit testing
 - **Storage Options**: FileSystem and SQLite storage implementations with custom storage protocol
-- **Swift 6 Compatible**: Built with latest Swift concurrency, sendability, and safety features
-- **Performance Optimized**: Background log writing with actor-based concurrency
+- **Swift 6.2 Compatible**: Built with latest Swift concurrency, sendability, and safety features
+- **Performance Optimized**: Logging is `nonisolated` (no `await`, any thread); persistence runs on a background actor
 
 ### Quick Start
 
 ```swift
 import Logr
+import LogrUI
 import SwiftUI
 
 @main
 struct MyApp: App {
-    @State private var logger = try! LogR(storage: SQLiteStorage())
+    @State private var logger: LogR
+
+    init() {
+        do {
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -67,12 +76,12 @@ struct ContentView: View {
 
 | Type | Description |
 |------|-------------|
-| `LogR` | Main logging class, `@Observable` and `@MainActor` |
+| `LogR` | Main logging class, `@Observable`; logging is `nonisolated`, SwiftUI-facing state is `@MainActor` |
 | `LogRService` | Protocol defining the logging API |
 | `LogEntry` | Represents a single log entry |
 | `LogLevel` | Six log levels: debug, info, notice, warning, error, fault |
-| `LogCategory` | 47+ predefined categories + custom |
-| `LogrConfiguration` | Configuration for retention, cleanup, and verbosity |
+| `LogCategory` | 49 predefined categories + custom |
+| `LogrConfiguration` | Configuration for retention, cleanup, verbosity, per-category overrides, notification coalescing, OSLog mirroring |
 | `LogVerbosity` | Control log detail level (verbose/normal) |
 
 ### Storage
@@ -82,7 +91,7 @@ struct ContentView: View {
 | Type | Description |
 |------|-------------|
 | `LogRPersistence` | Protocol for custom storage implementations |
-| `FileSystemStorage` | JSON-based file storage |
+| `FileSystemStorage` | Append-only NDJSON file storage |
 | `SQLiteStorage` | High-performance SQLite storage (recommended) |
 | `EncryptedLogEntry` | Encrypted log entry for storage |
 
@@ -93,9 +102,10 @@ struct ContentView: View {
 | Type | Description |
 |------|-------------|
 | `LoggerCryptoServicing` | Protocol for custom encryption |
-| `LoggerCryptoService` | ChaCha20-Poly1305 encryption implementation |
+| `LoggerCryptoService` | AES-256-GCM (default) / ChaCha20-Poly1305 implementation with key rotation |
 | `LoggerCryptoError` | Encryption-related errors |
 | `KeychainStore` | Secure key storage |
+| `KeychainAccessStore` | Default Keychain-backed `KeychainStore` |
 
 ### AI Analysis (iOS 26+)
 
@@ -104,11 +114,14 @@ struct ContentView: View {
 | Type | Description |
 |------|-------------|
 | `LogAIAnalyzer` | Protocol for AI analysis |
-| `AIAnalyzer` | Apple Intelligence integration |
+| `AIAnalyzer` | Apple Intelligence integration (actor) |
+| `AnalyzerConfiguration` | Chunking / concurrency tuning for `AIAnalyzer` |
 | `PrivacyAnalysisResult` | Privacy scan results |
 | `PrivacyWarning` | Individual privacy warning |
-| `PrivacySeverity` | Warning severity levels |
+| `LogSeverity` | Severity levels: critical, high, medium, low |
 | `LogIssueSummary` | AI-generated issue summary |
+| `LogIssue` | Individual issue in a summary |
+| `AnalysisProgress` | Progress of a running analysis |
 | `AIAnalyzerError` | AI analysis errors |
 
 ### SwiftUI Integration
@@ -117,7 +130,11 @@ struct ContentView: View {
 
 | Type | Description |
 |------|-------------|
-| `LogViewer` | Complete log viewing UI component |
+| `LogViewer` | Complete log viewing UI component (`functionalityFilter:` toggles menu groups) |
+| `LogStatisticsView` | Statistics dashboard (totals, rates, charts) |
+| `CompactLogStatisticsView` | Inline statistics card |
+| `AIAnalysisView` / `PrivacyWarningsView` / `IssueSummaryView` | AI result views (iOS 26+) |
+| `LogStatistics` | Aggregate counts and rates (`await logger.logStatistics()`) |
 | `ExportFormat` | Export formats: JSON, CSV, TXT |
 
 ### Testing & Mocking
@@ -126,13 +143,14 @@ struct ContentView: View {
 
 | Type | Description |
 |------|-------------|
-| `MockLogR` | Full mock implementation for testing |
+| `MockLogR` | Full mock implementation for previews and tests (`import LogrUI`) |
 
 ### Errors
 
 | Type | Description |
 |------|-------------|
-| `LogrErrors` | General logging errors |
+| `LogRErrors` | General logging errors |
+| `LogExportError` | Export encoding errors |
 
 ## Platform Support
 
@@ -155,7 +173,7 @@ Add Logr to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/lukacs-m/logr", from: "1.0.0")
+    .package(url: "https://github.com/lukacs-m/logr", from: "1.3.0")
 ]
 ```
 
@@ -171,7 +189,7 @@ Logr uses a clean, modular architecture:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                        LogR                             │
-│  @Observable @MainActor                                 │
+│  @Observable (nonisolated logging)                      │
 │  - Manages logging lifecycle                            │
 │  - Coordinates with storage and OSLog                   │
 │  - Maintains in-memory cache (recentLogs)               │
@@ -181,8 +199,8 @@ Logr uses a clean, modular architecture:
              │    - Public API for logging operations
              │
              ├──→ LogWriterActor
-             │    - Background actor for async storage writes
-             │    - Queues and batches log entries
+             │    - AsyncStream consumer: encrypt → batch (50) → write
+             │    - Backpressure cap → droppedLogCount
              │
              ├──→ LogRPersistence Protocol
              │    ├── FileSystemStorage
@@ -190,7 +208,7 @@ Logr uses a clean, modular architecture:
              │    └── Custom implementations
              │
              ├──→ LoggerCryptoServicing Protocol
-             │    └── LoggerCryptoService (ChaCha20-Poly1305 + Keychain)
+             │    └── LoggerCryptoService (AES-256-GCM / ChaCha20-Poly1305 + Keychain)
              │
              └──→ LogAIAnalyzer Protocol (iOS 26+)
                   └── AIAnalyzer
@@ -206,6 +224,7 @@ Logr uses a clean, modular architecture:
 4. **Encryption by Default**: All persistent storage is automatically encrypted
 5. **Modular**: Separate `Logr` and `LogrUI` packages
 6. **Swift 6 Ready**: Full sendability and concurrency safety
+7. **Nonisolated Logging**: `log()` appends under a lock and returns — callable from any isolation domain without `await`
 
 ## Best Practices
 
@@ -220,7 +239,7 @@ Logr uses a clean, modular architecture:
 
 ### Categories
 
-Organize logs by system area using the 47+ predefined categories:
+Organize logs by system area using the 49 predefined categories:
 
 ```swift
 logger.info("User logged in", category: .authentication)
@@ -285,3 +304,4 @@ Logr is released under the MIT License.
 Built with:
 - [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) - Keychain wrapper
 - [SQLiteData](https://github.com/pointfreeco/sqlite-data) - SQLite Data models
+- [swift-collections](https://github.com/apple/swift-collections) - Deque for the log cache

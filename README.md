@@ -11,15 +11,16 @@ A powerful, persistent logging library for Apple platforms that leverages OSLog 
 
 - **Persistent Logging**: Unlike standard OSLog entries that are cleared between sessions, LogR maintains logs persistently with optional encrypted storage
 - **AI-Powered Analysis** (iOS 26+): Automatic privacy issue detection and intelligent log issue summarization
-- **Encryption**: Built-in symmetric encryption for sensitive log data using the Keychain
-- **SwiftUI Integration**: Beautiful, built-in log viewer with filtering, search, sharing, and AI analysis capabilities
+- **Encryption**: AES-256-GCM (or ChaCha20-Poly1305) encryption for sensitive log data with Keychain-backed keys
+- **SwiftUI Integration**: Beautiful, built-in log viewer with filtering, search, statistics, sharing, and AI analysis capabilities
 - **Configurable**: Flexible configuration for log retention, levels, cleanup intervals, and verbosity
 - **Modular Architecture**: Separate `Logr` core and `LogrUI` modules for flexibility
 - **Category System**: Comprehensive enum-based categories with custom support
+- **Structured Metadata**: Type-safe key-value metadata on every entry
 - **Testing Ready**: Full mock implementation for SwiftUI previews and unit testing
 - **Storage Options**: FileSystem and SQLite storage implementations with custom storage protocol
 - **Swift 6.2 Compatible**: Built with latest Swift concurrency, sendability, and safety features
-- **Performance Optimized**: Background log writing with actor-based concurrency
+- **Performance Optimized**: Logging is `nonisolated` (no `await`, any thread); persistence runs on a background actor
 
 ## Table of Contents
 
@@ -46,13 +47,13 @@ Add LogR to your project through Xcode:
 
 1. File → Add Package Dependencies
 2. Enter: `https://github.com/lukacs-m/logr`
-3. Select the version and add to your target
+3. Add `Logr` (and `LogrUI` for the SwiftUI views) to your target
 
 Or add it to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/lukacs-m/logr", from: "1.0.0")
+    .package(url: "https://github.com/lukacs-m/logr", from: "1.3.0")
 ]
 ```
 
@@ -75,16 +76,25 @@ dependencies: [
 
 ```swift
 import Logr
+import LogrUI
 import SwiftUI
 
 @main
 struct MyApp: App {
-    let logger = try! LogR()
+    @State private var logger: LogR
+
+    init() {
+        do {
+            _logger = State(initialValue: try LogR())
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .logRService(logger)
+                .logRService(logger)   // equivalent to .environment(\.logService, logger)
         }
     }
 }
@@ -93,36 +103,82 @@ struct MyApp: App {
 ### Basic Logging
 
 ```swift
+import Logr
+import LogrUI
+import SwiftUI
+
 struct ContentView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     var body: some View {
-        VStack {
-            Button("Log Something") {
-                logger.info("Button was tapped", category: .ui)
-                logger.debug("Processing user action", category: .ui)
-            }
+        NavigationStack {
+            VStack {
+                Button("Log Something") {
+                    logger.info("Button was tapped", category: .ui)
+                    logger.debug("Processing user action", category: .ui,
+                                 metadata: ["screen": "home", "attempt": 1])
+                }
 
-            NavigationLink("View Logs") {
-                LogrUIView()
+                NavigationLink("View Logs") {
+                    LogViewer()
+                }
             }
         }
     }
 }
 ```
 
+### Logging From Anywhere
+
+Logging is `nonisolated`: no `await`, no main-thread hop, safe from any actor or thread.
+
+```swift
+actor SyncEngine {
+    let logger: any LogRService
+
+    func sync() async {
+        logger.info("Sync started", category: .sync)   // no await — logging is synchronous
+    }
+}
+
+// Explicit background offloading (Swift 6.2): a @concurrent function runs on the
+// concurrent thread pool, and logging from it needs no hop back to any actor.
+@concurrent
+func processImages(logger: any LogRService) async {
+    logger.warning("Image processing is slow", category: .performance)
+}
+
+// Reads through the concrete `LogR` see the entry immediately, from any thread.
+logger.error("Boom", category: .system)
+print(logger.recentLogs.first?.message ?? "")   // "Boom"
+```
+
+Through `any LogRService`, `recentLogs` and the other observable properties are `@MainActor`:
+SwiftUI reads them on the main actor, and change notifications are batched
+(`coalesceWindowMillis`, default 100 ms).
+
 ### With Persistent Storage
 
 ```swift
 import Logr
+import LogrUI
+import SwiftUI
 
 @main
 struct MyApp: App {
-    // Using SQLite storage (recommended for large volumes)
-    let logger = try LogR(storage: SQLiteStorage())
+    @State private var logger: LogR
 
-    // Or using FileSystem storage
-    // let logger = try! LogR(storage: FileSystemStorage())
+    init() {
+        do {
+            // Using SQLite storage (recommended for large volumes)
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
+
+            // Or using FileSystem storage:
+            // _logger = State(initialValue: try LogR(storage: FileSystemStorage()))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -174,7 +230,7 @@ logger.fault("Database connection lost", category: .database)
 
 ### Categories
 
-LogR provides 47 predefined categories organized into logical groups:
+LogR provides 49 predefined categories organized into logical groups:
 
 #### System & Core
 ```swift
@@ -245,6 +301,9 @@ let logger = try LogR()
 // - subsystem: Bundle.main.bundleIdentifier
 // - cleanupInterval: 1 hour
 // - logVerbosity: .verbose
+// - categoryLevelOverrides: nil
+// - coalesceWindowMillis: 100
+// - mirrorToOSLog: true
 ```
 
 #### Custom Configuration
@@ -254,6 +313,7 @@ let config = LogrConfiguration(
     maxLogEntries: 5_000,              // Keep up to 5,000 entries
     maxLogAge: 24 * 60 * 60,           // Keep logs for 24 hours
     enabledLevels: [.info, .warning, .error, .fault], // Only log important events
+    categoryLevelOverrides: [.network: .warning],     // Per-category minimum level
     subsystem: "com.myapp.logging",    // Custom subsystem
     cleanupInterval: 30 * 60,          // Clean up every 30 minutes
     logVerbosity: .normal              // Normal verbosity (less detailed)
@@ -272,6 +332,9 @@ let logger = try LogR(configuration: config)
 | `subsystem` | `String` | OSLog subsystem identifier | Bundle identifier |
 | `cleanupInterval` | `TimeInterval` | Cleanup frequency (seconds) | 3,600 (1 hour) |
 | `logVerbosity` | `LogVerbosity` | `.verbose` or `.normal` | `.verbose` |
+| `categoryLevelOverrides` | `[LogCategory: LogLevel]?` | Minimum level per category (takes precedence over `enabledLevels`) | `nil` |
+| `coalesceWindowMillis` | `Int` | Minimum interval between SwiftUI change notifications (data is always current; `0` = notify every log) | 100 |
+| `mirrorToOSLog` | `Bool` | Also write each log to OSLog / Console.app | `true` |
 
 ## SwiftUI Integration
 
@@ -283,32 +346,36 @@ LogR provides a comprehensive SwiftUI module (`LogrUI`) with a powerful log view
 import SwiftUI
 import LogrUI
 
-struct ContentView: View {
-  @State private var logger = try! LogR(storage: SQLiteStorage())
-  
+struct LogsView: View {
     var body: some View {
         NavigationStack {
-            LogrUIView()
+            LogViewer()
         }
-        .logRService(logger)
     }
 }
 ```
 
+The service is injected once at the app root (see [Quick Start](#quick-start)); `LogViewer`
+reads it from the `\.logService` environment. `LogViewer` has no `NavigationStack` of its
+own — always host it in one.
+
 ### Log Viewer Features
 
 - **Real-time Updates**: Automatically displays new logs as they arrive
-- **Advanced Filtering**: Filter by log levels, categories
-- **Search**: Full-text search across messages, categories, and subsystems
-- **Export**: Export logs in JSON, CSV, or plain text formats
+- **Advanced Filtering**: Filter by log levels and categories; group by time (relative / by date / by hour)
+- **Search**: Full-text search across messages and category names (300 ms debounce)
+- **Statistics**: Level/category breakdowns and hourly charts (`LogStatisticsView`, also in the menu)
+- **Export**: Share or save logs in JSON, CSV, or plain text formats
 - **AI Analysis** (iOS 26+): Privacy issue scanning and issue summarization
+- **Expand/Collapse**: Toggle detailed rows (file, function, line)
+- **Configurable**: `LogViewer(functionalityFilter: [.sharing])` hides the analyser and statistics entries
 - **Dark Mode Support**: Optimized for both light and dark themes
 
 ### Environment-Based Access
 
 ```swift
 struct MyView: View {
-    @Environment(\.logr) private var logger
+    @Environment(\.logService) private var logger
 
     var body: some View {
         Button("Perform Action") {
@@ -331,17 +398,17 @@ Automatically detect potential privacy issues in your logs:
 ```swift
 if #available(iOS 26.0, macOS 26.0, *) {
     // Create logger with AI analyzer
-    let analyzer = AIAnalyzer()
-    let logger = try LogR(logAnalyser: analyzer)
+    let logger = try LogR(logAnalyser: AIAnalyzer())
 
-    // Scan for privacy issues
-    Task {
+    // Scan for privacy issues (`scanForPrivacyIssues` is @MainActor)
+    Task { @MainActor in
         let result = try await logger.scanForPrivacyIssues()
 
-        print("Privacy Score: \(result.privacyScore)")
+        print(result.summary)
+        print("Critical: \(result.criticalCount), high: \(result.highCount)")
         for warning in result.warnings {
-            print("⚠️ \(warning.message)")
-            print("   Severity: \(warning.severity)")
+            print("⚠️ [\(warning.severity)] \(warning.exposureType) at \(warning.file):\(warning.line)")
+            print("   \(warning.explanation)")
             print("   Recommendation: \(warning.recommendation)")
         }
     }
@@ -354,24 +421,19 @@ Get AI-powered summaries of critical issues:
 
 ```swift
 if #available(iOS 26.0, macOS 26.0, *) {
-    Task {
+    Task { @MainActor in
         let summary = try await logger.summarizeIssues()
 
-        print("Summary: \(summary.summary)")
-        print("\nKey Issues:")
-        for issue in summary.keyIssues {
-            print("- \(issue)")
+        print(summary.executiveSummary)
+        print("Errors: \(summary.totalErrors), warnings: \(summary.totalWarnings), faults: \(summary.totalFaults)")
+
+        for issue in summary.issues {
+            print("- [\(issue.severity)] \(issue.title) (\(issue.file):\(issue.line), ×\(issue.occurrences))")
+            print("  Fix: \(issue.suggestedFix)")
         }
 
-        print("\nRecommendations:")
-        for recommendation in summary.recommendations {
-            print("- \(recommendation)")
-        }
-
-        print("\nAffected Categories:")
-        for category in summary.affectedCategories {
-            print("- \(category)")
-        }
+        print("Patterns: \(summary.patterns)")
+        print("Priority actions: \(summary.priorityActions)")
     }
 }
 ```
@@ -381,11 +443,14 @@ if #available(iOS 26.0, macOS 26.0, *) {
 The LogrUI module automatically integrates AI analysis when available:
 
 ```swift
-// The AI analysis button appears automatically on iOS 26+
+// The "Analyze logs" submenu appears automatically on iOS 26+ when analysis is available
 NavigationStack {
-    LogrUIView()
+    LogViewer()
 }
 ```
+
+Results are also published as `privacyAnalysisResult`, `logIssueSummary` and
+`analysisProgress` (all `@MainActor` observable state).
 
 ## Storage
 
@@ -403,13 +468,13 @@ let logger = try LogR()
 ```swift
 import Logr
 
-// Simple file-based storage
-let storage = FileSystemStorage()
+// Single NDJSON file in Documents (pass fileName: to change it)
+let storage = try FileSystemStorage()
 let logger = try LogR(storage: storage)
 ```
 
 Features:
-- Simple JSON-based storage
+- Append-only newline-delimited JSON (NDJSON) in a single file
 - Good for moderate log volumes
 - Easy to backup and inspect
 - Automatic encryption via crypto service
@@ -420,7 +485,8 @@ Features:
 import Logr
 
 // High-performance SQLite storage
-let storage = SQLiteStorage()
+// <Application Support>/<bundle id>/logs.sqlite; or SQLiteStorage(databasePath:)
+let storage = try SQLiteStorage()
 let logger = try LogR(storage: storage)
 ```
 
@@ -438,13 +504,14 @@ Implement the `LogRPersistence` protocol:
 ```swift
 import Logr
 
-class CloudStorage: LogRPersistence {
+// The protocol is `Sendable`: an actor is the simplest conformer.
+actor CloudStorage: LogRPersistence {
     func store(_ entry: EncryptedLogEntry) async throws {
         // Upload to your cloud service
     }
 
-    func fetchEntries(limit: Int?) async throws -> [EncryptedLogEntry] {
-        // Fetch from your cloud service
+    func fetchEntries() async throws -> [EncryptedLogEntry] {
+        // Fetch from your cloud service, oldest first
     }
 
     func deleteEntries(olderThan date: Date) async throws {
@@ -462,6 +529,9 @@ class CloudStorage: LogRPersistence {
     func count() async throws -> Int {
         // Return entry count
     }
+
+    // Optional: `store(_ entries:)` (the writer hands over batches of up to 50) and
+    // `fetchEntries(limit:)` have default implementations — override them for batching.
 }
 
 let logger = try LogR(storage: CloudStorage())
@@ -474,8 +544,8 @@ LogR is built with privacy and security as first-class concerns.
 ### Encryption
 
 All stored logs are automatically encrypted using:
-- **AES** or **ChaChapoly**: Industry-standard symmetric encryption
-- **Keychain Storage**: Encryption keys stored securely in the Keychain
+- **AES-256-GCM** (default) or **ChaCha20-Poly1305**: Authenticated symmetric encryption with 256-bit keys
+- **Keychain Storage**: Encryption keys stored securely in the Keychain (versioned, rotatable)
 - **Automatic**: No configuration required
 
 ```swift
@@ -484,6 +554,12 @@ let logger = try LogR(storage: SQLiteStorage())
 
 // Logs are encrypted before storage
 logger.info("Sensitive operation completed")
+
+// Pick the cipher explicitly, or rotate the key later
+let crypto = try LoggerCryptoService(encryptionAlgo: .chacha)   // default is .aes256gcm
+let custom = try LogR(storage: SQLiteStorage(), cryptoService: crypto)
+
+try crypto.rotateKey()   // old entries stay readable unless removeOldKeys: true
 ```
 
 ### Custom Crypto Service
@@ -493,20 +569,32 @@ Implement your own encryption:
 ```swift
 import Logr
 
-class MyCustomCrypto: LoggerCryptoServicing {
-    func symmetricEncrypt<T: Encodable>(object: T) throws -> Data {
+struct MyCustomCrypto: LoggerCryptoServicing {   // the protocol is Sendable — use a struct
+    func symmetricEncrypt(object: some Codable & Sendable) throws -> Data {
         // Your encryption logic
     }
 
-    func symmetricDecrypt<T: Decodable>(encryptedData: Data) throws -> T {
+    func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T {
         // Your decryption logic
     }
 }
 
-let logger = LogR(
+// `try` is for SQLiteStorage(); this LogR overload does not throw
+let logger = try LogR(
     storage: SQLiteStorage(),
     cryptoService: MyCustomCrypto()
 )
+```
+
+### Redacting Sensitive Data
+
+Opt-in `String` helpers keep sensitive values out of your messages:
+
+```swift
+logger.info("User logged in: \(email.redactedEmail())", category: .authentication) // j***@example.com
+logger.info("Card: \(cardNumber.maskedCreditCard())", category: .payment)          // ****-****-****-1234
+logger.info("Token: \(token.redacted(keeping: 4, position: .end))", category: .security)
+logger.info("User: \(userID.hashed())", category: .user)                           // truncated SHA-256
 ```
 
 ## Testing & Mocking
@@ -516,11 +604,15 @@ LogR includes a full-featured mock for testing and previews.
 ### SwiftUI Previews
 
 ```swift
+import LogrUI
+
 #Preview {
     NavigationStack {
-        LogrUIView()
+        LogViewer()
     }
-    // MockLogR is automatically used via environment default
+    // Without an injected service the environment default is a no-op logger,
+    // so inject a mock explicitly:
+    .environment(\.logService, MockLogR())
 }
 
 #Preview("Custom Mock") {
@@ -533,18 +625,19 @@ LogR includes a full-featured mock for testing and previews.
 
 ### MockLogR Features
 
-- Full `LogRService` protocol compliance
-- Pre-populated with realistic sample data
-- In-memory storage (no disk I/O)
+- Full `LogRService` protocol compliance (`import LogrUI`)
+- Pre-populated with realistic sample data — 5,000 entries by default; `MockLogR(empty: true)` for none, `GenerationConfig`/`GenerationMode.stream` to customize
+- In-memory storage (no disk I/O, no Keychain)
 - All querying and filtering capabilities
 - Export functionality
-- Perfect for development and testing
+- Inserts are deferred to the main actor — hop once before asserting in tests (see the Testing docs)
 
 ## Advanced Usage
 
 ### Querying Logs
 
 ```swift
+// getLogs is @MainActor — call from a main-actor context.
 // Get logs from the last hour
 let recentErrors = try logger.getLogs(
     levels: [.error, .fault],
@@ -566,22 +659,17 @@ let errors = try logger.getLogs(levels: [.error])
 ### Exporting Logs
 
 ```swift
-// Export as JSON
-if let jsonData = logger.exportLogs(format: .json) {
-    let url = FileManager.default.temporaryDirectory
-        .appendingPathComponent("logs.json")
-    try? jsonData.write(to: url)
-}
+// Export as JSON (async; empty Data when there are no logs)
+let jsonData = try await logger.exportLogs(format: .json)
+let url = FileManager.default.temporaryDirectory
+    .appendingPathComponent("logs.json")
+try jsonData.write(to: url)
 
 // Export as CSV
-if let csvData = logger.exportLogs(format: .csv) {
-    // Share or save CSV
-}
+let csvData = try await logger.exportLogs(format: .csv)
 
-// Export as plain text
-if let textData = logger.exportLogs(format: .txt) {
-    // Human-readable format
-}
+// Export as plain text (human-readable)
+let textData = try await logger.exportLogs(format: .txt)
 ```
 
 ### Manual Cleanup
@@ -593,6 +681,23 @@ try await logger.clearLogs()
 // Flush pending logs to storage
 await logger.flush()
 ```
+
+### Statistics
+
+```swift
+let stats = await logger.logStatistics()   // aggregated off the main actor
+
+print(stats.totalCount, stats.errorRate, stats.averageLogsPerHour)
+for item in stats.topCategories(3) {
+    print(item.category.displayName, item.count)
+}
+```
+
+### Dropped Logs
+
+If the background writer cannot keep up (backlog over 100,000 entries) or storage keeps
+failing, entries are dropped rather than growing memory without bound. The count is
+observable via `logger.droppedLogCount` (`@MainActor`); the in-memory cache is unaffected.
 
 ### Log Verbosity
 
@@ -608,6 +713,9 @@ let config = LogrConfiguration(logVerbosity: .normal)
 // Output: "Button tapped"
 
 let logger = try LogR(configuration: config)
+
+// Disable OSLog mirroring entirely
+let quiet = LogrConfiguration(mirrorToOSLog: false)
 ```
 
 ### Dependency Injection
@@ -617,11 +725,11 @@ LogR is designed for dependency injection:
 ```swift
 // Define your dependencies
 protocol AppDependencies {
-    var logger: LogRService { get }
+    var logger: any LogRService { get }
 }
 
 class ProductionDependencies: AppDependencies {
-    lazy var logger: LogRService = try! LogR(
+    lazy var logger: any LogRService = try! LogR(
         storage: SQLiteStorage(),
         configuration: LogrConfiguration(
             subsystem: "com.myapp.main"
@@ -650,46 +758,58 @@ struct MyApp: App {
 The main protocol defining logging functionality:
 
 ```swift
-@MainActor
 public protocol LogRService: Observable, Sendable {
-    /// Recent logs (in-memory cache)
-    var recentLogs: [LogEntry] { get }
+    /// Recent logs (in-memory cache), newest first
+    @MainActor var recentLogs: Deque<LogEntry> { get }
 
     /// Whether AI analysis is available
-    var canAnalyseLogs: Bool { get }
+    @MainActor var canAnalyseLogs: Bool { get }
 
-    /// Privacy analysis result (iOS 26+)
+    /// Entries the background writer could not persist (default 0)
+    @MainActor var droppedLogCount: Int { get }
+
+    /// AI results and progress (iOS 26+)
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var privacyAnalysisResult: PrivacyAnalysisResult? { get }
-
-    /// Log issue summary (iOS 26+)
+    @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? { get }
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    var logIssueSummary: LogIssueSummary? { get }
+    @MainActor var logIssueSummary: LogIssueSummary? { get }
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @MainActor var analysisProgress: AnalysisProgress? { get }
 
-    // Core logging
-    func log(level: LogLevel, message: String, category: LogCategory,
-             file: String, function: String, line: Int)
-
-    // Convenience methods
-    func debug(_ message: String, category: LogCategory)
-    func info(_ message: String, category: LogCategory)
-    func notice(_ message: String, category: LogCategory)
-    func warning(_ message: String, category: LogCategory)
-    func error(_ message: String, category: LogCategory)
-    func fault(_ message: String, category: LogCategory)
+    // Core logging — nonisolated: callable from any isolation domain, no await
+    nonisolated func log(level: LogLevel, message: @autoclosure () -> String,
+                         category: LogCategory, file: String, function: String,
+                         line: Int, metadata: [String: LogMetadataValue]?)
 
     // Management
-    func exportLogs(format: ExportFormat) -> Data?
+    func exportLogs(format: ExportFormat) async throws -> Data   // empty Data when there are no logs
+    func logStatistics() async -> LogStatistics
     func clearLogs() async throws
     func flush() async
 
     // AI Analysis (iOS 26+)
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult
+    @MainActor @discardableResult func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    func summarizeIssues() async throws -> LogIssueSummary
+    @MainActor @discardableResult func summarizeIssues() async throws -> LogIssueSummary
+}
+
+// Provided by protocol extensions
+extension LogRService {
+    // All six are nonisolated with a lazily-evaluated message.
+    // debug's category defaults to .debug; the others default to .system.
+    func debug(_ message: @autoclosure () -> String, category: LogCategory = .debug,
+               metadata: [String: LogMetadataValue]? = nil)
+    func info(...)   func notice(...)   func warning(...)   func error(...)   func fault(...)
+
+    @MainActor func getLogs(levels: Set<LogLevel>? = nil, categories: Set<LogCategory>? = nil,
+                            subsystems: Set<String>? = nil, from: Date? = nil, to: Date? = nil,
+                            limit: Int? = nil) throws -> [LogEntry]
 }
 ```
+
+Source-location parameters (`file`/`function`/`line`) default to `#file`/`#function`/`#line`
+through the extension overloads.
 
 ### LogEntry
 
@@ -706,6 +826,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable {
     public let file: String
     public let function: String
     public let line: Int
+    public let metadata: [String: LogMetadataValue]?
 }
 ```
 
@@ -725,13 +846,13 @@ public enum LogLevel: String, CaseIterable {
     public var osLogType: OSLogType
     public var displayName: String
     public var priority: Int
-    public var visualQueue: String  // Emoji indicator
+    public var visualCue: String    // Emoji indicator
 }
 ```
 
 ### LogCategory
 
-Comprehensive category system with 47+ predefined categories (see [Categories](#categories) section).
+Comprehensive category system with 49 predefined categories (see [Categories](#categories) section).
 
 ### LogrConfiguration
 
@@ -739,12 +860,15 @@ Configuration options for LogR:
 
 ```swift
 public struct LogrConfiguration: Sendable, Codable {
-    public let maxLogEntries: Int
-    public let maxLogAge: TimeInterval
-    public let enabledLevels: Set<LogLevel>
-    public let subsystem: String
-    public let cleanupInterval: TimeInterval
-    public let logVerbosity: LogVerbosity
+    public let maxLogEntries: Int                               // 10,000
+    public let maxLogAge: TimeInterval                          // 7 days
+    public let enabledLevels: Set<LogLevel>                     // all
+    public let categoryLevelOverrides: [LogCategory: LogLevel]? // nil
+    public let subsystem: String                                // bundle identifier
+    public let cleanupInterval: TimeInterval                    // 1 hour
+    public let logVerbosity: LogVerbosity                       // .verbose
+    public let coalesceWindowMillis: Int                        // 100
+    public let mirrorToOSLog: Bool                              // true
 
     public static let `default`: LogrConfiguration
 }
@@ -759,7 +883,7 @@ LogR is built with a clean, modular architecture:
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                        LogR                             │
-│  @Observable @MainActor                                 │
+│  @Observable (nonisolated logging)                      │
 │  - Manages logging lifecycle                            │
 │  - Coordinates with storage and OSLog                   │
 │  - Maintains in-memory cache (recentLogs)               │
@@ -769,9 +893,9 @@ LogR is built with a clean, modular architecture:
              │    - Public API for logging operations
              │
              ├──→ LogWriterActor
-             │    - Background actor for async storage writes
-             │    - Queues and batches log entries
-             │    - Ensures non-blocking logging
+             │    - AsyncStream consumer: encrypt → batch (50) → write
+             │    - Retries transient failures (linear backoff)
+             │    - Backpressure cap → droppedLogCount
              │
              ├──→ LogRPersistence Protocol
              │    ├── FileSystemStorage
@@ -779,7 +903,7 @@ LogR is built with a clean, modular architecture:
              │    └── Custom implementations
              │
              ├──→ LoggerCryptoServicing Protocol
-             │    └── LoggerCryptoService (AES / ChaChaPoly + Keychain)
+             │    └── LoggerCryptoService (AES-256-GCM / ChaCha20-Poly1305 + Keychain)
              │
              └──→ LogAIAnalyzer Protocol (iOS 26+)
                   └── AIAnalyzer
@@ -795,12 +919,13 @@ LogR is built with a clean, modular architecture:
 4. **Encryption by Default**: All persistent storage is automatically encrypted
 5. **Modular**: Separate `Logr` and `LogrUI` packages
 6. **Swift 6 Ready**: Full sendability and concurrency safety
+7. **Nonisolated Logging**: `log()` appends under a lock and returns — callable from any isolation domain without `await`
 
 ### Thread Safety
 
-- All public APIs are `@MainActor` isolated
-- Background storage operations use dedicated actor
-- Encryption happens off main thread
+- Logging (`init`, `log`, `debug`…`fault`) is `nonisolated`; the cache is a lock-protected `Deque`, so a read right after a write sees the entry from any thread
+- SwiftUI-facing state (`recentLogs` via `LogRService`, `droppedLogCount`, `canAnalyseLogs`, AI results) is `@MainActor`, with change notifications coalesced onto the main actor
+- Persistence and encryption run on the dedicated `LogWriterActor`
 - OSLog calls are thread-safe by design
 
 ## Contributing
@@ -827,5 +952,6 @@ LogR is released under the MIT License. See [LICENSE](https://spdx.org/licenses/
 Built with:
 - [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) - Keychain wrapper
 - [SQLiteData](https://github.com/pointfreeco/sqlite-data) - SQLite Data models
+- [swift-collections](https://github.com/apple/swift-collections) - Deque for the log cache
 
 ---

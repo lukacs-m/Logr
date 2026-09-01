@@ -27,11 +27,13 @@ import Foundation
 ///
 /// ```swift
 /// import Logr
+/// import LogrUI
 /// import SwiftUI
 ///
 /// @main
 /// struct MyApp: App {
-///     let logger = LogR()
+///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
+///     let logger = try! LogR()
 ///
 ///     var body: some Scene {
 ///         WindowGroup {
@@ -42,7 +44,7 @@ import Foundation
 /// }
 ///
 /// struct ContentView: View {
-///     @Environment(\.logr) private var logger
+///     @Environment(\.logService) private var logger
 ///
 ///     var body: some View {
 ///         Button("Test") {
@@ -81,7 +83,7 @@ import Foundation
 public protocol LogRService: Observable, Sendable {
     /// Recent logs maintained in memory for quick access.
     ///
-    /// This array contains the most recent log entries, up to the configured `maxLogEntries` limit.
+    /// This deque holds the most recent log entries (newest first), up to the configured `maxLogEntries` limit.
     /// The logs are automatically updated as new entries are added and old entries are cleaned up.
     ///
     /// - Note: This is an in-memory cache. For persistent storage, configure a storage backend.
@@ -104,7 +106,7 @@ public protocol LogRService: Observable, Sendable {
     /// The most recent privacy analysis result (iOS 26+).
     ///
     /// Contains warnings about potential privacy issues detected in logs, along with
-    /// a privacy score and recommendations for improvement.
+    /// a summary and critical/high counts.
     ///
     /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
@@ -113,7 +115,7 @@ public protocol LogRService: Observable, Sendable {
     /// The most recent AI-generated issue summary (iOS 26+).
     ///
     /// Provides an intelligent summary of critical issues found in logs, including
-    /// key problems, recommendations, and affected categories.
+    /// an executive summary, individual issues, patterns and priority actions.
     ///
     /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
@@ -199,7 +201,7 @@ public protocol LogRService: Observable, Sendable {
     /// Analyzes recent logs to detect potential privacy violations, sensitive data exposure,
     /// and compliance issues. Returns a detailed analysis with warnings and recommendations.
     ///
-    /// - Returns: A `PrivacyAnalysisResult` containing warnings, privacy score, and recommendations.
+    /// - Returns: A `PrivacyAnalysisResult` containing warnings, a summary and critical/high counts.
     /// - Throws: `AIAnalyzerError` if AI analysis is unavailable or fails.
     ///
     /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
@@ -207,11 +209,11 @@ public protocol LogRService: Observable, Sendable {
     /// ## Example
     /// ```swift
     /// if #available(iOS 26.0, *) {
-    ///     Task {
+    ///     Task { @MainActor in
     ///         let result = try await logger.scanForPrivacyIssues()
-    ///         print("Privacy Score: \(result.privacyScore)")
+    ///         print(result.summary)
     ///         for warning in result.warnings {
-    ///             print("⚠️ \(warning.message)")
+    ///             print("⚠️ [\(warning.severity)] \(warning.exposureType): \(warning.recommendation)")
     ///         }
     ///     }
     /// }
@@ -224,7 +226,7 @@ public protocol LogRService: Observable, Sendable {
     /// Uses AI to analyze error and warning logs, identify patterns, and provide
     /// actionable recommendations for addressing issues.
     ///
-    /// - Returns: A `LogIssueSummary` with key issues, recommendations, and affected categories.
+    /// - Returns: A `LogIssueSummary` with an executive summary, issues, patterns and priority actions.
     /// - Throws: `AIAnalyzerError` if AI analysis is unavailable or fails.
     ///
     /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
@@ -232,11 +234,11 @@ public protocol LogRService: Observable, Sendable {
     /// ## Example
     /// ```swift
     /// if #available(iOS 26.0, *) {
-    ///     Task {
+    ///     Task { @MainActor in
     ///         let summary = try await logger.summarizeIssues()
-    ///         print("Summary: \(summary.summary)")
-    ///         for issue in summary.keyIssues {
-    ///             print("- \(issue)")
+    ///         print(summary.executiveSummary)
+    ///         for issue in summary.issues {
+    ///             print("- [\(issue.severity)] \(issue.title)")
     ///         }
     ///     }
     /// }

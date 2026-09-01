@@ -105,7 +105,8 @@ public struct KeyVersion: Codable, Sendable, Hashable {
 /// Protocol for encrypting and decrypting log entries.
 ///
 /// `LoggerCryptoServicing` defines the interface for secure log encryption.
-/// The default implementation uses ChaCha20-Poly1305 encryption with keys stored
+/// The default implementation, ``LoggerCryptoService``, uses AES-256-GCM by default
+/// (ChaCha20-Poly1305 selectable via `encryptionAlgo: .chacha`) with keys stored
 /// in the Keychain.
 ///
 /// ## Overview
@@ -120,19 +121,20 @@ public struct KeyVersion: Codable, Sendable, Hashable {
 /// ## Example Custom Implementation
 ///
 /// ```swift
-/// class MyCustomCrypto: LoggerCryptoServicing {
-///     func symmetricEncrypt<T: Codable>(object: T) throws -> Data {
+/// struct MyCustomCrypto: LoggerCryptoServicing {   // Sendable — use a struct
+///     func symmetricEncrypt(object: some Codable & Sendable) throws -> Data {
 ///         // Your custom encryption
 ///         return encryptedData
 ///     }
 ///
-///     func symmetricDecrypt<T: Codable>(encryptedData: Data) throws -> T {
+///     func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T {
 ///         // Your custom decryption
 ///         return decryptedObject
 ///     }
 /// }
 ///
-/// let logger = LogR(
+/// // `try` is for SQLiteStorage(); this LogR overload does not throw
+/// let logger = try LogR(
 ///     storage: SQLiteStorage(),
 ///     cryptoService: MyCustomCrypto()
 /// )
@@ -146,7 +148,8 @@ public struct KeyVersion: Codable, Sendable, Hashable {
 public protocol LoggerCryptoServicing: Sendable {
     /// Encrypts a codable object for secure storage.
     ///
-    /// The object is first encoded to JSON, then encrypted using ChaCha20-Poly1305.
+    /// The object is first encoded to JSON, then encrypted with the configured algorithm
+    /// (AES-256-GCM by default).
     /// The result includes a versioned envelope for key rotation support.
     ///
     /// - Parameter object: The object to encrypt.

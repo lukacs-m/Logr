@@ -21,12 +21,19 @@ All logs stored persistently are automatically encrypted using industry-standard
 
 ### Encryption Algorithm
 
-**ChaCha20-Poly1305**
+**AES-256-GCM** (default)
 - Modern authenticated encryption
-- Fast on mobile devices
+- Hardware-accelerated on Apple silicon
 - 256-bit keys
-- Authenticated with Poly1305 MAC
-- Resistant to timing attacks
+
+**ChaCha20-Poly1305** (optional)
+- Selectable with `try LoggerCryptoService(encryptionAlgo: .chacha)`
+- The envelope records which algorithm was used; logs written before 1.3 (no algorithm field) decode as ChaCha20-Poly1305
+
+```swift
+let crypto = try LoggerCryptoService(encryptionAlgo: .chacha)
+let logger = try LogR(storage: SQLiteStorage(), cryptoService: crypto)
+```
 
 ### Encryption Flow
 
@@ -35,7 +42,7 @@ LogEntry (plain text)
     ↓
 JSON Encoding
     ↓
-ChaCha20-Poly1305 Encryption
+AES-256-GCM / ChaCha20-Poly1305 Encryption
     ↓
 Versioned Envelope
     ↓
@@ -62,7 +69,7 @@ logger.info("User action") // Automatically encrypted before storage
 
 1. **Log Created**: Plain text `LogEntry` created
 2. **JSON Encoding**: Entry encoded to JSON
-3. **Encryption**: Data encrypted with ChaCha20-Poly1305
+3. **Encryption**: Data encrypted with the configured algorithm (AES-256-GCM by default)
 4. **Envelope**: Wrapped with key version for rotation support
 5. **Storage**: `EncryptedLogEntry` stored in database/filesystem
 6. **Decryption**: Automatic when logs are fetched
@@ -100,8 +107,9 @@ Each encrypted log includes the key version used:
 
 ```swift
 private struct CryptoEnvelope: Codable {
-    let version: Int  // Key version
-    let data: Data    // Encrypted payload
+    let version: Int          // Key version
+    let algorithm: CryptoAlgo // .aes256gcm or .chacha; absent in pre-1.3 envelopes → .chacha
+    let data: Data            // Encrypted payload
 }
 ```
 
@@ -115,7 +123,9 @@ private struct CryptoEnvelope: Codable {
 Rotate encryption keys manually:
 
 ```swift
-let cryptoService = LoggerCryptoService()
+// Keep a reference to the service you pass to LogR, and rotate that instance
+let cryptoService = try LoggerCryptoService()
+let logger = LogR(storage: try SQLiteStorage(), cryptoService: cryptoService)
 
 // Rotate to a new key
 try cryptoService.rotateKey(removeOldKeys: false)
@@ -134,42 +144,38 @@ try cryptoService.rotateKey(removeOldKeys: true)
 
 ## Custom Encryption
 
-Implement your own encryption by conforming to `LoggerCryptoServicing`:
+Implement your own encryption by conforming to `LoggerCryptoServicing`. The built-in
+`LoggerCryptoService` already supports AES-256-GCM (default) and ChaCha20-Poly1305, key
+versioning and rotation — write a custom service only when you need a different key
+source or algorithm.
 
 ```swift
 import CryptoKit
 
-class AESCryptoService: LoggerCryptoServicing {
+struct AESCryptoService: LoggerCryptoServicing {   // the protocol is Sendable — use a struct
     private let key: SymmetricKey
 
-    init() {
-        // Load or generate AES key
-        self.key = SymmetricKey(size: .bits256)
+    init(key: SymmetricKey) {
+        // Load the key from your own store; a random key per launch cannot decrypt old logs
+        self.key = key
     }
 
-    func symmetricEncrypt<T: Codable>(object: T) throws -> Data {
-        let encoder = JSONEncoder()
-        let plaintext = try encoder.encode(object)
-
-        // AES-GCM encryption
+    func symmetricEncrypt(object: some Codable & Sendable) throws -> Data {
+        let plaintext = try JSONEncoder().encode(object)
         let sealedBox = try AES.GCM.seal(plaintext, using: key)
         return sealedBox.combined ?? Data()
     }
 
-    func symmetricDecrypt<T: Codable>(encryptedData: Data) throws -> T {
-        let decoder = JSONDecoder()
-
-        // AES-GCM decryption
+    func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T {
         let sealedBox = try AES.GCM.SealedBox(combined: encryptedData)
         let plaintext = try AES.GCM.open(sealedBox, using: key)
-
-        return try decoder.decode(T.self, from: plaintext)
+        return try JSONDecoder().decode(T.self, from: plaintext)
     }
 }
 
-// Use custom encryption
-let customCrypto = AESCryptoService()
-let logger = LogR(
+// Use custom encryption (`try` is for SQLiteStorage(); this LogR overload does not throw)
+let customCrypto = AESCryptoService(key: myKey)
+let logger = try LogR(
     storage: SQLiteStorage(),
     cryptoService: customCrypto
 )
@@ -209,16 +215,16 @@ logger.info("User logged in: \(userEmail)", category: .authentication)
 // ✅ Good - logs user ID only
 logger.info("User logged in: \(userID)", category: .authentication)
 
-// ✅ Good - redacts email
-let redactedEmail = userEmail.split(separator: "@").first.map { "\($0)@***" } ?? "***"
-logger.info("User logged in: \(redactedEmail)", category: .authentication)
+// ✅ Good - built-in redaction helper
+logger.info("User logged in: \(userEmail.redactedEmail())", category: .authentication) // j***@example.com
 
-// ✅ Good - hashes sensitive data
-let hashedEmail = SHA256.hash(data: Data(userEmail.utf8))
-    .map { String(format: "%02x", $0) }
-    .joined()
-logger.info("User logged in: hash=\(hashedEmail)", category: .authentication)
+// ✅ Good - built-in hashing helper (truncated SHA-256; .sha256 / .md5 available)
+logger.info("User logged in: hash=\(userEmail.hashed())", category: .authentication)
 ```
+
+Logr ships opt-in `String` helpers for the common cases: `redactedEmail(showDomain:)`,
+`maskedCreditCard(visibleDigits:)`, `redactedPhone(visibleDigits:)`, `redactedIP()`,
+`redactedSSN()`, `redacted(keeping:position:)`, `hashed(algorithm:)` and `fullyRedacted()`.
 
 ### Structured Logging for Privacy
 
@@ -250,7 +256,13 @@ logger.info("Payment processed: \(paymentLog)", category: .payment)
 
 ### Logr's Approach
 
-Logr logs everything to OSLog as-is, relying on iOS's default privacy behavior for OSLog output in Console.app. However, **persistent storage is always encrypted**.
+Logr passes the message to `os.Logger` through string interpolation without a `privacy:`
+argument, so the unified logging system applies its default: the interpolated message is
+rendered as `<private>` in Console.app for release builds unless private-data logging is
+enabled. Nothing in Logr redacts content itself — use the helpers above before logging.
+The in-memory `recentLogs` cache and `LogViewer` show plain text, and **persistent storage
+is always encrypted**. Set `LogrConfiguration(mirrorToOSLog: false)` to keep logs out of
+OSLog entirely.
 
 ```swift
 logger.info("Sensitive data: \(data)")
@@ -263,15 +275,15 @@ logger.info("Sensitive data: \(data)")
 Use AI to detect privacy issues in your logs:
 
 ```swift
-if #available(iOS 26.0, *) {
-    Task {
+if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *) {
+    Task { @MainActor in
         let result = try await logger.scanForPrivacyIssues()
 
-        if result.privacyScore < 70 {
-            print("⚠️ Low privacy score: \(result.privacyScore)")
+        if !result.isEmpty {
+            print("⚠️ \(result.summary)")
 
             for warning in result.warnings {
-                print("  - \(warning.message)")
+                print("  - [\(warning.severity)] \(warning.exposureType) at \(warning.file):\(warning.line)")
                 print("    Recommendation: \(warning.recommendation)")
             }
         }
@@ -296,9 +308,8 @@ try await logger.clearLogs()
 **Data Portability:**
 ```swift
 // Export logs in standard format
-if let jsonData = logger.exportLogs(format: .json) {
-    // Provide to user
-}
+let jsonData = try await logger.exportLogs(format: .json)
+// Provide to user
 ```
 
 **Privacy by Design:**
@@ -314,7 +325,7 @@ Logr supports audit requirements:
 **Audit Trail:**
 ```swift
 // All logs are timestamped and immutable
-let logs = logger.recentLogs.sorted { $0.timestamp < $1.timestamp }
+let logs = logger.recentLogs.sorted { $0.timestamp < $1.timestamp }   // recentLogs is newest first
 ```
 
 **Access Control:**
@@ -400,14 +411,15 @@ Review logs for privacy issues:
 
 ```swift
 #if DEBUG
+@MainActor
 func auditLogs() async {
-    if #available(iOS 26.0, *) {
+    if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *) {
         let result = try? await logger.scanForPrivacyIssues()
 
-        if let result, result.privacyScore < 80 {
-            print("⚠️ Privacy audit failed: \(result.privacyScore)")
+        if let result, result.criticalCount > 0 || result.highCount > 0 {
+            print("⚠️ Privacy audit failed: \(result.summary)")
             for warning in result.warnings {
-                print("  - \(warning.message)")
+                print("  - [\(warning.severity)] \(warning.exposureType): \(warning.explanation)")
             }
         }
     }
@@ -481,10 +493,7 @@ If you suspect a security incident:
 ### 1. Assess the Breach
 
 ```swift
-// Check if keys may be compromised
-let cryptoService = LoggerCryptoService()
-
-// Rotate keys immediately
+// Rotate the keys of the crypto service you passed to LogR
 try cryptoService.rotateKey(removeOldKeys: false)
 ```
 
@@ -533,10 +542,10 @@ if #available(iOS 26.0, *) {
 
 Logr provides:
 
-✅ **Strong Encryption** - ChaCha20-Poly1305 with 256-bit keys
+✅ **Strong Encryption** - AES-256-GCM (default) or ChaCha20-Poly1305, 256-bit keys
 ✅ **Secure Key Management** - Keychain storage, versioned keys
 ✅ **Privacy by Design** - Automatic encryption, minimal retention
-✅ **Compliance Ready** - Supports GDPR, HIPAA, SOC 2
+✅ **Compliance Ready** - Supports GDPR, SOC 2
 ✅ **AI-Powered Auditing** - Detect privacy issues automatically (iOS 26+)
 
 Follow privacy-aware logging practices and use Logr's encryption features to protect your users' data.

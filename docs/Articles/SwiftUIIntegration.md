@@ -24,21 +24,33 @@ Use the `.logRService(_:)` modifier to inject the logger into the environment:
 ```swift
 import SwiftUI
 import Logr
+import LogrUI
 
 @main
 struct MyApp: App {
-    let logger = try! LogR(storage: SQLiteStorage())
+    @State private var logger: LogR
+
+    init() {
+        do {
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .logRService(logger)
+                .logRService(logger)   // equivalent to .environment(\.logService, logger)
         }
     }
 }
 ```
 
-The logr service should always be set in the environment previously before calling any of the logging display views.
+The logr service should always be set in the environment before any of the logging display
+views are shown. Without it the environment default is a no-op logger: views render their
+empty state, logging calls are discarded and `canAnalyseLogs` is `false` — nothing crashes,
+but nothing is recorded.
 
 ### Accessing the Logger
 
@@ -79,14 +91,29 @@ struct LogsView: View {
 }
 ```
 
+### Choosing Menu Groups
 
+`LogViewer` has three optional menu groups — `.analyser`, `.sharing` and `.statistics`
+(all enabled by default). Pass a filter to hide some of them:
+
+```swift
+LogViewer(functionalityFilter: [.sharing])   // no AI analysis, no statistics
+```
 
 ### In a Tab View
 
 ```swift
 @main
 struct MyApp: App {
-    let logger = try! LogR(storage: SQLiteStorage())
+    @State private var logger: LogR
+
+    init() {
+        do {
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -132,6 +159,9 @@ struct SettingsView: View {
 }
 ```
 
+`SettingsView` must itself be presented inside a `NavigationStack` — `LogViewer` relies on
+the host stack for its title and toolbar.
+
 ## LogViewer Features
 
 ### Filtering
@@ -139,9 +169,10 @@ struct SettingsView: View {
 The viewer includes comprehensive filtering:
 
 - **By Level**: Filter by debug, info, notice, warning, error, fault
-- **By Category**: Filter by specific categories (network, ui, etc.)
+- **By Category**: Filter by the categories present in the cache (Select All / Clear All)
 - **By Search**: Full-text search across messages and categories
-- **By Date**: Automatic chronological ordering
+- **Time Grouping**: None / Relative (Today, Yesterday…) / By Date / By Hour — the list becomes sectioned
+- **Logs summary**: Toggle an inline statistics panel at the top of the list
 
 **Usage:**
 1. Tap the "Filters" button in the toolbar
@@ -157,10 +188,9 @@ Full-text search across all logs:
 LogViewer() // Includes search bar automatically
 ```
 
-Search matches:
+Search matches (debounced by 300 ms):
 - Log messages
-- Category names
-- Category display names
+- Category raw names (e.g. `network`, `feature-flags`)
 
 ### Export & Sharing
 
@@ -169,7 +199,7 @@ Export logs in multiple formats:
 **From the Menu:**
 1. Tap the ellipsis (•••) button
 2. Select "Export & Share"
-3. Choose format:
+3. Share a format via the system share sheet, or pick **Export to Files** (saves into the app's Documents directory):
    - **JSON**: Structured data for processing
    - **CSV**: Spreadsheet-compatible
    - **TXT**: Human-readable text
@@ -178,24 +208,23 @@ Export logs in multiple formats:
 ```swift
 @Environment(\.logService) private var logger
 
-func exportLogs() {
-    if let jsonData = logger.exportLogs(format: .json) {
-        // Save or share JSON data
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("logs.json")
-        try? jsonData.write(to: url)
-    }
+func exportLogs() async throws {
+    let jsonData = try await logger.exportLogs(format: .json)   // empty when there are no logs
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("logs.json")
+    try jsonData.write(to: url)
 }
 ```
 
 ### AI Analysis (iOS 26+)
 
-When running on iOS 26+, the viewer shows AI analysis options:
+When running on iOS 26+, the viewer shows AI analysis options in the **Analyze logs** submenu:
 
 - **Scan for Privacy Issues**: Detects sensitive data in logs
 - **Summarize Issues**: Identifies patterns and critical errors
 
-These options appear automatically in the menu when available.
+They appear automatically when `canAnalyseLogs` is true; results open in dedicated sheets
+with a ReScan button.
 
 ### Expand/Collapse
 
@@ -214,6 +243,35 @@ Clear all logs with confirmation:
 2. Select "Clear All Logs"
 3. Confirm the action
 
+### Statistics
+
+**Logs statistics** in the menu opens `LogStatisticsView` (totals, error/warning rates,
+level breakdown, hourly chart, top categories). Both statistics views can also be embedded
+directly:
+
+```swift
+NavigationStack { LogStatisticsView() }        // reads the service from the environment
+
+CompactLogStatisticsView(statistics: stats)    // inline card; pass your own LogStatistics
+```
+
+```swift
+@State private var stats = LogStatistics.empty
+
+.task(id: logger.recentLogs.count) {
+    stats = await logger.logStatistics()       // aggregated off the main actor
+}
+```
+
+### Surfacing Dropped Logs
+
+```swift
+if logger.droppedLogCount > 0 {
+    Label("\(logger.droppedLogCount) log entries could not be persisted",
+          systemImage: "exclamationmark.triangle")
+}
+```
+
 ## Custom Log Views
 
 ### Simple Log List
@@ -228,7 +286,7 @@ struct SimpleLogView: View {
         List(logger.recentLogs) { entry in
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(entry.level.visualQueue)
+                    Text(entry.level.visualCue)
                     Text(entry.message)
                         .font(.body)
                 }
@@ -282,6 +340,39 @@ struct ErrorLogView: View {
 }
 ```
 
+### A Reusable Row
+
+`LogEntryRow` used inside `LogViewer` is internal — build your own:
+
+```swift
+import Logr
+import LogrUI   // LogLevel.tint
+
+struct MyLogRow: View {
+    let entry: LogEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(entry.level.displayName.uppercased())
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 6)
+                    .background(entry.level.tint, in: Capsule())
+                    .foregroundStyle(.white)
+                Text(entry.category.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(entry.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Text(entry.message)
+        }
+    }
+}
+```
+
 ### Category-Specific View
 
 Show logs for a specific category:
@@ -298,7 +389,7 @@ struct NetworkLogView: View {
 
     var body: some View {
         List(networkLogs) { entry in
-            LogEntryRow(entry: entry)
+            MyLogRow(entry: entry)
         }
         .navigationTitle("Network Logs")
     }
@@ -319,16 +410,16 @@ struct LogStreamView: View {
             ScrollView {
                 LazyVStack {
                     ForEach(logger.recentLogs) { entry in
-                        LogEntryRow(entry: entry)
+                        MyLogRow(entry: entry)
                             .id(entry.id)
                     }
                 }
             }
             .onChange(of: logger.recentLogs.count) { _, _ in
-                // Auto-scroll to latest log
+                // recentLogs is newest first, so the latest entry is .first
                 if let lastLog = logger.recentLogs.first {
                     withAnimation {
-                        proxy.scrollTo(lastLog.id, anchor: .bottom)
+                        proxy.scrollTo(lastLog.id, anchor: .top)
                     }
                 }
             }
@@ -340,27 +431,30 @@ struct LogStreamView: View {
 
 ## Observable Updates
 
-Logr uses `@Observable` for automatic SwiftUI updates:
+Logr uses `@Observable` for automatic SwiftUI updates. `LogR` itself is not `@MainActor` —
+logging appends to a lock-protected cache on the caller's thread, and only the change
+notification hops to the main actor:
 
 ```swift
 @Observable
-@MainActor
-public final class LogR: LogRService {
-    public private(set) var recentLogs: [LogEntry] = []
+public final class LogR: LogRService {                   // not @MainActor
+    public nonisolated var recentLogs: Deque<LogEntry>   // lock-backed snapshot, newest first
 
-    // Adding a log automatically updates SwiftUI
-    public func log(...) {
-        let entry = LogEntry(...)
-        recentLogs.insert(entry, at: 0) // SwiftUI updates automatically
+    public nonisolated func log(...) {
+        // 1. mirror to OSLog (when `mirrorToOSLog`)
+        // 2. prepend to the lock-protected cache — readers see it immediately, from any thread
+        // 3. schedule at most ONE observation notification per `coalesceWindowMillis`
+        //    (default 100 ms) on the main actor
+        // 4. hand the entry to the background writer (no per-log Task)
     }
 }
 ```
 
 **Benefits:**
 - No need for `@Published` or `ObservableObject`
-- No manual `objectWillChange.send()` calls
-- Efficient, fine-grained updates
-- Automatic view invalidation
+- Log from any thread without `await`; reads are always current
+- SwiftUI redraws at most ~10×/s during a burst — tune with `coalesceWindowMillis` (`0` = notify on every log)
+- `droppedLogCount` is observable too
 
 ### Reactive Views
 
@@ -396,11 +490,13 @@ struct TabViewWithBadge: View {
                     Label("Home", systemImage: "house")
                 }
 
-            LogViewer()
-                .tabItem {
-                    Label("Logs", systemImage: "list.bullet")
-                }
-                .badge(errorCount > 0 ? errorCount : nil)
+            NavigationStack {
+                LogViewer()
+            }
+            .tabItem {
+                Label("Logs", systemImage: "list.bullet")
+            }
+            .badge(errorCount > 0 ? errorCount : nil)
         }
     }
 }
@@ -508,9 +604,9 @@ Use `MockLogR` for previews:
 }
 
 #Preview("Custom Mock") {
-    let mock = MockLogR()
+    let mock = MockLogR(empty: true)
 
-    // Add custom test logs
+    // Add custom test logs (inserts land asynchronously on the main actor — fine for previews)
     mock.info("Test message", category: .network)
     mock.error("Test error", category: .database)
 
@@ -528,8 +624,16 @@ Create one logger instance per app:
 ```swift
 @main
 struct MyApp: App {
-    // Single instance
-    let logger = try! LogR(storage: SQLiteStorage())
+    // Single instance, created once in init()
+    @State private var logger: LogR
+
+    init() {
+        do {
+            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
+        } catch {
+            fatalError("Could not initialize LogR: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {

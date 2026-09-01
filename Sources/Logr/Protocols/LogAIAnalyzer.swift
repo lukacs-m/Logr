@@ -28,7 +28,8 @@ import Foundation
 /// AI analysis features require:
 /// - iOS 26.0+ or macOS 26.0+ or tvOS 26.0+ or watchOS 12.0+
 /// - Apple Intelligence enabled on the device
-/// - Network connectivity for initial model download (cached afterward)
+/// - The on-device Foundation model ready (`SystemLanguageModel.default.isAvailable`);
+///   Logr itself makes no network requests
 ///
 /// ## Example Usage
 ///
@@ -37,15 +38,17 @@ import Foundation
 ///     let analyzer = AIAnalyzer()
 ///     let logger = try LogR(logAnalyser: analyzer)
 ///
-///     // Check availability
-///     if logger.canAnalyseLogs {
-///         // Scan for privacy issues
-///         let privacyResult = try await logger.scanForPrivacyIssues()
-///         print("Privacy Score: \(privacyResult.privacyScore)")
+///     // Check availability (`canAnalyseLogs` and the scans are @MainActor)
+///     Task { @MainActor in
+///         if logger.canAnalyseLogs {
+///             // Scan for privacy issues
+///             let privacyResult = try await logger.scanForPrivacyIssues()
+///             print(privacyResult.summary)
 ///
-///         // Summarize issues
-///         let summary = try await logger.summarizeIssues()
-///         print("Summary: \(summary.summary)")
+///             // Summarize issues
+///             let summary = try await logger.summarizeIssues()
+///             print(summary.executiveSummary)
+///         }
 ///     }
 /// }
 /// ```
@@ -56,15 +59,27 @@ import Foundation
 ///
 /// ```swift
 /// @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-/// class CustomAIAnalyzer: LogAIAnalyzer {
+/// struct CustomAIAnalyzer: LogAIAnalyzer {   // Sendable — use a struct or an actor
 ///     var isAvailable: Bool { true }
 ///
 ///     func scanForPrivacyIssues(logs: [LogEntry]) async throws -> PrivacyAnalysisResult {
+///         try await scanForPrivacyIssues(logs: logs, onProgress: { _ in })
+///     }
+///
+///     func scanForPrivacyIssues(logs: [LogEntry],
+///                               onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void)
+///         async throws -> PrivacyAnalysisResult {
 ///         // Use your AI service
 ///         return result
 ///     }
 ///
 ///     func summarizeIssues(logs: [LogEntry]) async throws -> LogIssueSummary {
+///         try await summarizeIssues(logs: logs, onProgress: { _ in })
+///     }
+///
+///     func summarizeIssues(logs: [LogEntry],
+///                          onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void)
+///         async throws -> LogIssueSummary {
 ///         // Use your AI service
 ///         return summary
 ///     }
@@ -116,7 +131,7 @@ public protocol LogAIAnalyzer: Sendable {
     /// - Other sensitive data patterns
     ///
     /// - Parameter logs: Array of log entries to analyze.
-    /// - Returns: A ``PrivacyAnalysisResult`` with warnings, privacy score, and recommendations.
+    /// - Returns: A ``PrivacyAnalysisResult`` with warnings, a summary and critical/high counts.
     /// - Throws: ``AIAnalyzerError`` if AI is unavailable or analysis fails.
     ///
     /// ## Example
@@ -125,11 +140,11 @@ public protocol LogAIAnalyzer: Sendable {
     /// if #available(iOS 26.0, *) {
     ///     let result = try await logger.scanForPrivacyIssues()
     ///
-    ///     print("Privacy Score: \(result.privacyScore)/100")
-    ///     print("Warnings: \(result.warnings.count)")
+    ///     print(result.summary)
+    ///     print("Critical: \(result.criticalCount), high: \(result.highCount)")
     ///
     ///     for warning in result.warnings {
-    ///         print("⚠️ \(warning.severity): \(warning.message)")
+    ///         print("⚠️ [\(warning.severity)] \(warning.exposureType) at \(warning.file):\(warning.line)")
     ///         print("   Recommendation: \(warning.recommendation)")
     ///     }
     /// }
@@ -145,7 +160,7 @@ public protocol LogAIAnalyzer: Sendable {
     /// - Provide actionable recommendations
     ///
     /// - Parameter logs: Array of log entries to analyze.
-    /// - Returns: A ``LogIssueSummary`` with key issues, recommendations, and affected categories.
+    /// - Returns: A ``LogIssueSummary`` with an executive summary, issues, patterns and priority actions.
     /// - Throws: ``AIAnalyzerError`` if AI is unavailable or analysis fails.
     ///
     /// ## Example
@@ -154,21 +169,21 @@ public protocol LogAIAnalyzer: Sendable {
     /// if #available(iOS 26.0, *) {
     ///     let summary = try await logger.summarizeIssues()
     ///
-    ///     print("Summary: \(summary.summary)")
+    ///     print(summary.executiveSummary)
     ///
-    ///     print("\nKey Issues:")
-    ///     for issue in summary.keyIssues {
-    ///         print("- \(issue)")
+    ///     print("\nIssues:")
+    ///     for issue in summary.issues {
+    ///         print("- [\(issue.severity)] \(issue.title): \(issue.suggestedFix)")
     ///     }
     ///
-    ///     print("\nRecommendations:")
-    ///     for recommendation in summary.recommendations {
-    ///         print("- \(recommendation)")
+    ///     print("\nPatterns:")
+    ///     for pattern in summary.patterns {
+    ///         print("- \(pattern)")
     ///     }
     ///
-    ///     print("\nAffected Areas:")
-    ///     for category in summary.affectedCategories {
-    ///         print("- \(category)")
+    ///     print("\nPriority Actions:")
+    ///     for action in summary.priorityActions {
+    ///         print("- \(action)")
     ///     }
     /// }
     /// ```
@@ -179,7 +194,7 @@ public protocol LogAIAnalyzer: Sendable {
     /// - Parameters:
     ///   - logs: Array of log entries to analyze.
     ///   - onProgress: A closure called with progress updates during analysis.
-    /// - Returns: A ``PrivacyAnalysisResult`` with warnings, privacy score, and recommendations.
+    /// - Returns: A ``PrivacyAnalysisResult`` with warnings, a summary and critical/high counts.
     /// - Throws: ``AIAnalyzerError`` if AI is unavailable or analysis fails.
     func scanForPrivacyIssues(logs: [LogEntry],
                               onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void) async throws
@@ -190,7 +205,7 @@ public protocol LogAIAnalyzer: Sendable {
     /// - Parameters:
     ///   - logs: Array of log entries to analyze.
     ///   - onProgress: A closure called with progress updates during analysis.
-    /// - Returns: A ``LogIssueSummary`` with key issues, recommendations, and affected categories.
+    /// - Returns: A ``LogIssueSummary`` with an executive summary, issues, patterns and priority actions.
     /// - Throws: ``AIAnalyzerError`` if AI is unavailable or analysis fails.
     func summarizeIssues(logs: [LogEntry],
                          onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void) async throws

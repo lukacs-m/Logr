@@ -415,11 +415,11 @@ public final class MockLogR: LogRService, Sendable {
 
 //// MARK: - Usage Examples
 //
-//// Generate 10,000 entries instantly (default config)
+//// Generate 5,000 entries instantly (default config)
 // let mockService = MockLogR(empty: false)
 //
 //// Generate 50,000 entries with custom config
-// let heavyConfig = MockLogR.GenerationConfig(
+// let heavyConfig = GenerationConfig(
 //    totalEntries: 50_000,
 //    timeRange: 604800, // 7 days
 //    levelDistribution: [
@@ -434,6 +434,6 @@ public final class MockLogR: LogRService, Sendable {
 //
 //// Stream 100,000 entries in chunks for simulated real-time updates
 // let streamingService = MockLogR(
-//    config: MockLogR.GenerationConfig(totalEntries: 100_000),
+//    config: GenerationConfig(totalEntries: 100_000),
 //    mode: .stream(chunks: 100, delay: 0.1)
 // )

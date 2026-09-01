@@ -20,7 +20,7 @@ Logr is built with a clean, modular architecture that prioritizes performance, t
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                        LogR                             │
-│  @Observable @MainActor                                 │
+│  @Observable (nonisolated logging)                      │
 │  - Manages logging lifecycle                            │
 │  - Coordinates with storage and OSLog                   │
 │  - Maintains in-memory cache (recentLogs)               │
@@ -31,9 +31,9 @@ Logr is built with a clean, modular architecture that prioritizes performance, t
              │    - Convenience methods (debug, info, etc.)
              │
              ├──→ LogWriterActor
-             │    - Background actor for async storage writes
-             │    - Queues and batches log entries
-             │    - Ensures non-blocking logging
+             │    - AsyncStream consumer: encrypt → batch (50) → write
+             │    - Retries transient failures (linear backoff)
+             │    - Backpressure cap → droppedLogCount
              │
              ├──→ LogRPersistence Protocol
              │    ├── FileSystemStorage
@@ -42,7 +42,7 @@ Logr is built with a clean, modular architecture that prioritizes performance, t
              │
              ├──→ LoggerCryptoServicing Protocol
              │    └── LoggerCryptoService
-             │         - Encryption
+             │         - AES-256-GCM (default) / ChaCha20-Poly1305
              │         - Keychain storage for keys
              │         - Key versioning & rotation
              │
@@ -60,8 +60,9 @@ Logr is built with a clean, modular architecture that prioritizes performance, t
 The main logging class that implements `LogRService`:
 
 - **Decorated with `@Observable`**: Enables reactive SwiftUI updates
-- **`@MainActor` isolated**: All public APIs are main-actor isolated for thread safety
-- **In-memory cache**: Maintains recent logs (up to `maxLogEntries`) for quick access
+- **Nonisolated logging**: `init`, `log()` and the convenience methods run on the caller's thread; only SwiftUI-facing state (`recentLogs` through the protocol, `droppedLogCount`, `canAnalyseLogs`, AI results) is `@MainActor`
+- **In-memory cache**: A `Deque<LogEntry>` (newest first, up to `maxLogEntries`) behind a lock — reads are current from any thread
+- **Coalesced observation**: SwiftUI is notified at most once per `coalesceWindowMillis` (default 100 ms)
 - **Automatic cleanup**: Periodic cleanup based on age and count limits
 
 **Key Responsibilities:**
@@ -73,28 +74,30 @@ The main logging class that implements `LogRService`:
 
 ### LogWriterActor
 
-A background actor that handles all storage operations:
+A background actor that handles encryption and all storage operations. `LogR.log()` hands
+each entry over synchronously (`ingest` — no `await`, no per-log `Task`); entries flow over
+an `AsyncStream` to a single ordered consumer.
 
 ```swift
 actor LogWriterActor {
-    private let storage: LogRPersistence
-    private var pending: [EncryptedLogEntry] = []
-    private var isWritingTask: Task<Void, Never>?
+    // Producer side — nonisolated, synchronous; called from LogR.log() on any thread
+    nonisolated func ingest(_ entry: LogEntry)     // sheds the newest entry past 100,000 pending
+    nonisolated func flush() async                  // resumes once everything queued before it is persisted
+    nonisolated func clearPending() async throws    // drops the backlog, then clears storage, in order
+    nonisolated func shutdown()                     // finishes the stream (called from LogR.deinit)
 
-    func enqueue(_ entry: EncryptedLogEntry) {
-        // Queues entry and starts write task if needed
-    }
-
-    func flush() async {
-        // Writes all pending entries
-    }
+    // Consumer side — one `for await` loop over the stream:
+    //   encrypt → batch of 50 → storage.store(batch)
+    //   retry a failed batch ×3 with linear backoff, then drop it
+    //   report every drop (shed, encryption failure, exhausted retries) → LogR.droppedLogCount
 }
 ```
 
 **Key Responsibilities:**
-- Queueing log entries for write
-- Writing to storage without blocking main thread
-- Handling storage errors gracefully
+- Encrypting entries off the main actor
+- Batching writes (50 per batch) and retrying transient storage failures
+- Bounding memory under backpressure and accounting every dropped entry
+- Ordering `flush()` / `clearLogs()` against in-flight writes (control signals are never dropped)
 
 ### Storage Layer
 
@@ -107,7 +110,9 @@ Defines the contract for persistent storage:
 ```swift
 public protocol LogRPersistence: Sendable {
     func store(_ entry: EncryptedLogEntry) async throws
-    func fetchEntries() async throws -> [EncryptedLogEntry]
+    func store(_ entries: [EncryptedLogEntry]) async throws              // default: loops store(_:)
+    func fetchEntries() async throws -> [EncryptedLogEntry]              // oldest first
+    func fetchEntries(limit: Int?) async throws -> [EncryptedLogEntry]   // default: fetch all, keep newest
     func deleteEntries(olderThan date: Date) async throws
     func deleteEntries(keepingLatest count: Int) async throws
     func clear() async throws
@@ -118,10 +123,10 @@ public protocol LogRPersistence: Sendable {
 #### Built-in Implementations
 
 **FileSystemStorage:**
-- Simple JSON-based file storage
-- One file per log entry
-- Good for moderate volumes
-- Easy to inspect and backup
+- Single append-only NDJSON file (`Documents/logr_entries.json`)
+- Appends are cheap; cleanup and `clear()` rewrite the file
+- Legacy JSON-array files migrate automatically on open
+- Good for moderate volumes; implemented as an `actor`
 
 **SQLiteStorage:**
 - High-performance SQLite database
@@ -135,11 +140,11 @@ All logs are encrypted before storage:
 
 #### LoggerCryptoService
 
-- **Algorithm**: ChaCha20-Poly1305 (fast, modern stream cipher)
+- **Algorithm**: AES-256-GCM by default; ChaCha20-Poly1305 via `LoggerCryptoService(encryptionAlgo: .chacha)`
 - **Key Size**: 256-bit keys
 - **Key Storage**: Secure Keychain (`.whenUnlockedThisDeviceOnly`)
 - **Key Versioning**: Supports key rotation without data loss
-- **Envelope Format**: Includes version for forward compatibility
+- **Envelope Format**: Records key version and algorithm (envelopes without an algorithm, pre-1.3, decode as ChaCha20-Poly1305)
 
 **Encryption Flow:**
 ```
@@ -171,23 +176,21 @@ Optional AI-powered analysis using Apple Intelligence:
    logger.info("Message", category: .network)
    ```
 
-2. **LogR processes on main actor:**
-   - Checks if level is enabled
+2. **`log()` runs synchronously on the caller's thread (`nonisolated`):**
+   - Checks `enabledLevels` / `categoryLevelOverrides` (the `@autoclosure` message is never evaluated when filtered out)
    - Creates `LogEntry` with metadata
-   - Adds to in-memory cache
-   - Logs to OSLog
+   - Mirrors to OSLog when `mirrorToOSLog` is enabled
+   - Prepends to the lock-protected cache and trims to `maxLogEntries`
+   - Schedules a coalesced main-actor observation notification (`coalesceWindowMillis`)
 
-3. **Background encryption & storage:**
-   - `Task` created with crypto service reference
-   - Entry encrypted with `LoggerCryptoService`
-   - `EncryptedLogEntry` created
-   - Enqueued to `LogWriterActor`
+3. **Hand-off to the writer:**
+   - `writer.ingest(entry)` yields the plaintext entry to the writer's `AsyncStream` — no per-log `Task`
+   - Past 100,000 pending entries the newest is shed and counted into `droppedLogCount`
 
-4. **Actor writes to storage:**
-   - Entry added to pending queue
-   - Background task started (if not running)
-   - All pending entries written
-   - Storage errors logged
+4. **Writer consumer (background actor):**
+   - Encrypts with `LoggerCryptoService`
+   - Accumulates a batch of 50 and calls `storage.store(_ entries:)`
+   - Retries a failed batch ×3 with linear backoff, then drops it (counted)
 
 ### Query Flow
 
@@ -209,8 +212,8 @@ Optional AI-powered analysis using Apple Intelligence:
 1. **Timer triggers (configurable interval)**
 
 2. **In-memory cleanup:**
-   - Filters out entries older than `maxLogAge`
-   - Updates `recentLogs` array
+   - Trims entries older than `maxLogAge` from the tail of the newest-first deque (the `maxLogEntries` cap is enforced on every `log()`)
+   - Notifies observers
 
 3. **Storage cleanup (background):**
    - Deletes entries older than `maxLogAge`
@@ -219,22 +222,29 @@ Optional AI-powered analysis using Apple Intelligence:
 
 ## Thread Safety
 
-### Main Actor Isolation
+### Isolation Model
 
-All public APIs are `@MainActor` isolated:
+`LogR` is not `@MainActor` — logging is `nonisolated`, and only the SwiftUI-facing state is
+main-actor isolated:
 
 ```swift
 @Observable
-@MainActor
-public final class LogR: LogRService, Sendable {
-    // All public methods run on main actor
+public final class LogR: LogRService {
+    public nonisolated var recentLogs: Deque<LogEntry> { get }   // lock-backed snapshot
+    @MainActor public private(set) var droppedLogCount: Int
+    @MainActor public var canAnalyseLogs: Bool { get }
+
+    public nonisolated func log(level: LogLevel, message: @autoclosure () -> String,
+                                category: LogCategory, file: String = #file,
+                                function: String = #function, line: Int = #line,
+                                metadata: [String: LogMetadataValue]? = nil)
 }
 ```
 
 **Benefits:**
-- SwiftUI-friendly
-- No race conditions in public API
-- Predictable execution context
+- Call from any actor or thread without `await`
+- Read-after-write holds: a read right after `log()` sees the entry
+- SwiftUI updates arrive coalesced on the main actor
 
 ### Background Processing
 
@@ -258,7 +268,7 @@ All types conform to `Sendable` where appropriate:
 - `LogEntry`: Immutable struct, naturally `Sendable`
 - `LogLevel`, `LogCategory`: Enums, naturally `Sendable`
 - `LogRPersistence`: Requires `Sendable` conformance
-- `LoggerCryptoService`: Thread-safe with `Mutex`
+- `LoggerCryptoService`: Thread-safe (lock-protected key cache)
 
 ## Performance Characteristics
 
@@ -281,11 +291,11 @@ All types conform to `Sendable` where appropriate:
 Implement `LogRPersistence` for custom storage:
 
 ```swift
-class CloudStorage: LogRPersistence {
+actor CloudStorage: LogRPersistence {   // the protocol is Sendable — use an actor
     func store(_ entry: EncryptedLogEntry) async throws {
         // Upload to cloud
     }
-    // Implement other methods...
+    // Implement the other seven methods (two have default implementations)...
 }
 
 let logger = try LogR(storage: CloudStorage())
@@ -296,17 +306,17 @@ let logger = try LogR(storage: CloudStorage())
 Implement `LoggerCryptoServicing` for custom encryption:
 
 ```swift
-class CustomCrypto: LoggerCryptoServicing {
-    func symmetricEncrypt<T: Codable>(object: T) throws -> Data {
+struct CustomCrypto: LoggerCryptoServicing {   // Sendable — use a struct
+    func symmetricEncrypt(object: some Codable & Sendable) throws -> Data {
         // Your encryption
     }
 
-    func symmetricDecrypt<T: Codable>(encryptedData: Data) throws -> T {
+    func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T {
         // Your decryption
     }
 }
 
-let logger = LogR(cryptoService: CustomCrypto())
+let logger = LogR(cryptoService: CustomCrypto())   // no try: this overload does not throw
 ```
 
 ### Custom AI Analyzer
@@ -314,15 +324,27 @@ let logger = LogR(cryptoService: CustomCrypto())
 Implement `LogAIAnalyzer` for custom analysis:
 
 ```swift
-@available(iOS 26.0, *)
-class CustomAI: LogAIAnalyzer {
-    var isAvailable: Bool { true }
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+actor CustomAI: LogAIAnalyzer {
+    nonisolated var isAvailable: Bool { true }
 
     func scanForPrivacyIssues(logs: [LogEntry]) async throws -> PrivacyAnalysisResult {
+        try await scanForPrivacyIssues(logs: logs, onProgress: { _ in })
+    }
+
+    func scanForPrivacyIssues(logs: [LogEntry],
+                              onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void)
+        async throws -> PrivacyAnalysisResult {
         // Your AI service
     }
 
     func summarizeIssues(logs: [LogEntry]) async throws -> LogIssueSummary {
+        try await summarizeIssues(logs: logs, onProgress: { _ in })
+    }
+
+    func summarizeIssues(logs: [LogEntry],
+                         onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void)
+        async throws -> LogIssueSummary {
         // Your AI service
     }
 }
@@ -335,8 +357,8 @@ let logger = try LogR(logAnalyser: CustomAI())
 ### 1. Non-Blocking
 
 Logging never blocks the caller:
-- Main actor methods return immediately
-- Storage happens in background actor
+- `log()` is synchronous: an OSLog write, a lock-protected append and a stream yield — no per-log `Task`
+- Encryption and storage happen in the background writer actor
 - OSLog is non-blocking by design
 
 ### 2. Observable

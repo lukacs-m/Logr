@@ -14,12 +14,12 @@ swift test --parallel                    # Run all tests (preferred, matches CI)
 swift test --filter "testDebugLogging"   # Run a single test by name
 ```
 
-CI runs on macOS 15 with latest Xcode: `swift test --parallel`
+CI (`.github/workflows/swift.yml`) runs on `macos-26` with the latest Xcode: `swift test --parallel`
 
 ## Code Formatting
 
-SwiftFormat is integrated as a build plugin. Configuration is in `.swiftformat`:
-- Swift 6.2, 4-space indent, 115 char max width
+SwiftFormat is a declared package dependency but is **not** wired up as a build plugin — run the `swiftformat` CLI manually. Configuration is in `.swiftformat`:
+- `--swiftversion 6.3`, 4-space indent, 115 char max width
 - Excludes Tests and Package.swift
 - Key rules: `after-first` wrapping, `before-first` collection wrapping, no-space ranges
 
@@ -34,7 +34,7 @@ SwiftFormat is integrated as a build plugin. Configuration is in `.swiftformat`:
 
 **LogR** is the central `@Observable` (nonisolated) class implementing `LogRService`. It:
 - Maintains an in-memory `Deque<LogEntry>` cache (configurable max, default 10,000) behind a `SafeMutex`, so logging and reads are thread-safe from any isolation domain; the `@Observable` change notification is dispatched (coalesced) to the main actor
-- Delegates persistent writes to **LogWriterActor** (background actor, batched writes of 50)
+- Delegates persistent writes to **LogWriterActor** (background actor fed by an `AsyncStream`; batched writes of 50, failed batches retry ×3 with linear backoff, and a 100,000-entry backpressure cap sheds the newest entries — every drop is surfaced through `droppedLogCount`)
 - Integrates with OSLog for system-level logging
 - Coordinates encryption and cleanup automatically
 
@@ -50,7 +50,7 @@ Logging calls (nonisolated, any domain) → `LogR` (lock-protected in-memory cac
 
 ### Storage Options
 
-- **FileSystemStorage** (actor): JSON files in Documents directory, good for moderate volume
+- **FileSystemStorage** (actor): single append-only NDJSON file `Documents/logr_entries.json` (one entry per line; legacy JSON-array files are migrated on open), good for moderate volume
 - **SQLiteStorage**: GRDB-backed database in Application Support, recommended for large volume
 
 ### Concurrency Model
@@ -65,18 +65,18 @@ Logging calls (nonisolated, any domain) → `LogR` (lock-protected in-memory cac
 ### Models
 
 - **LogLevel**: debug, info, notice, warning, error, fault (with priority ordering)
-- **LogCategory**: 47 predefined categories + `.custom(String)` for project-specific use
+- **LogCategory**: 49 predefined categories + `.custom(String)` for project-specific use
 - **LogEntry**: Immutable log record with source location, metadata, and category
 - **EncryptedLogEntry**: Encrypted wrapper for persistent storage
-- **LogrConfiguration**: Controls retention (max entries/age), enabled levels, per-category overrides, verbosity
+- **LogrConfiguration**: Controls retention (max entries/age), enabled levels, per-category overrides, verbosity, observation coalescing window (`coalesceWindowMillis`, default 100 ms), OSLog mirroring (`mirrorToOSLog`)
 
 ### Testing
 
-Tests use Swift Testing framework (`@Suite`, `@Test` attributes). `MockLogR` in `Sources/LogrUI/Mock+Previews/` provides a full `LogRService` implementation for SwiftUI previews and unit tests with in-memory storage and sample data.
+Tests use Swift Testing framework (`@Suite`, `@Test` attributes). `MockLogR` in `Sources/LogrUI/Mock+Previews/` provides a full `LogRService` implementation for SwiftUI previews and unit tests with in-memory storage and sample data. `MockLogR` ships in the `LogrUI` product (`import LogrUI`); its `log()` defers the insert to the main actor, so tests must hop to the main actor before reading `recentLogs`.
 
 ### Dependencies
 
 - **KeychainAccess** (4.2.2+): Keychain storage for encryption keys
-- **SQLiteData** (1.3.0+): SQLite via GRDB
-- **swift-collections** (1.3.0+): Deque for log cache
-- **SwiftFormat** (0.58.6+): Build plugin for code formatting
+- **SQLiteData** (1.6.0+): SQLite via GRDB
+- **swift-collections** (1.5.1+): Deque for log cache
+- **SwiftFormat** (0.61.0+): Formatter — declared dependency for CLI use, not a build plugin

@@ -94,7 +94,7 @@ import UniformTypeIdentifiers
 /// ## Topics
 ///
 /// ### Initializers
-/// - ``init()``
+/// - ``init(functionalityFilter:)``
 public struct LogViewer: View {
     @Environment(\.logService) private var logr
     @State private var logFilterPreferences = LogFilterPreferences()

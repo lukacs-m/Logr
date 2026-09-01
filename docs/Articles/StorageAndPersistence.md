@@ -13,7 +13,7 @@ Learn about Logr's storage options and how to implement custom storage backends.
 
 ## Overview
 
-Logr provides flexible storage options for persisting logs. All stored logs are automatically encrypted using ChaCha20-Poly1305 with keys stored securely in the Keychain.
+Logr provides flexible storage options for persisting logs. All stored logs are automatically encrypted using AES-256-GCM by default (ChaCha20-Poly1305 selectable) with keys stored securely in the Keychain.
 
 ## Storage Options
 
@@ -31,23 +31,22 @@ let logger = try LogR()
 - When disk space is extremely limited
 
 **Limitations:**
-- Logs cleared on app restart
-- No log export functionality
-- No historical analysis
+- Logs cleared on app restart — no history across launches
+- Export, statistics and AI analysis still work, but only on the in-memory cache
 
 ### FileSystem Storage
 
-Simple JSON-based file storage:
+Append-only NDJSON file storage (one JSON entry per line):
 
 ```swift
 let logger = try LogR(storage: FileSystemStorage())
 ```
 
 **Features:**
-- One JSON file per log entry
-- Human-readable (when decrypted)
-- Easy to backup
-- Simple implementation
+- Single file `Documents/logr_entries.json` (pass `fileName:` to change it)
+- Appends are cheap; cleanup and `clear()` rewrite the file
+- Legacy JSON-array files migrate automatically on open
+- Implemented as an `actor`
 
 **Best for:**
 - Apps with moderate log volumes (<1,000 logs/day)
@@ -57,10 +56,7 @@ let logger = try LogR(storage: FileSystemStorage())
 **File Structure:**
 ```
 Documents/
-└── com.logr.storage/
-    ├── log_uuid1.json
-    ├── log_uuid2.json
-    └── log_uuid3.json
+└── logr_entries.json   # one {"id":…,"timestamp":…,"data":"<base64 envelope>"} per line
 ```
 
 ### SQLite Storage (Recommended)
@@ -85,14 +81,16 @@ let logger = try LogR(storage: SQLiteStorage())
 
 **Schema:**
 ```sql
-CREATE TABLE encrypted_logs (
-    id TEXT PRIMARY KEY,
-    timestamp REAL NOT NULL,
-    data BLOB NOT NULL
+CREATE TABLE "EncryptedLogEntryDAO" (
+    "id" TEXT PRIMARY KEY NOT NULL,
+    "data" BLOB NOT NULL,
+    "timestamp" DOUBLE NOT NULL
 );
 
-CREATE INDEX idx_timestamp ON encrypted_logs(timestamp);
+CREATE INDEX "EncryptedLogEntryDAO_timestamp" ON "EncryptedLogEntryDAO"("timestamp");
 ```
+
+Default location: `<Application Support>/<bundle identifier>/logs.sqlite`.
 
 ## Using Storage
 
@@ -113,15 +111,12 @@ let logger = try LogR()
 
 ### Custom Storage Location
 
-Specify a custom directory for storage:
+`FileSystemStorage` always writes into the app's Documents directory; only the file name is
+configurable. For a fully custom path (or an App Group) use `SQLiteStorage(databasePath:)`.
 
 ```swift
-// Custom documents subdirectory
-let documentsURL = FileManager.default
-    .urls(for: .documentDirectory, in: .userDomainMask)[0]
-let customURL = documentsURL.appendingPathComponent("MyLogs")
-
-let storage = FileSystemStorage(directoryURL: customURL)
+// Custom file name inside Documents
+let storage = try FileSystemStorage(fileName: "MyLogs.ndjson")
 let logger = try LogR(storage: storage)
 ```
 
@@ -132,7 +127,7 @@ Share logs across app extensions:
 ```swift
 let groupURL = FileManager.default
     .containerURL(forSecurityApplicationGroupIdentifier: "group.com.myapp")!
-let storage = SQLiteStorage(databaseURL: groupURL.appendingPathComponent("logs.db"))
+let storage = try SQLiteStorage(databasePath: groupURL.appendingPathComponent("logs.sqlite").path)
 
 let logger = try LogR(storage: storage)
 ```
@@ -145,7 +140,8 @@ Implement the `LogRPersistence` protocol for custom storage:
 import Logr
 import Foundation
 
-class CloudStorage: LogRPersistence {
+// The protocol is `Sendable`: an actor serialises access to its state.
+actor CloudStorage: LogRPersistence {
     private let apiClient: APIClient
     private var cache: [EncryptedLogEntry] = []
 
@@ -154,11 +150,14 @@ class CloudStorage: LogRPersistence {
     }
 
     func store(_ entry: EncryptedLogEntry) async throws {
-        // Upload to cloud service
-        try await apiClient.upload(entry)
+        try await store([entry])
+    }
 
-        // Also cache locally
-        cache.append(entry)
+    // Optional override — the background writer hands over batches of up to 50 entries.
+    // The default calls `store(_:)` once per entry; one round-trip per batch is far cheaper.
+    func store(_ entries: [EncryptedLogEntry]) async throws {
+        try await apiClient.upload(entries)
+        cache.append(contentsOf: entries)
 
         // Trim cache if needed
         if cache.count > 1000 {
@@ -167,16 +166,18 @@ class CloudStorage: LogRPersistence {
     }
 
     func fetchEntries() async throws -> [EncryptedLogEntry] {
-        // Return from local cache for quick access
-        // Or fetch from cloud if needed
+        // Oldest first
         return cache
     }
 
-    func deleteEntries(olderThan date: Date) async throws {
-        // Delete from cloud
-        try await apiClient.deleteOldEntries(before: date)
+    // Optional override — called once at launch with `maxLogEntries`
+    func fetchEntries(limit: Int?) async throws -> [EncryptedLogEntry] {
+        guard let limit else { return cache }
+        return Array(cache.suffix(limit))
+    }
 
-        // Update cache
+    func deleteEntries(olderThan date: Date) async throws {
+        try await apiClient.deleteOldEntries(before: date)
         cache.removeAll { $0.timestamp < date }
     }
 
@@ -184,14 +185,9 @@ class CloudStorage: LogRPersistence {
         guard cache.count > count else { return }
 
         let toDelete = cache.count - count
-        let entriesToDelete = Array(cache.prefix(toDelete))
-
-        // Delete from cloud
-        for entry in entriesToDelete {
+        for entry in cache.prefix(toDelete) {
             try await apiClient.delete(id: entry.id)
         }
-
-        // Update cache
         cache.removeFirst(toDelete)
     }
 
@@ -216,7 +212,8 @@ let logger = try LogR(storage: cloudStorage)
 import Logr
 import CoreData
 
-class CoreDataStorage: LogRPersistence {
+// `perform` confines the context; `@unchecked` because Core Data types are not Sendable.
+final class CoreDataStorage: LogRPersistence, @unchecked Sendable {
     private let context: NSManagedObjectContext
 
     init(context: NSManagedObjectContext) {
@@ -299,41 +296,34 @@ let logger = try LogR(
 
 ### 3. Handle Storage Errors
 
-```swift
-class MyStorage: LogRPersistence {
-    func store(_ entry: EncryptedLogEntry) async throws {
-        do {
-            try await performStorage(entry)
-        } catch {
-            // Log error (to OSLog, not Logr to avoid recursion)
-            print("Storage error: \(error)")
+Throw and let the writer handle failures: it retries a failed batch up to 3 times with
+linear backoff and, if the batch still fails, drops it and increments `droppedLogCount`.
+Retrying inside `store` only multiplies the delay.
 
-            // Optionally retry
-            try await performStorage(entry)
-        }
+```swift
+actor MyStorage: LogRPersistence {
+    func store(_ entry: EncryptedLogEntry) async throws {
+        try await performStorage(entry)   // just throw — the writer retries
     }
 }
 ```
 
-### 4. Optimize Cleanup
+### 4. Push Limits Down
+
+`LogR` loads at most `maxLogEntries` entries at startup through `fetchEntries(limit:)`.
+The default implementation fetches everything and keeps the newest; override it so the
+limit reaches your backend:
 
 ```swift
-func deleteEntries(keepingLatest count: Int) async throws {
-    // Get total count efficiently
-    let total = try await fastCount()
-
-    guard total > count else { return }
-
-    // Calculate cutoff timestamp for batch delete
-    let toDelete = total - count
-    let entries = try await fetchEntries(limit: toDelete, sortedBy: .timestamp)
-
-    guard let cutoffDate = entries.last?.timestamp else { return }
-
-    // Batch delete all entries older than cutoff
-    try await deleteEntries(olderThan: cutoffDate)
+func fetchEntries(limit: Int?) async throws -> [EncryptedLogEntry] {
+    guard let limit else { return try await fetchEntries() }
+    // e.g. SQL: ORDER BY timestamp DESC LIMIT ?, then reverse to oldest-first
+    return try await newestEntries(limit).reversed()
 }
 ```
+
+Similarly, implement `deleteEntries(keepingLatest:)` as a single query (the built-in
+SQLite storage uses `DELETE … WHERE id NOT IN (SELECT id … ORDER BY timestamp DESC LIMIT ?)`).
 
 ## Encryption
 
@@ -342,7 +332,7 @@ All storage implementations automatically encrypt logs using the crypto service.
 ### How It Works
 
 1. **Log Entry Created**: `LogEntry` with plain text message
-2. **Encryption**: Entry encoded to JSON and encrypted with ChaCha20-Poly1305
+2. **Encryption**: Entry encoded to JSON and encrypted with the configured algorithm (AES-256-GCM by default)
 3. **Storage**: `EncryptedLogEntry` with encrypted Data stored
 4. **Retrieval**: Encrypted data fetched from storage
 5. **Decryption**: Data decrypted and decoded back to `LogEntry`
@@ -352,6 +342,7 @@ All storage implementations automatically encrypt logs using the crypto service.
 - Keys stored in Keychain (`.whenUnlockedThisDeviceOnly`)
 - Automatic key generation on first use
 - Key versioning for rotation support
+- The envelope records the algorithm and key version
 - Keys never leave the device
 
 ### Custom Crypto
@@ -359,17 +350,18 @@ All storage implementations automatically encrypt logs using the crypto service.
 Provide your own encryption:
 
 ```swift
-class MyCustomCrypto: LoggerCryptoServicing {
-    func symmetricEncrypt<T: Codable>(object: T) throws -> Data {
+struct MyCustomCrypto: LoggerCryptoServicing {   // Sendable — use a struct
+    func symmetricEncrypt(object: some Codable & Sendable) throws -> Data {
         // Your encryption
     }
 
-    func symmetricDecrypt<T: Codable>(encryptedData: Data) throws -> T {
+    func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T {
         // Your decryption
     }
 }
 
-let logger = LogR(
+// `try` is for SQLiteStorage(); this LogR overload does not throw
+let logger = try LogR(
     storage: SQLiteStorage(),
     cryptoService: MyCustomCrypto()
 )
@@ -380,44 +372,26 @@ let logger = LogR(
 ### SQLite Optimization
 
 ```swift
-// Use transactions for batch operations
-func storeBatch(_ entries: [EncryptedLogEntry]) async throws {
+// Implement store(_ entries:) as one transaction — the built-in SQLiteStorage
+// writes each 50-entry batch as a single multi-row INSERT.
+func store(_ entries: [EncryptedLogEntry]) async throws {
     try await database.write { db in
         for entry in entries {
             try entry.insert(db)
         }
     }
 }
-
-// Create indexes for common queries
-CREATE INDEX idx_timestamp ON encrypted_logs(timestamp DESC);
-
-// Use LIMIT for large result sets
-SELECT * FROM encrypted_logs ORDER BY timestamp DESC LIMIT 1000;
 ```
+
+The built-in storage already indexes `timestamp` and applies `LIMIT` inside
+`fetchEntries(limit:)` — do the same in a custom backend.
 
 ### FileSystem Optimization
 
-```swift
-// Limit directory scans
-private var cachedFileList: [String] = []
-private var lastScan: Date?
-
-func fetchEntries() async throws -> [EncryptedLogEntry] {
-    // Rescan only if needed
-    let now = Date()
-    if let lastScan, now.timeIntervalSince(lastScan) < 60 {
-        // Use cached list
-    } else {
-        // Rescan directory
-        cachedFileList = try FileManager.default
-            .contentsOfDirectory(atPath: directoryURL.path)
-        lastScan = now
-    }
-
-    // Load files
-}
-```
+The file is append-only, so `store` never re-reads it and `count()` only scans newline
+bytes. `deleteEntries(olderThan:)`, `deleteEntries(keepingLatest:)` and `clear()` rewrite
+the whole file — keep `maxLogEntries` moderate and `cleanupInterval` at its default with
+`FileSystemStorage`, and switch to `SQLiteStorage` above roughly 1,000 logs per day.
 
 ## Summary
 
@@ -427,7 +401,7 @@ Logr provides flexible storage options:
 - **SQLite**: Fast, scalable, recommended for production
 - **Custom**: Implement `LogRPersistence` for any backend
 
-All storage is automatically encrypted with ChaCha20-Poly1305 and keys stored in Keychain for maximum security.
+All storage is automatically encrypted with AES-256-GCM (ChaCha20-Poly1305 optional) and keys stored in Keychain for maximum security.
 
 ## Related Documentation
 
