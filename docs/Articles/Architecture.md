@@ -142,7 +142,7 @@ All logs are encrypted before storage:
 
 - **Algorithm**: AES-256-GCM by default; ChaCha20-Poly1305 via `LoggerCryptoService(encryptionAlgo: .chacha)`
 - **Key Size**: 256-bit keys
-- **Key Storage**: Secure Keychain (`.whenUnlockedThisDeviceOnly`)
+- **Key Storage**: Secure Keychain (`.afterFirstUnlockThisDeviceOnly`)
 - **Key Versioning**: Supports key rotation without data loss
 - **Envelope Format**: Records key version and algorithm (envelopes without an algorithm, pre-1.3, decode as ChaCha20-Poly1305)
 

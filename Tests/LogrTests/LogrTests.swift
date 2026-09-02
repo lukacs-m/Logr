@@ -5,12 +5,16 @@ import Collections
 
 final class MockKeychainService: @unchecked Sendable, KeychainStore {
     var storage: [String: Data] = [:]
-    
+    var readError: Error?
+
     func set(_ data: Data, forKey key: String) throws{
         storage[key] = data
     }
-    
+
     func data(forKey key: String) throws -> Data? {
+        if let readError {
+            throw readError
+        }
         guard let data = storage[key] else {
             return nil
         }

@@ -339,7 +339,7 @@ All storage implementations automatically encrypt logs using the crypto service.
 
 ### Key Management
 
-- Keys stored in Keychain (`.whenUnlockedThisDeviceOnly`)
+- Keys stored in Keychain (`.afterFirstUnlockThisDeviceOnly`)
 - Automatic key generation on first use
 - Key versioning for rotation support
 - The envelope records the algorithm and key version

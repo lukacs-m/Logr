@@ -940,7 +940,7 @@ Contributions are welcome! Please:
 
 ## License
 
-LogR is released under the MIT License. See [LICENSE](https://spdx.org/licenses/MIT.html) for details.
+LogR is released under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Support & Documentation
 

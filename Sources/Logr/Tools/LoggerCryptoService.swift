@@ -49,7 +49,7 @@ public struct KeychainAccessStore: KeychainStore {
         } else {
             Keychain(service: service)
         }
-        self.keychain = keychain.accessibility(.whenUnlockedThisDeviceOnly)
+        self.keychain = keychain.accessibility(.afterFirstUnlockThisDeviceOnly)
             .synchronizable(false)
     }
 
@@ -222,7 +222,15 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
                 encryptionAlgo: CryptoAlgo = .aes256gcm) throws {
         self.store = store
         self.encryptionAlgo = encryptionAlgo
-        if let versionData = try? store.data(forKey: currentKeyRef),
+        let versionData: Data?
+        do {
+            versionData = try store.data(forKey: currentKeyRef)
+        } catch {
+            // A failed read (e.g. keychain locked during a background launch) is not "first run":
+            // provisioning here would overwrite the existing key and orphan every persisted log.
+            throw LoggerCryptoError.initializationFailed(underlying: error)
+        }
+        if let versionData,
            let version = try? decoder.decode(KeyVersion.self, from: versionData) {
             currentKeyVersion.withLock {
                 $0 = version

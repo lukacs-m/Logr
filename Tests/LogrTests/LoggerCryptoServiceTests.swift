@@ -28,6 +28,23 @@ struct LoggerCryptoServiceTests {
         #expect(cryptoService2.currentKeyVersion.value.value == 1)
     }
 
+    @Test("Test keychain read error during init throws instead of overwriting the existing key")
+    func testInitThrowsOnKeychainReadError() async throws {
+        let mockStore = MockKeychainService()
+        _ = try LoggerCryptoService(store: mockStore)
+        let provisioned = mockStore.storage
+
+        // Simulates a locked keychain (errSecInteractionNotAllowed) on a background launch.
+        mockStore.readError = LoggerCryptoError.keychainFailure("interaction not allowed")
+
+        #expect(throws: LoggerCryptoError.self) {
+            _ = try LoggerCryptoService(store: mockStore)
+        }
+        // Treating the error as "first run" would regenerate the v1 key over this data,
+        // permanently orphaning every previously persisted log.
+        #expect(mockStore.storage == provisioned)
+    }
+
     // MARK: - Encryption Tests
 
     @Test("Test symmetric encryption")

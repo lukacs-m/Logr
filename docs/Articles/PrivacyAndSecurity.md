@@ -81,7 +81,7 @@ Encryption keys are managed securely by the `LoggerCryptoService`.
 ### Key Storage
 
 - **Location**: iOS/macOS Keychain
-- **Accessibility**: `.whenUnlockedThisDeviceOnly`
+- **Accessibility**: `.afterFirstUnlockThisDeviceOnly` (usable during background launches once the device has been unlocked after boot)
 - **Synchronization**: Disabled (keys stay on device)
 - **Size**: 256-bit (32 bytes)
 
