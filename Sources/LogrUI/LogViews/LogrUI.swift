@@ -94,7 +94,7 @@ import UniformTypeIdentifiers
 /// ## Topics
 ///
 /// ### Initializers
-/// - ``init()``
+/// - ``init(functionalityFilter:)``
 public struct LogViewer: View {
     @Environment(\.logService) private var logr
     @State private var logFilterPreferences = LogFilterPreferences()
@@ -340,7 +340,7 @@ private extension LogViewer {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, alignment: .top)
                         .opacity(0.9)
-                    Text("Protect your accounts with an extra layer of security.")
+                    Text("Logs will appear here as your app records them.")
                         .font(.title3)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)

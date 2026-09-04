@@ -186,7 +186,7 @@ private extension AIAnalyzer {
 
         // Fast path for single chunk
         guard chunks.count > 1 else {
-            let session = await getSession()
+            let session = getSession()
             let result: T = try await analyzeChunk(chunks[0], with: session, type: analysisType)
             await onProgress(AnalysisProgress(totalLogs: totalLogs, analyzedLogs: totalLogs))
             return result
@@ -206,7 +206,7 @@ private extension AIAnalyzer {
         }
 
         // Merge results
-        guard let result = await mergeResults(results, type: analysisType) else {
+        guard let result = mergeResults(results, type: analysisType) else {
             throw AIAnalyzerError.mergeError
         }
 
@@ -294,9 +294,9 @@ private extension AIAnalyzer {
                                                type: AnalysisType) async throws -> T {
         let logsText = logs.formatLogsForAnalysis
         let prompt: String = if case .issues = type {
-            await promptForIssuesAnalysing(logs: logs, logsText: logsText)
+            promptForIssuesAnalysing(logs: logs, logsText: logsText)
         } else {
-            await promptForPrivacyCheck(logs: logs, logsText: logsText)
+            promptForPrivacyCheck(logs: logs, logsText: logsText)
         }
 
         do {

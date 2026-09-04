@@ -21,15 +21,12 @@ import Foundation
 /// ## Example
 ///
 /// ```swift
-/// let stats = LogStatistics.compute(from: logger.recentLogs)
+/// let stats = await logger.logStatistics()
 /// print("Error rate: \(stats.errorRate * 100)%")
-/// print("Busiest hour: \(stats.peakHour)")
+/// print("Busiest hour: \(stats.peakHour ?? -1)")
 /// ```
 ///
 /// ## Topics
-///
-/// ### Computing Statistics
-/// - ``compute(from:)``
 ///
 /// ### Count Metrics
 /// - ``totalCount``

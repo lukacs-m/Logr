@@ -12,7 +12,7 @@ public final class SQLiteStorage: LogRPersistence {
     private let database: any DatabaseWriter
 
     public enum DatabaseError: Error {
-        case databaseInitializationFailed(underlying: Error)
+        case databaseInitializationFailed(underlying: any Error)
         case invalidDatabasePath
     }
 

@@ -13,7 +13,7 @@ import SwiftUI
 public extension LogLevel {
     /// The accent color for this level — the one place level colors are defined.
     ///
-    /// Severity *ordering* stays in the domain (``LogLevel/priority``); only the visual style lives
+    /// Severity *ordering* stays in the domain (`LogLevel.priority`); only the visual style lives
     /// here. Every view resolves a level's color through this property rather than defining its own
     /// `switch`, so the same level can never render as a different color on different screens.
     var tint: Color {

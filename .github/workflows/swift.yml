@@ -2,13 +2,16 @@ name: "Swift Package CI"
 
 on:
   push:
-    branches: "main"
+    branches: ["main", "develop"]
   pull_request:
     branches: ["main", "develop"]
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build & Test (macOS, Swift 6.2)
+    name: Build & Test (macOS, Swift 6.3)
     runs-on: macos-26
 
     steps:
@@ -27,3 +30,8 @@ jobs:
 
       - name: Run tests
         run: swift test --parallel
+
+      - name: Build documentation (warnings are errors)
+        run: |
+          swift package generate-documentation --target Logr --warnings-as-errors
+          swift package generate-documentation --target LogrUI --warnings-as-errors

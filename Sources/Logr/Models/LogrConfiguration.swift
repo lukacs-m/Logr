@@ -48,6 +48,9 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 /// - **subsystem**: Your app's bundle identifier
 /// - **cleanupInterval**: 1 hour (3,600 seconds)
 /// - **logVerbosity**: Verbose (with source location)
+/// - **categoryLevelOverrides**: `nil` (no per-category overrides)
+/// - **coalesceWindowMillis**: 100 ms notification coalescing
+/// - **mirrorToOSLog**: `true`
 ///
 /// ## Example
 ///
@@ -71,7 +74,7 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 ///
 /// ### Creating Configuration
 /// -
-/// ``init(maxLogEntries:maxLogAge:enabledLevels:categoryLevelOverrides:subsystem:cleanupInterval:logVerbosity:)``
+/// ``init(maxLogEntries:maxLogAge:enabledLevels:categoryLevelOverrides:subsystem:cleanupInterval:logVerbosity:coalesceWindowMillis:mirrorToOSLog:)``
 /// - ``default``
 ///
 /// ### Properties
@@ -82,6 +85,8 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 /// - ``subsystem``
 /// - ``cleanupInterval``
 /// - ``logVerbosity``
+/// - ``coalesceWindowMillis``
+/// - ``mirrorToOSLog``
 public struct LogrConfiguration: Sendable, Codable {
     /// Maximum number of log entries to keep in memory and storage.
     ///
@@ -251,6 +256,8 @@ public struct LogrConfiguration: Sendable, Codable {
     /// - Bundle identifier as subsystem
     /// - 1 hour cleanup interval
     /// - Verbose output with source locations
+    /// - 100 ms notification coalescing
+    /// - OSLog mirroring enabled
     public static let `default` = LogrConfiguration(maxLogEntries: 10_000,
                                                     maxLogAge: 7 * 24 * 60 * 60,
                                                     enabledLevels: Set(LogLevel.allCases),

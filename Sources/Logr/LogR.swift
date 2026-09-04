@@ -5,6 +5,37 @@ import Foundation
 import Observation
 import OSLog
 
+/// The default ``LogRService``: an in-memory log cache that mirrors to OSLog and, when given a
+/// storage, persists every entry encrypted.
+///
+/// ## Pipeline
+///
+/// ``log(level:message:category:file:function:line:metadata:)`` runs synchronously on the caller's
+/// thread. It filters on ``LogrConfiguration/enabledLevels`` and
+/// ``LogrConfiguration/categoryLevelOverrides`` (the `@autoclosure` message is never evaluated for a
+/// filtered entry), mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set, prepends the
+/// entry to a lock-protected deque capped at ``LogrConfiguration/maxLogEntries``, and hands it to a
+/// private writer actor. The writer encrypts through ``LoggerCryptoServicing``, accumulates batches of
+/// 50 and stores them through ``LogRPersistence``, giving a failing batch three attempts with linear
+/// backoff before dropping it. Once 100,000 entries are waiting on storage the newest are shed. Every
+/// dropped entry, whatever the reason, is counted in ``droppedLogCount``.
+///
+/// ## Isolation
+///
+/// `init`, `log()` and the level helpers are `nonisolated`. ``recentLogs`` is `nonisolated` on `LogR`
+/// itself and returns a snapshot taken under the lock, so a read right after a write sees the entry
+/// from any thread; through `any LogRService` it is `@MainActor`. The observation notification is
+/// dispatched to the main actor and coalesced to at most one per
+/// ``LogrConfiguration/coalesceWindowMillis``. ``droppedLogCount`` and the AI results are `@MainActor`.
+///
+/// ## Lifecycle
+///
+/// On init, up to `maxLogEntries` persisted entries are decrypted and merged behind any entries logged
+/// during launch. A main-run-loop timer fires every ``LogrConfiguration/cleanupInterval``, trims
+/// entries older than ``LogrConfiguration/maxLogAge`` from memory and storage, and enforces the count
+/// cap on storage. ``flush()`` suspends until everything logged before it is persisted. ``clearLogs()``
+/// wipes memory synchronously and clears storage in order with in-flight writes. `deinit` finishes the
+/// writer stream so buffered entries drain on a best-effort basis.
 @Observable
 public final class LogR: LogRService {
     /// Thread-safe backing store for ``recentLogs``, plus the coalescing guard.
@@ -63,7 +94,7 @@ public final class LogR: LogRService {
 
     @MainActor public private(set) var droppedLogCount: Int = 0
 
-    private let storage: LogRPersistence?
+    private let storage: (any LogRPersistence)?
     private let cryptoService: any LoggerCryptoServicing
 
     /// Loggers for the common categories, precomputed once at init. Immutable, so the nonisolated
@@ -90,14 +121,14 @@ public final class LogR: LogRService {
     @MainActor private var _analysisProgress: Any?
     private let _analyser: (any Sendable)?
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    private var analyser: LogAIAnalyzer? {
-        _analyser as? LogAIAnalyzer
+    private var analyser: (any LogAIAnalyzer)? {
+        _analyser as? (any LogAIAnalyzer)
     }
 
     /// Designated initializer. `nonisolated`, so a `LogR` can be created from any isolation
     /// domain. `analyser` is type-erased to `any Sendable` because the concrete `LogAIAnalyzer`
     /// types are iOS 26+ and a stored property cannot be `@available`-gated.
-    private init(storage: LogRPersistence?,
+    private init(storage: (any LogRPersistence)?,
                  cryptoService: any LoggerCryptoServicing,
                  configuration: LogrConfiguration,
                  analyser: (any Sendable)?) {
@@ -114,29 +145,29 @@ public final class LogR: LogRService {
         setup()
     }
 
-    public convenience init(storage: LogRPersistence? = nil,
-                            cryptoService: LoggerCryptoServicing,
+    public convenience init(storage: (any LogRPersistence)? = nil,
+                            cryptoService: any LoggerCryptoServicing,
                             configuration: LogrConfiguration = .default) {
         self.init(storage: storage, cryptoService: cryptoService, configuration: configuration, analyser: nil)
     }
 
-    public convenience init(storage: LogRPersistence? = nil,
+    public convenience init(storage: (any LogRPersistence)? = nil,
                             configuration: LogrConfiguration = .default) throws {
         let crypto = try LoggerCryptoService()
         self.init(storage: storage, cryptoService: crypto, configuration: configuration, analyser: nil)
     }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    public convenience init(storage: LogRPersistence? = nil,
+    public convenience init(storage: (any LogRPersistence)? = nil,
                             logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
-                            cryptoService: LoggerCryptoServicing,
+                            cryptoService: any LoggerCryptoServicing,
                             configuration: LogrConfiguration = .default) {
         self.init(storage: storage, cryptoService: cryptoService, configuration: configuration,
                   analyser: logAnalyser)
     }
 
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    public convenience init(storage: LogRPersistence? = nil,
+    public convenience init(storage: (any LogRPersistence)? = nil,
                             logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
                             configuration: LogrConfiguration = .default) throws {
         let crypto = try LoggerCryptoService()
@@ -510,7 +541,7 @@ actor LogWriterActor {
         /// Discards any not-yet-persisted entries buffered ahead of this signal and clears storage.
         /// Routed through the same stream as `entry`, so it is ordered *after* every entry ingested
         /// before the `clear()` call (those are dropped) and *before* any ingested after it.
-        case clear(CheckedContinuation<Void, Error>)
+        case clear(CheckedContinuation<Void, any Error>)
     }
 
     /// Mutex-guarded backpressure state, shared between the nonisolated `ingest` producer and the
@@ -521,7 +552,7 @@ actor LogWriterActor {
         var pendingDrops = 0
     }
 
-    private let storage: LogRPersistence
+    private let storage: any LogRPersistence
     private let cryptoService: any LoggerCryptoServicing
     private let logger: Logger
     private let batchSize: Int
@@ -532,7 +563,7 @@ actor LogWriterActor {
     private let backlog: SafeMutex<Backlog> = .init(Backlog())
     private var onDrop: (@Sendable (Int) -> Void)?
 
-    init(storage: LogRPersistence,
+    init(storage: any LogRPersistence,
          cryptoService: any LoggerCryptoServicing,
          configuration: LogrConfiguration,
          batchSize: Int = 50,

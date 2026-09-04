@@ -13,7 +13,7 @@ import SwiftUI
 public extension EnvironmentValues {
     /// The logging service available to `LogrUI` views.
     ///
-    /// Defaults to a no-op ``DisabledLogR`` so views render a safe, empty state
+    /// Defaults to a no-op `DisabledLogR` so views render a safe, empty state
     /// when no logger has been injected. Provide a real service with
     /// ``SwiftUICore/View/logRService(_:)`` (or `.environment(\.logService, logger)`).
     @Entry var logService: any LogRService = DisabledLogR()

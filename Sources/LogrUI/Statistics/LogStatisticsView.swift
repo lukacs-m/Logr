@@ -25,7 +25,9 @@ import SwiftUI
 /// ## Example
 ///
 /// ```swift
-/// LogStatisticsView(statistics: stats)
+/// NavigationStack { LogStatisticsView() }        // reads the service from the environment
+///
+/// CompactLogStatisticsView(statistics: stats)    // inline card; pass your own LogStatistics
 /// ```
 public struct LogStatisticsView: View {
     @Environment(\.logService) private var logr

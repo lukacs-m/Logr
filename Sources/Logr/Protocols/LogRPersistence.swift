@@ -15,7 +15,7 @@ import Foundation
 /// ## Overview
 ///
 /// LogR provides two built-in implementations:
-/// - ``FileSystemStorage``: Simple JSON-based file storage
+/// - ``FileSystemStorage``: Append-only NDJSON file storage
 /// - ``SQLiteStorage``: High-performance SQLite database storage
 ///
 /// You can also implement custom storage backends (cloud storage, Core Data, etc.)
@@ -32,28 +32,30 @@ import Foundation
 /// ```swift
 /// import Logr
 ///
-/// class CloudStorage: LogRPersistence {
+/// actor CloudStorage: LogRPersistence {   // the protocol is Sendable — use an actor
 ///     func store(_ entry: EncryptedLogEntry) async throws {
 ///         // Upload to cloud service
 ///         try await uploadToCloud(entry)
 ///     }
 ///
 ///     func fetchEntries() async throws -> [EncryptedLogEntry] {
-///         // Fetch from cloud service
+///         // Fetch from cloud service, oldest first
 ///         return try await fetchFromCloud()
 ///     }
 ///
-///     // Implement other required methods...
+///     // Implement the other required methods...
 /// }
 ///
-/// let logger = LogR(storage: CloudStorage())
+/// let logger = try LogR(storage: CloudStorage())
 /// ```
 ///
 /// ## Topics
 ///
 /// ### Storage Operations
-/// - ``store(_:)``
+/// - ``store(_:)-(EncryptedLogEntry)``
+/// - ``store(_:)-([EncryptedLogEntry])``
 /// - ``fetchEntries()``
+/// - ``fetchEntries(limit:)``
 ///
 /// ### Cleanup Operations
 /// - ``deleteEntries(olderThan:)``
@@ -80,10 +82,10 @@ public protocol LogRPersistence: Sendable {
 
     /// Stores batch of encrypted log entries.
     ///
-    /// This method is called by the background writer actor for eachbatch of logs.
+    /// This method is called by the background writer actor for each batch of logs.
     /// Implementations should handle storage errors gracefully and be performant.
     ///
-    /// - Parameter entries: A batch of encrypted log entry to store.
+    /// - Parameter entries: A batch of encrypted log entries to store.
     /// - Throws: Storage-specific errors if the operation fails.
     ///
     /// ## Implementation Notes
@@ -163,7 +165,7 @@ public protocol LogRPersistence: Sendable {
 public extension LogRPersistence {
     /// Default implementation: stores each entry via the single-entry primitive.
     ///
-    /// Keeps ``store(_:)-batch`` an additive, non-breaking requirement for existing conformers —
+    /// Keeps the batch `store(_:)` an additive, non-breaking requirement for existing conformers —
     /// a custom backend that only implements the single-entry `store(_:)` still compiles.
     /// Built-in backends (``SQLiteStorage``, ``FileSystemStorage``) override this with a single
     /// batched write, which is far more efficient and should be preferred whenever the backend

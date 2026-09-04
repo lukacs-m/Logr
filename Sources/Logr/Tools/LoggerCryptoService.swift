@@ -49,7 +49,7 @@ public struct KeychainAccessStore: KeychainStore {
         } else {
             Keychain(service: service)
         }
-        self.keychain = keychain.accessibility(.whenUnlockedThisDeviceOnly)
+        self.keychain = keychain.accessibility(.afterFirstUnlockThisDeviceOnly)
             .synchronizable(false)
     }
 
@@ -86,7 +86,7 @@ public enum LoggerCryptoError: Error {
     case invalidEnvelope
 
     /// Initialization failed due to an underlying error.
-    case initializationFailed(underlying: Error)
+    case initializationFailed(underlying: any Error)
 }
 
 // MARK: - KeyVersion
@@ -105,7 +105,8 @@ public struct KeyVersion: Codable, Sendable, Hashable {
 /// Protocol for encrypting and decrypting log entries.
 ///
 /// `LoggerCryptoServicing` defines the interface for secure log encryption.
-/// The default implementation uses ChaCha20-Poly1305 encryption with keys stored
+/// The default implementation, ``LoggerCryptoService``, uses AES-256-GCM by default
+/// (ChaCha20-Poly1305 selectable via `encryptionAlgo: .chacha`) with keys stored
 /// in the Keychain.
 ///
 /// ## Overview
@@ -120,19 +121,20 @@ public struct KeyVersion: Codable, Sendable, Hashable {
 /// ## Example Custom Implementation
 ///
 /// ```swift
-/// class MyCustomCrypto: LoggerCryptoServicing {
-///     func symmetricEncrypt<T: Codable>(object: T) throws -> Data {
+/// struct MyCustomCrypto: LoggerCryptoServicing {   // Sendable — use a struct
+///     func symmetricEncrypt(object: some Codable & Sendable) throws -> Data {
 ///         // Your custom encryption
 ///         return encryptedData
 ///     }
 ///
-///     func symmetricDecrypt<T: Codable>(encryptedData: Data) throws -> T {
+///     func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T {
 ///         // Your custom decryption
 ///         return decryptedObject
 ///     }
 /// }
 ///
-/// let logger = LogR(
+/// // `try` is for SQLiteStorage(); this LogR overload does not throw
+/// let logger = try LogR(
 ///     storage: SQLiteStorage(),
 ///     cryptoService: MyCustomCrypto()
 /// )
@@ -146,7 +148,8 @@ public struct KeyVersion: Codable, Sendable, Hashable {
 public protocol LoggerCryptoServicing: Sendable {
     /// Encrypts a codable object for secure storage.
     ///
-    /// The object is first encoded to JSON, then encrypted using ChaCha20-Poly1305.
+    /// The object is first encoded to JSON, then encrypted with the configured algorithm
+    /// (AES-256-GCM by default).
     /// The result includes a versioned envelope for key rotation support.
     ///
     /// - Parameter object: The object to encrypt.
@@ -168,7 +171,7 @@ public protocol LoggerCryptoServicing: Sendable {
 // MARK: - Actor: LoggerCryptoService
 
 public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
-    private let store: KeychainStore
+    private let store: any KeychainStore
     private let currentKeyRef = "logger_current_key_version"
     private let keyPrefix = "logger_sym_key_v"
     private let keySize = 32 // 256 bits
@@ -199,7 +202,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
             self.algorithm = algorithm
         }
 
-        init(from decoder: Decoder) throws {
+        init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             version = try container.decode(Int.self, forKey: .version)
             data = try container.decode(Data.self, forKey: .data)
@@ -215,11 +218,19 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     // MARK: - Init
 
-    public init(store: KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
+    public init(store: any KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
                 encryptionAlgo: CryptoAlgo = .aes256gcm) throws {
         self.store = store
         self.encryptionAlgo = encryptionAlgo
-        if let versionData = try? store.data(forKey: currentKeyRef),
+        let versionData: Data?
+        do {
+            versionData = try store.data(forKey: currentKeyRef)
+        } catch {
+            // A failed read (e.g. keychain locked during a background launch) is not "first run":
+            // provisioning here would overwrite the existing key and orphan every persisted log.
+            throw LoggerCryptoError.initializationFailed(underlying: error)
+        }
+        if let versionData,
            let version = try? decoder.decode(KeyVersion.self, from: versionData) {
             currentKeyVersion.withLock {
                 $0 = version
@@ -311,7 +322,7 @@ private extension LoggerCryptoService {
     }
 
     static func generateKey(version: KeyVersion,
-                            store: KeychainStore,
+                            store: any KeychainStore,
                             keyPrefix: String,
                             keySize: Int) throws -> SymmetricKey {
         let data = try Data.randomBytes(count: keySize)

@@ -7,3 +7,5 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 REVIEW_FINDINGS.*
+/.swiftpm/
+.claude/settings.local.json

@@ -9,7 +9,7 @@ import Foundation
 
 /// Comprehensive category system for organizing and filtering logs.
 ///
-/// `LogCategory` provides 47 predefined categories organized into logical groups,
+/// `LogCategory` provides 49 predefined categories organized into logical groups,
 /// plus support for custom project-specific categories.
 ///
 /// ## Overview

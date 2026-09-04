@@ -13,7 +13,7 @@ public enum AIAnalyzerError: Error, LocalizedError, Sendable {
     case inferenceTimeout
     case invalidResponse
     case noLogsToAnalyze
-    case systemError(Error)
+    case systemError(any Error)
     case mergeError
     case missingAnalyzer
     case analyzerDeallocated
