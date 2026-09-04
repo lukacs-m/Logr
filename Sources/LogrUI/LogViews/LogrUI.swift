@@ -340,7 +340,7 @@ private extension LogViewer {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, alignment: .top)
                         .opacity(0.9)
-                    Text("Protect your accounts with an extra layer of security.")
+                    Text("Logs will appear here as your app records them.")
                         .font(.title3)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)

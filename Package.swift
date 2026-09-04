@@ -23,7 +23,8 @@ let package = Package(
         .package(url: "https://github.com/kishikawakatsumi/KeychainAccess", .upToNextMajor(from: "4.2.2")),
         .package(url: "https://github.com/pointfreeco/sqlite-data", from: "1.12.0"),
            .package(url: "https://github.com/nicklockwood/SwiftFormat", from: "0.61.0"),
-           .package(url: "https://github.com/apple/swift-collections.git", .upToNextMajor(from: "1.5.1"))
+           .package(url: "https://github.com/apple/swift-collections.git", .upToNextMajor(from: "1.5.1")),
+           .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0")
     ],
     targets: [
         .target(
@@ -51,7 +52,7 @@ let package = Package(
         ),
         .testTarget(
             name: "LogrTests",
-            dependencies: ["Logr"]
+            dependencies: ["Logr", "LogrUI"]
         ),
     ],
     swiftLanguageModes: [.v6]

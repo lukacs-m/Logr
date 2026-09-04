@@ -46,10 +46,10 @@ public actor FileSystemStorage: LogRPersistence {
         try await store([entry])
     }
 
-    public func store(_ newEntries: [EncryptedLogEntry]) async throws {
-        guard !newEntries.isEmpty else { return }
+    public func store(_ entries: [EncryptedLogEntry]) async throws {
+        guard !entries.isEmpty else { return }
         var payload = Data()
-        for entry in newEntries {
+        for entry in entries {
             try payload.append(encoder.encode(entry))
             payload.append(Self.newline)
         }

@@ -52,7 +52,8 @@ import Foundation
 /// ## Topics
 ///
 /// ### Storage Operations
-/// - ``store(_:)``
+/// - ``store(_:)-(EncryptedLogEntry)``
+/// - ``store(_:)-([EncryptedLogEntry])``
 /// - ``fetchEntries()``
 /// - ``fetchEntries(limit:)``
 ///
@@ -164,7 +165,7 @@ public protocol LogRPersistence: Sendable {
 public extension LogRPersistence {
     /// Default implementation: stores each entry via the single-entry primitive.
     ///
-    /// Keeps ``store(_:)-batch`` an additive, non-breaking requirement for existing conformers —
+    /// Keeps the batch `store(_:)` an additive, non-breaking requirement for existing conformers —
     /// a custom backend that only implements the single-entry `store(_:)` still compiles.
     /// Built-in backends (``SQLiteStorage``, ``FileSystemStorage``) override this with a single
     /// batched write, which is far more efficient and should be preferred whenever the backend

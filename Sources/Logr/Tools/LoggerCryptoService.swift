@@ -86,7 +86,7 @@ public enum LoggerCryptoError: Error {
     case invalidEnvelope
 
     /// Initialization failed due to an underlying error.
-    case initializationFailed(underlying: Error)
+    case initializationFailed(underlying: any Error)
 }
 
 // MARK: - KeyVersion
@@ -171,7 +171,7 @@ public protocol LoggerCryptoServicing: Sendable {
 // MARK: - Actor: LoggerCryptoService
 
 public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
-    private let store: KeychainStore
+    private let store: any KeychainStore
     private let currentKeyRef = "logger_current_key_version"
     private let keyPrefix = "logger_sym_key_v"
     private let keySize = 32 // 256 bits
@@ -202,7 +202,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
             self.algorithm = algorithm
         }
 
-        init(from decoder: Decoder) throws {
+        init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             version = try container.decode(Int.self, forKey: .version)
             data = try container.decode(Data.self, forKey: .data)
@@ -218,7 +218,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     // MARK: - Init
 
-    public init(store: KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
+    public init(store: any KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
                 encryptionAlgo: CryptoAlgo = .aes256gcm) throws {
         self.store = store
         self.encryptionAlgo = encryptionAlgo
@@ -322,7 +322,7 @@ private extension LoggerCryptoService {
     }
 
     static func generateKey(version: KeyVersion,
-                            store: KeychainStore,
+                            store: any KeychainStore,
                             keyPrefix: String,
                             keySize: Int) throws -> SymmetricKey {
         let data = try Data.randomBytes(count: keySize)
