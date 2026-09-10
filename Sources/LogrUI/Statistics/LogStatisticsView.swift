@@ -48,8 +48,7 @@ public struct LogStatisticsView: View {
         }
         .navigationTitle("Log Statistics")
         .task(id: logr.recentLogs) {
-            let snapshot = Array(logr.recentLogs)
-            let updated = await LogStatisticsComputer.compute(from: snapshot)
+            let updated = await logr.logStatistics()
             guard !Task.isCancelled else { return }
             statistics = updated
         }

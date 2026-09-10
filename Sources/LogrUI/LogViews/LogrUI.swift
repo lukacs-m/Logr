@@ -106,8 +106,6 @@ public struct LogViewer: View {
     @State private var showError: Error?
     private let functionalityFilter: Set<LogViewer.Functionalities>
     @State private var compactStatistics: LogStatistics = .empty
-    /// ShareLink needs its payload synchronously when presented.
-    @State private var shareItems: [ExportFormat: ShareItem] = [:]
 
     enum SheetDestination: Identifiable {
         case filters
@@ -273,7 +271,7 @@ private extension LogViewer {
         #endif
         .searchable(text: $searchText, prompt: "Search logs...")
         .task(id: logr.recentLogs) {
-            await refreshDerivedData()
+            await refreshStatistics()
         }
         .task(id: searchText) {
             // Skip debounce for empty string (immediate clear)
@@ -442,14 +440,9 @@ private extension LogViewer {
         if !logr.recentLogs.isEmpty {
             LogActionsMenu("Export & Share") {
                 ForEach(ExportFormat.allCases) { format in
-                    let fileName = format.formatName
-                    if let item = shareItems[format] {
-                        ShareLink(item: item,
-                                  preview: SharePreview("LogR Export")) {
-                            Label("Share \(fileName)", systemImage: "square.and.arrow.up")
-                        }
-                    } else {
-                        Button("Share \(fileName)") {}.disabled(true)
+                    ShareLink(item: ShareItem.logExport(from: logr, format: format),
+                              preview: SharePreview("LogR Export")) {
+                        Label("Share \(format.formatName)", systemImage: "square.and.arrow.up")
                     }
                 }
 
@@ -472,20 +465,10 @@ private extension LogViewer {
 // MARK: - Logic actions
 
 private extension LogViewer {
-    func refreshDerivedData() async {
-        let snapshot = Array(logr.recentLogs)
-        shareItems = [:]
-        do {
-            let result = try await LogViewerData.load(snapshot,
-                                                      includeSharing: functionalityFilter.contains(.sharing))
-            guard !Task.isCancelled else { return }
-            compactStatistics = result.statistics
-            shareItems = result.shareItems
-        } catch is CancellationError {
-            return
-        } catch {
-            showError = error
-        }
+    func refreshStatistics() async {
+        let updated = await logr.logStatistics()
+        guard !Task.isCancelled else { return }
+        compactStatistics = updated
     }
 
     func clearAllLogs() {
@@ -538,10 +521,4 @@ private struct NonAccessibleFeatureView: View {
     @Previewable @State var mock = MockLogR()
     LogViewer()
         .environment(\.logService, mock)
-}
-
-private extension ExportFormat {
-    var exportFileName: String {
-        "logs.\(fileExtension)"
-    }
 }
