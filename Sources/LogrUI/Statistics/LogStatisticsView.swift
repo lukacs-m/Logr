@@ -32,7 +32,11 @@ import SwiftUI
 public struct LogStatisticsView: View {
     @Environment(\.logService) private var logr
 
-    @State private var statistics: LogStatistics = .empty
+    @State private var statisticsRefresher = LogStatisticsRefresher()
+
+    private var statistics: LogStatistics {
+        statisticsRefresher.statistics
+    }
 
     public init() {}
 
@@ -48,9 +52,7 @@ public struct LogStatisticsView: View {
         }
         .navigationTitle("Log Statistics")
         .task(id: logr.recentLogs) {
-            let updated = await logr.logStatistics()
-            guard !Task.isCancelled else { return }
-            statistics = updated
+            await statisticsRefresher.refresh(from: logr)
         }
     }
 

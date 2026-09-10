@@ -9,6 +9,10 @@ import UniformTypeIdentifiers
 @MainActor
 @Suite("LogrUI regressions")
 struct LogrUIRegressionTests {
+    private static func entry(_ message: String) -> LogEntry {
+        LogEntry(level: .info, category: .system, subsystem: "test", message: message)
+    }
+
     private func makeLogger(maxLogEntries: Int = 100) throws -> LogR {
         LogR(cryptoService: try LoggerCryptoService(store: LockedKeychainStore()),
              configuration: LogrConfiguration(maxLogEntries: maxLogEntries, mirrorToOSLog: false))
@@ -59,7 +63,7 @@ struct LogrUIRegressionTests {
     @available(macOS 15.2, iOS 18.2, tvOS 18.2, watchOS 11.2, *)
     @Test func sharingUsesTheServiceExportSoOverridesAreHonored() async throws {
         let service = StubLogService()
-        service.entries = [LogEntry(level: .info, category: .system, subsystem: "test", message: "token=secret")]
+        service.storedLogs = [Self.entry("token=secret")]
         service.export = { Data("[redacted]".utf8) }
         let item = ShareItem.logExport(from: service, format: .json)
 
@@ -69,23 +73,92 @@ struct LogrUIRegressionTests {
         #expect(service.exportCallCount == 1)
     }
 
-    @Test func statisticsPublishWithoutWaitingForSerialization() async throws {
+    @Test func hiddenSummaryPanelDoesNoWorkAndShowingItFetchesImmediately() async throws {
         let service = StubLogService()
-        service.entries = [LogEntry(level: .error, category: .system, subsystem: "test", message: "boom")]
-        service.export = {
-            try await Task.sleep(for: .seconds(60))
-            return Data()
+        service.storedLogs = [Self.entry("visible")]
+        let refresher = LogStatisticsRefresher()
+
+        await refresher.refresh(from: service, isActive: false)
+        #expect(service.statisticsCallCount == 0)
+        #expect(refresher.statistics.totalCount == 0)
+
+        await refresher.refresh(from: service, isActive: true)
+        #expect(service.statisticsCallCount == 1)
+        #expect(refresher.statistics.totalCount == 1)
+
+        service.storedLogs = []
+        await refresher.refresh(from: service)
+        #expect(refresher.statistics.totalCount == 0)
+    }
+
+    @Test func requestsArrivingDuringAComputationCoalesceIntoOneRecompute() async throws {
+        let service = StubLogService()
+        let gate = RefreshGate()
+        service.beforeStatistics = { await gate.wait() }
+        service.storedLogs = [Self.entry("first")]
+        let refresher = LogStatisticsRefresher()
+
+        let inFlight = Task { await refresher.refresh(from: service) }
+        try await service.waitForStatisticsStart(count: 1)
+
+        service.storedLogs = [Self.entry("first"), Self.entry("second")]
+        let coalesced = [Task { await refresher.refresh(from: service) },
+                         Task { await refresher.refresh(from: service) }]
+        for _ in 0..<10 {
+            await Task.yield()
+        }
+        #expect(service.statisticsCallCount == 1)
+        #expect(refresher.statistics.totalCount == 0)
+
+        await gate.open()
+        await inFlight.value
+        for request in coalesced {
+            await request.value
         }
 
-        let statistics = await service.logStatistics()
-        #expect(statistics.countByLevel[.error] == 1)
-        #expect(service.exportCallCount == 0)
+        #expect(service.statisticsCallCount == 2)
+        #expect(service.maxConcurrentStatistics == 1)
+        #expect(refresher.statistics.totalCount == 2)
+    }
+
+    @Test func cancellationDoesNotDiscardACompletedComputation() async throws {
+        let service = StubLogService()
+        let gate = RefreshGate()
+        service.beforeStatistics = { await gate.wait() }
+        service.storedLogs = [Self.entry("only")]
+        let refresher = LogStatisticsRefresher()
+
+        let inFlight = Task { await refresher.refresh(from: service) }
+        try await service.waitForStatisticsStart(count: 1)
+        inFlight.cancel()
+        await gate.open()
+        await inFlight.value
+
+        #expect(refresher.statistics.totalCount == 1)
+    }
+
+    @Test func resetInvalidatesAnInFlightComputation() async throws {
+        let service = StubLogService()
+        let gate = RefreshGate()
+        service.beforeStatistics = { await gate.wait() }
+        service.storedLogs = [Self.entry("stale")]
+        let refresher = LogStatisticsRefresher()
+
+        let inFlight = Task { await refresher.refresh(from: service) }
+        try await service.waitForStatisticsStart(count: 1)
+        refresher.reset()
+        await gate.open()
+        await inFlight.value
+        #expect(refresher.statistics.totalCount == 0)
+
+        await refresher.refresh(from: service)
+        #expect(refresher.statistics.totalCount == 1)
     }
 
     @available(macOS 15.2, iOS 18.2, tvOS 18.2, watchOS 11.2, *)
     @Test func failedSerializationSurfacesInsteadOfSharingEmptyBytes() async throws {
         let service = StubLogService()
-        service.entries = [LogEntry(level: .info, category: .system, subsystem: "test", message: "hi")]
+        service.storedLogs = [Self.entry("hi")]
         service.export = { throw LogExportError.encodingFailed }
         let item = ShareItem.logExport(from: service, format: .json)
 
@@ -102,15 +175,21 @@ struct LogrUIRegressionTests {
     }
 }
 
-/// A conformer that overrides ``LogRService/exportLogs(format:)`` — the documented extension point
-/// for redaction or exporting persisted history — and records when the override is invoked.
+/// A conformer that overrides ``LogRService/exportLogs(format:)`` and ``LogRService/logStatistics()``
+/// — the documented extension points for redaction or for reporting persisted history rather than the
+/// in-memory cache. Its logs are deliberately absent from `recentLogs`, so a caller that bypasses an
+/// override sees an empty service.
 private final class StubLogService: LogRService, @unchecked Sendable {
-    var entries: Deque<LogEntry> = []
+    var storedLogs: Deque<LogEntry> = []
     var export: @Sendable () async throws -> Data = { Data() }
+    var beforeStatistics: (@Sendable () async -> Void)?
     private(set) var exportCallCount = 0
+    private(set) var statisticsCallCount = 0
+    private(set) var maxConcurrentStatistics = 0
+    private var runningStatistics = 0
 
     @MainActor var recentLogs: Deque<LogEntry> {
-        entries
+        []
     }
 
     @MainActor var canAnalyseLogs: Bool {
@@ -145,8 +224,27 @@ private final class StubLogService: LogRService, @unchecked Sendable {
         return try await export()
     }
 
+    func logStatistics() async -> LogStatistics {
+        statisticsCallCount += 1
+        runningStatistics += 1
+        maxConcurrentStatistics = max(maxConcurrentStatistics, runningStatistics)
+        await beforeStatistics?()
+        let snapshot = await MainActor.run { Array(storedLogs) }
+        runningStatistics -= 1
+        return await LogStatisticsComputer.compute(from: snapshot)
+    }
+
+    /// Yields until `count` computations have begun, so a test can act while one is suspended.
+    func waitForStatisticsStart(count: Int) async throws {
+        for _ in 0..<10_000 {
+            if statisticsCallCount >= count { return }
+            await Task.yield()
+        }
+        throw StubTimeout()
+    }
+
     func clearLogs() async throws {
-        await MainActor.run { entries = [] }
+        await MainActor.run { storedLogs = [] }
     }
 
     func flush() async {}
@@ -159,5 +257,27 @@ private final class StubLogService: LogRService, @unchecked Sendable {
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
     @MainActor func summarizeIssues() async throws -> LogIssueSummary {
         throw CancellationError()
+    }
+}
+
+private struct StubTimeout: Error {}
+
+/// A latch a test opens once it has observed the state it wanted to act on.
+private actor RefreshGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters = []
+        for waiter in pending {
+            waiter.resume()
+        }
     }
 }

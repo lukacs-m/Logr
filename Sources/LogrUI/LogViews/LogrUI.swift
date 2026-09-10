@@ -6,6 +6,7 @@
 //
 
 import Combine
+import DequeModule
 import Logr
 import SwiftUI
 import UniformTypeIdentifiers
@@ -105,7 +106,7 @@ public struct LogViewer: View {
     @State private var debouncedQuery = ""
     @State private var showError: Error?
     private let functionalityFilter: Set<LogViewer.Functionalities>
-    @State private var compactStatistics: LogStatistics = .empty
+    @State private var compactStatistics = LogStatisticsRefresher()
 
     enum SheetDestination: Identifiable {
         case filters
@@ -238,7 +239,7 @@ private extension LogViewer {
             // Statistics panel (collapsible)
             if logFilterPreferences.showStatisticsPanel, !logs.isEmpty {
                 Section {
-                    CompactLogStatisticsView(statistics: compactStatistics)
+                    CompactLogStatisticsView(statistics: compactStatistics.statistics)
                 }
             }
 
@@ -270,8 +271,9 @@ private extension LogViewer {
         .navigationBarTitleDisplayMode(.large)
         #endif
         .searchable(text: $searchText, prompt: "Search logs...")
-        .task(id: logr.recentLogs) {
-            await refreshStatistics()
+        .task(id: compactStatisticsRefreshID) {
+            await compactStatistics.refresh(from: logr,
+                                            isActive: logFilterPreferences.showStatisticsPanel)
         }
         .task(id: searchText) {
             // Skip debounce for empty string (immediate clear)
@@ -292,6 +294,11 @@ private extension LogViewer {
         .overlay {
             overlayContent(logs: logs)
         }
+    }
+
+    /// `nil` while the summary panel is hidden, so nothing schedules a refresh no one reads.
+    var compactStatisticsRefreshID: Deque<LogEntry>? {
+        logFilterPreferences.showStatisticsPanel ? logr.recentLogs : nil
     }
 
     private func logEntryRow(_ entry: LogEntry) -> some View {
@@ -465,12 +472,6 @@ private extension LogViewer {
 // MARK: - Logic actions
 
 private extension LogViewer {
-    func refreshStatistics() async {
-        let updated = await logr.logStatistics()
-        guard !Task.isCancelled else { return }
-        compactStatistics = updated
-    }
-
     func clearAllLogs() {
         Task {
             do {
