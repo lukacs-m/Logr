@@ -16,8 +16,8 @@ import OSLog
 /// filtered entry), mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set, prepends the
 /// entry to a lock-protected deque capped at ``LogrConfiguration/maxLogEntries``, and hands it to a
 /// private writer actor. The writer encrypts through ``LoggerCryptoServicing``, accumulates batches of
-/// 50 and stores them through ``LogRPersistence``, giving a failing batch three attempts with linear
-/// backoff before dropping it. Once 100,000 entries are waiting on storage the newest are shed. Every
+/// 50, or submits a partial batch after one second. Storage failures get three attempts with linear
+/// backoff before the batch is dropped. Once 100,000 entries are waiting on storage the newest are shed. Every
 /// dropped entry, whatever the reason, is counted in ``droppedLogCount``.
 ///
 /// ## Isolation
@@ -33,7 +33,7 @@ import OSLog
 /// On init, up to `maxLogEntries` persisted entries are decrypted and merged behind any entries logged
 /// during launch. A main-run-loop timer fires every ``LogrConfiguration/cleanupInterval``, trims
 /// entries older than ``LogrConfiguration/maxLogAge`` from memory and storage, and enforces the count
-/// cap on storage. ``flush()`` suspends until everything logged before it is persisted. ``clearLogs()``
+/// cap on storage. ``flush()`` waits for earlier entries to finish their persistence attempts. ``clearLogs()``
 /// wipes memory synchronously and clears storage in order with in-flight writes. `deinit` finishes the
 /// writer stream so buffered entries drain on a best-effort basis.
 @Observable
@@ -383,7 +383,9 @@ extension LogR {
     /// oldest). This keeps the cache newest-first and never larger than `maxLogEntries`.
     /// Pure (no instance state) so it is `static` and directly unit-testable.
     static func mergeLoaded(_ historical: [LogEntry], into current: inout Deque<LogEntry>, cap: Int) {
-        current.append(contentsOf: historical.reversed())
+        // The startup fetch can include live entries already persisted by the writer.
+        var seen = Set(current.map(\.id))
+        current.append(contentsOf: historical.reversed().filter { seen.insert($0.id).inserted })
         while current.count > cap {
             current.removeLast()
         }
@@ -537,6 +539,7 @@ actor LogWriterActor {
     /// Events delivered to the single consumer.
     private enum Event {
         case entry(LogEntry)
+        case deadline(UUID)
         case flush(CheckedContinuation<Void, Never>)
         /// Discards any not-yet-persisted entries buffered ahead of this signal and clears storage.
         /// Routed through the same stream as `entry`, so it is ordered *after* every entry ingested
@@ -562,6 +565,8 @@ actor LogWriterActor {
     /// `let` of a `Sendable` type, so the nonisolated producer can touch it without hopping actors.
     private let backlog: SafeMutex<Backlog> = .init(Backlog())
     private var onDrop: (@Sendable (Int) -> Void)?
+    private var flushTask: Task<Void, Never>?
+    private var flushDeadline: UUID?
 
     init(storage: any LogRPersistence,
          cryptoService: any LoggerCryptoServicing,
@@ -635,6 +640,7 @@ actor LogWriterActor {
 
 private extension LogWriterActor {
     private func consume(_ stream: AsyncStream<Event>) async {
+        defer { cancelDeadline() }
         var batch: [EncryptedLogEntry] = []
         batch.reserveCapacity(batchSize)
         for await event in stream {
@@ -645,13 +651,19 @@ private extension LogWriterActor {
                     batch.append(encrypted)
                     if batch.count >= batchSize {
                         await store(&batch)
+                    } else if flushTask == nil {
+                        scheduleDeadline()
                     }
                 }
+            case let .deadline(id):
+                guard flushDeadline == id else { continue }
+                await store(&batch)
             case let .flush(awaiter):
                 reportBackpressureDrops(consumedInFlight: 0)
                 await store(&batch)
                 awaiter.resume()
             case let .clear(awaiter):
+                cancelDeadline()
                 reportBackpressureDrops(consumedInFlight: 0)
                 // Drop entries logged before the clear that haven't been persisted yet, then wipe
                 // storage. Entries delivered *after* this event survive (they were ingested after
@@ -667,6 +679,23 @@ private extension LogWriterActor {
         }
         // Stream finished (shutdown): persist whatever is still buffered.
         await store(&batch)
+    }
+
+    func scheduleDeadline() {
+        let id = UUID()
+        flushDeadline = id
+        let continuation = continuation
+        // The timer only enqueues an event; persistence stays ordered with flush and clear.
+        flushTask = Task { @concurrent in
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            continuation.yield(.deadline(id))
+        }
+    }
+
+    func cancelDeadline() {
+        flushTask?.cancel()
+        flushTask = nil
+        flushDeadline = nil
     }
 
     /// Decrements the in-flight count for the entry just consumed and forwards any entries shed
@@ -699,6 +728,7 @@ private extension LogWriterActor {
     /// successful write, so a transient failure never loses data. After `maxRetries`
     /// failures the batch is dropped (and reported via `onDrop`) so the loop can't stall.
     func store(_ batch: inout [EncryptedLogEntry]) async {
+        cancelDeadline()
         guard !batch.isEmpty else { return }
         let toStore = batch
         var attempt = 0

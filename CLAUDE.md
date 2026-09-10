@@ -53,7 +53,7 @@ SwiftFormat is a declared package dependency but is **not** wired up as a build 
 
 **LogR** is the central `@Observable` (nonisolated) class implementing `LogRService`. It:
 - Maintains an in-memory `Deque<LogEntry>` cache (configurable max, default 10,000) behind a `SafeMutex`, so logging and reads are thread-safe from any isolation domain; the `@Observable` change notification is dispatched (coalesced) to the main actor
-- Delegates persistent writes to **LogWriterActor** (background actor fed by an `AsyncStream`; batched writes of 50, a failing batch gets 3 attempts with linear backoff (50 ms, 100 ms) before being dropped, and a 100,000-entry backpressure cap sheds the newest entries — every drop is surfaced through `droppedLogCount`)
+- Delegates persistent writes to **LogWriterActor** (background actor fed by an `AsyncStream`; batched writes of 50 with a one-second partial-batch deadline ordered through the same stream, a failing batch gets 3 attempts with linear backoff (50 ms, 100 ms) before being dropped, and a 100,000-entry backpressure cap sheds the newest entries — every drop is surfaced through `droppedLogCount`)
 - Integrates with OSLog for system-level logging
 - Coordinates encryption and cleanup automatically
 
@@ -61,7 +61,7 @@ SwiftFormat is a declared package dependency but is **not** wired up as a build 
 - `LogRService` — public logging API (`@Observable`, `Sendable`). Logging (`log`/`debug`/`info`/…) and `init` are `nonisolated` (callable from any domain); the observable state that drives SwiftUI (`recentLogs`, `droppedLogCount`, `canAnalyseLogs`, AI results) is `@MainActor`
 - `LogRPersistence` — storage abstraction (FileSystem or SQLite implementations)
 - `LoggerCryptoServicing` — AES-256-GCM / ChaCha20-Poly1305 encryption with Keychain-backed keys
-- `LogAIAnalyzer` — Apple Intelligence analysis (iOS 26+ only, via `FoundationModels`)
+- `LogAIAnalyzer` — injectable analysis protocol; the native `AIAnalyzer` uses `FoundationModels` on iOS/macOS 26+ and reports unavailable on platforms without the framework
 
 ### Data Flow
 

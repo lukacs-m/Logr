@@ -47,11 +47,11 @@ public struct LogStatisticsView: View {
             .padding()
         }
         .navigationTitle("Log Statistics")
-        // Recompute off the main actor when the number of cached logs changes, instead of on every
-        // body pass: the previous computed property re-ran the full aggregation (a Calendar op per
-        // entry, up to `maxLogEntries`) on each SwiftUI update.
-        .task(id: logr.recentLogs.count) {
-            statistics = await logr.logStatistics()
+        .task(id: logr.recentLogs) {
+            let snapshot = Array(logr.recentLogs)
+            let updated = await LogStatisticsComputer.compute(from: snapshot)
+            guard !Task.isCancelled else { return }
+            statistics = updated
         }
     }
 

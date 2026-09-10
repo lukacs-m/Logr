@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 
 // MARK: - Share Item
 
+/// An export payload that advertises its JSON, CSV, or plain-text type to native sharing and saving.
 public struct ShareItem: Transferable {
     let data: Data
     public let fileName: String
@@ -22,6 +23,16 @@ public struct ShareItem: Transferable {
     }
 
     public static var transferRepresentation: some TransferRepresentation {
+        // CSV conforms to plain text; prefer the exact text type for a .plainText request.
+        DataRepresentation(exportedContentType: .plainText) { $0.data }
+            .exportingCondition { $0.contentType == .plainText }
+            .suggestedFileName { $0.fileName }
+        DataRepresentation(exportedContentType: .json) { $0.data }
+            .exportingCondition { $0.contentType == .json }
+            .suggestedFileName { $0.fileName }
+        DataRepresentation(exportedContentType: .commaSeparatedText) { $0.data }
+            .exportingCondition { $0.contentType == .commaSeparatedText }
+            .suggestedFileName { $0.fileName }
         DataRepresentation(contentType: .data) { item in
             item.data
         } importing: { data in

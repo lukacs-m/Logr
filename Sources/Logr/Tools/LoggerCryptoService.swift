@@ -253,15 +253,20 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
         }
     }
 
+    /// Encrypts with a consistent key/version snapshot, even when rotation overlaps encoding.
     public func symmetricEncrypt(object: some Codable) throws -> Data {
-        guard let symmetricKey = try loadKey(version: currentKeyVersion.value) else {
-            throw LoggerCryptoError.keyNotFound(version: currentKeyVersion.value.value)
+        let (version, symmetricKey) = try currentKeyVersion.withLock { version in
+            guard let key = try loadKey(version: version) else {
+                throw LoggerCryptoError.keyNotFound(version: version.value)
+            }
+            return (version, key)
         }
 
+        // Caller-supplied encoders may reenter this service; never invoke them under the key lock.
         let payload = try encoder.encode(object)
         let encryptedPayload = try symmetricKey.encrypt(payload, algo: encryptionAlgo)
 
-        let envelope = CryptoEnvelope(version: currentKeyVersion.value.value, data: encryptedPayload,
+        let envelope = CryptoEnvelope(version: version.value, data: encryptedPayload,
                                       algorithm: encryptionAlgo)
         return try encoder.encode(envelope)
     }
@@ -270,7 +275,8 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
         let envelope = try decoder.decode(CryptoEnvelope.self, from: encryptedData)
 
         let version = KeyVersion(envelope.version)
-        guard let symmetricKey = try loadKey(version: version) else {
+        let key = try currentKeyVersion.withLock { _ in try loadKey(version: version) }
+        guard let symmetricKey = key else {
             throw LoggerCryptoError.keyNotFound(version: version.value)
         }
 
@@ -280,22 +286,24 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     // MARK: - Rotation
 
+    /// Serializes rotations within this service. Retained keys keep earlier entries readable.
+    ///
+    /// With `removeOldKeys`, entries encrypted with the previous key become unreadable, including
+    /// in-flight encryptions that already selected it. If removal fails, the new key remains active
+    /// and the removal error is thrown.
     public func rotateKey(removeOldKeys: Bool = false) throws {
-        let newVersion = KeyVersion(currentKeyVersion.value.value + 1)
-        let newKey = try Self.generateKey(version: newVersion, store: store, keyPrefix: keyPrefix,
-                                          keySize: keySize)
-        try store.set(encoder.encode(newVersion), forKey: currentKeyRef)
-        if removeOldKeys {
-            try? store.remove(forKey: keyName(for: currentKeyVersion.value))
-            _ = cacheKeys.withLock {
-                $0.removeValue(forKey: currentKeyVersion.value)
+        try currentKeyVersion.withLock { version in
+            let previousVersion = version
+            let newVersion = KeyVersion(version.value + 1)
+            let newKey = try Self.generateKey(version: newVersion, store: store, keyPrefix: keyPrefix,
+                                              keySize: keySize)
+            try store.set(encoder.encode(newVersion), forKey: currentKeyRef)
+            cacheKeys.withLock { $0[newVersion] = newKey }
+            version = newVersion
+            if removeOldKeys {
+                try store.remove(forKey: keyName(for: previousVersion))
+                _ = cacheKeys.withLock { $0.removeValue(forKey: previousVersion) }
             }
-        }
-        currentKeyVersion.withLock {
-            $0 = newVersion
-        }
-        cacheKeys.withLock {
-            $0[newVersion] = newKey
         }
     }
 }

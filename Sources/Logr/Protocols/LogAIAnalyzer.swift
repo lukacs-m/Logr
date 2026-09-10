@@ -26,7 +26,8 @@ import Foundation
 /// ## Availability
 ///
 /// AI analysis features require:
-/// - iOS 26.0+ or macOS 26.0+ or tvOS 26.0+ or watchOS 12.0+
+/// - Native analysis: iOS 26.0+ or macOS 26.0+ with FoundationModels.
+///   The native analyzer reports unavailable on tvOS and watchOS.
 /// - Apple Intelligence enabled on the device
 /// - The on-device Foundation model ready (`SystemLanguageModel.default.isAvailable`);
 ///   Logr itself makes no network requests

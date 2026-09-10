@@ -6,7 +6,9 @@
 //
 
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 // MARK: - Supporting Types
 
@@ -43,6 +45,8 @@ public struct AnalyzerConfiguration: Sendable {
         AnalyzerConfiguration()
     }
 }
+
+#if canImport(FoundationModels)
 
 // MARK: - Enhanced Analyzer
 
@@ -547,3 +551,42 @@ private extension SystemLanguageModel.Availability.UnavailableReason {
         }
     }
 }
+
+#else
+/// Reports native analysis as unavailable on platforms without FoundationModels.
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+public actor AIAnalyzer: LogAIAnalyzer {
+    public let configuration: AnalyzerConfiguration
+    public nonisolated var isAvailable: Bool {
+        false
+    }
+
+    public var availabilityDescription: String {
+        "FoundationModels is unavailable on this platform."
+    }
+
+    public init(configuration: AnalyzerConfiguration = .default) {
+        self.configuration = configuration
+    }
+
+    public func scanForPrivacyIssues(logs: [LogEntry]) async throws -> PrivacyAnalysisResult {
+        throw AIAnalyzerError.modelUnavailable(availabilityDescription)
+    }
+
+    public func scanForPrivacyIssues(logs: [LogEntry],
+                                     onProgress: @escaping @MainActor @Sendable (AnalysisProgress)
+                                         -> Void) async throws -> PrivacyAnalysisResult {
+        throw AIAnalyzerError.modelUnavailable(availabilityDescription)
+    }
+
+    public func summarizeIssues(logs: [LogEntry]) async throws -> LogIssueSummary {
+        throw AIAnalyzerError.modelUnavailable(availabilityDescription)
+    }
+
+    public func summarizeIssues(logs: [LogEntry],
+                                onProgress: @escaping @MainActor @Sendable (AnalysisProgress)
+                                    -> Void) async throws -> LogIssueSummary {
+        throw AIAnalyzerError.modelUnavailable(availabilityDescription)
+    }
+}
+#endif

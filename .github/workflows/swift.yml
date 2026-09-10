@@ -35,3 +35,27 @@ jobs:
         run: |
           swift package generate-documentation --target Logr --warnings-as-errors
           swift package generate-documentation --target LogrUI --warnings-as-errors
+
+  platforms:
+    name: Build (${{ matrix.sdk }})
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: iphonesimulator
+            triple: arm64-apple-ios17.0-simulator
+          - sdk: appletvsimulator
+            triple: arm64-apple-tvos17.0-simulator
+          - sdk: watchsimulator
+            triple: arm64-apple-watchos10.0-simulator
+    steps:
+      - uses: actions/checkout@v6
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest
+      - name: Compile core and UI at their minimum deployment targets
+        run: >-
+          swift build --target LogrUI
+          --triple '${{ matrix.triple }}'
+          --sdk "$(xcrun --sdk '${{ matrix.sdk }}' --show-sdk-path)"

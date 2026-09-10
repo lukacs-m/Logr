@@ -89,7 +89,8 @@ import UniformTypeIdentifiers
 /// ## Requirements
 ///
 /// - iOS 17.0+, macOS 14.0+, tvOS 17.0+, watchOS 10.0+
-/// - AI features require iOS 26.0+, macOS 26.0+, tvOS 26.0+, watchOS 12.0+
+/// - Native AI features require iOS 26.0+ or macOS 26.0+ with an available model.
+/// - The native file exporter is available on iOS and macOS.
 ///
 /// ## Topics
 ///
@@ -99,15 +100,13 @@ public struct LogViewer: View {
     @Environment(\.logService) private var logr
     @State private var logFilterPreferences = LogFilterPreferences()
     @State private var showingDeleteConfirmation = false
-    @State private var shareItem: ShareItem?
     @State private var presentedSheet: SheetDestination?
     @State private var searchText = ""
     @State private var debouncedQuery = ""
     @State private var showError: Error?
-    @State private var functionalityFilter = Set(LogViewer.Functionalities.allCases)
+    private let functionalityFilter: Set<LogViewer.Functionalities>
     @State private var compactStatistics: LogStatistics = .empty
-    /// Share payloads precomputed off the main actor (export serialization is now `async`), so the
-    /// `ShareLink`s — which need their item at view-build time — read a ready value.
+    /// ShareLink needs its payload synchronously when presented.
     @State private var shareItems: [ExportFormat: ShareItem] = [:]
 
     enum SheetDestination: Identifiable {
@@ -200,12 +199,14 @@ public struct LogViewer: View {
     private func sheetView(destination: SheetDestination) -> some View {
         switch destination {
         case .export:
+            #if os(iOS) || os(macOS)
             ExportSheet()
+            #endif
         case .filters:
             FilterSheet()
                 .environment(logFilterPreferences)
         case .privacyLogChecks:
-            if #available(iOS 26.0, macOS 26.0, *) {
+            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *) {
                 NavigationStack {
                     PrivacyWarningsView()
                 }
@@ -213,7 +214,7 @@ public struct LogViewer: View {
                 NonAccessibleFeatureView()
             }
         case .issuesSummary:
-            if #available(iOS 26.0, macOS 26.0, *) {
+            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *) {
                 NavigationStack {
                     IssueSummaryView()
                 }
@@ -268,31 +269,31 @@ private extension LogViewer {
         }
         .navigationTitle("LogR Viewer")
         #if os(iOS)
-            .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.large)
         #endif
-            .searchable(text: $searchText, prompt: "Search logs...")
-            .task(id: logr.recentLogs.count) {
-                // Recompute derived data (stats + share payloads) off the main actor when the cache
-                // size changes, rather than synchronously on every body pass.
-                await refreshDerivedData()
+        .searchable(text: $searchText, prompt: "Search logs...")
+        .task(id: logr.recentLogs) {
+            await refreshDerivedData()
+        }
+        .task(id: searchText) {
+            // Skip debounce for empty string (immediate clear)
+            if searchText.isEmpty {
+                debouncedQuery = ""
+                return
             }
-            .task(id: searchText) {
-                // Skip debounce for empty string (immediate clear)
-                if searchText.isEmpty {
-                    debouncedQuery = ""
-                    return
-                }
-                // Debounce
-                try? await Task.sleep(for: .milliseconds(300))
-                if Task.isCancelled { return }
-                debouncedQuery = searchText
+            // Debounce
+            try? await Task.sleep(for: .milliseconds(300))
+            if Task.isCancelled {
+                return
             }
-            .toolbar {
-                toolbarContent
-            }
-            .overlay {
-                overlayContent(logs: logs)
-            }
+            debouncedQuery = searchText
+        }
+        .toolbar {
+            toolbarContent
+        }
+        .overlay {
+            overlayContent(logs: logs)
+        }
     }
 
     private func logEntryRow(_ entry: LogEntry) -> some View {
@@ -364,7 +365,7 @@ private extension LogViewer {
             }
             .disabled(logr.recentLogs.isEmpty)
 
-            Menu {
+            LogActionsMenu {
                 Button(logFilterPreferences.allExpanded ? "Collapse All" : "Expand All") {
                     logFilterPreferences.allExpanded.toggle()
                 }
@@ -401,7 +402,7 @@ private extension LogViewer {
     @ViewBuilder
     var logAnalyzeMenu: some View {
         if logr.canAnalyseLogs {
-            Menu {
+            LogActionsMenu {
                 Button {
                     presentedSheet = .privacyLogChecks
                 } label: {
@@ -437,16 +438,22 @@ private extension LogViewer {
 
     @ViewBuilder
     var shareMenu: some View {
+        #if !os(tvOS)
         if !logr.recentLogs.isEmpty {
-            Menu("Export & Share") {
+            LogActionsMenu("Export & Share") {
                 ForEach(ExportFormat.allCases) { format in
                     let fileName = format.formatName
-                    ShareLink(item: shareItems[format] ?? .empty,
-                              preview: SharePreview("LogR Export")) {
-                        Label("Share \(fileName)", systemImage: "square.and.arrow.up")
+                    if let item = shareItems[format] {
+                        ShareLink(item: item,
+                                  preview: SharePreview("LogR Export")) {
+                            Label("Share \(fileName)", systemImage: "square.and.arrow.up")
+                        }
+                    } else {
+                        Button("Share \(fileName)") {}.disabled(true)
                     }
                 }
 
+                #if os(iOS) || os(macOS)
                 Divider()
 
                 Button {
@@ -454,30 +461,31 @@ private extension LogViewer {
                 } label: {
                     Label("Export to Files", systemImage: "folder.fill")
                 }
+                #endif
             }
             Divider()
         }
+        #endif
     }
 }
 
 // MARK: - Logic actions
 
 private extension LogViewer {
-    /// Refreshes the off-main–computed derived data: the compact statistics and, when sharing is
-    /// enabled, the per-format share payloads. Serialization no longer runs on the main actor.
     func refreshDerivedData() async {
-        compactStatistics = await logr.logStatistics()
-
-        guard functionalityFilter.contains(.sharing), !logr.recentLogs.isEmpty else {
-            shareItems = [:]
+        let snapshot = Array(logr.recentLogs)
+        shareItems = [:]
+        do {
+            let result = try await LogViewerData.load(snapshot,
+                                                      includeSharing: functionalityFilter.contains(.sharing))
+            guard !Task.isCancelled else { return }
+            compactStatistics = result.statistics
+            shareItems = result.shareItems
+        } catch is CancellationError {
             return
+        } catch {
+            showError = error
         }
-        var items: [ExportFormat: ShareItem] = [:]
-        for format in ExportFormat.allCases {
-            guard let data = try? await logr.exportLogs(format: format), !data.isEmpty else { continue }
-            items[format] = ShareItem(data: data, fileName: format.formatName, contentType: format.contentType)
-        }
-        shareItems = items
     }
 
     func clearAllLogs() {
