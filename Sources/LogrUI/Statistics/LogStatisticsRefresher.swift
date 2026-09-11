@@ -29,8 +29,9 @@ final class LogStatisticsRefresher {
             hasPendingRequest = false
             let requested = generation
             let updated = await logr.logStatistics()
-            guard requested == generation else { return }
-            statistics = updated
+            if requested == generation {
+                statistics = updated
+            }
         } while hasPendingRequest
     }
 

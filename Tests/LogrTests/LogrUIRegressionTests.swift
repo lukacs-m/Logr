@@ -155,6 +155,32 @@ struct LogrUIRegressionTests {
         #expect(refresher.statistics.totalCount == 1)
     }
 
+    @Test func refreshQueuedDuringAnInvalidatedComputationStillPublishes() async throws {
+        let service = StubLogService()
+        let gate = RefreshGate()
+        service.beforeStatistics = { await gate.wait() }
+        service.storedLogs = [Self.entry("first")]
+        let refresher = LogStatisticsRefresher()
+
+        let inFlight = Task { await refresher.refresh(from: service) }
+        try await service.waitForStatisticsStart(count: 1)
+
+        await refresher.refresh(from: service, isActive: false)
+        service.storedLogs = [Self.entry("first"), Self.entry("second")]
+        let requeued = Task { await refresher.refresh(from: service) }
+        for _ in 0..<10 {
+            await Task.yield()
+        }
+        #expect(service.statisticsCallCount == 1)
+
+        await gate.open()
+        await inFlight.value
+        await requeued.value
+
+        #expect(refresher.statistics.totalCount == 2)
+        #expect(service.maxConcurrentStatistics == 1)
+    }
+
     @available(macOS 15.2, iOS 18.2, tvOS 18.2, watchOS 11.2, *)
     @Test func failedSerializationSurfacesInsteadOfSharingEmptyBytes() async throws {
         let service = StubLogService()
@@ -179,14 +205,14 @@ struct LogrUIRegressionTests {
 /// — the documented extension points for redaction or for reporting persisted history rather than the
 /// in-memory cache. Its logs are deliberately absent from `recentLogs`, so a caller that bypasses an
 /// override sees an empty service.
-private final class StubLogService: LogRService, @unchecked Sendable {
-    var storedLogs: Deque<LogEntry> = []
-    var export: @Sendable () async throws -> Data = { Data() }
-    var beforeStatistics: (@Sendable () async -> Void)?
-    private(set) var exportCallCount = 0
-    private(set) var statisticsCallCount = 0
-    private(set) var maxConcurrentStatistics = 0
-    private var runningStatistics = 0
+private final class StubLogService: LogRService {
+    @MainActor var storedLogs: Deque<LogEntry> = []
+    @MainActor var export: @Sendable () async throws -> Data = { Data() }
+    @MainActor var beforeStatistics: (@Sendable () async -> Void)?
+    @MainActor private(set) var exportCallCount = 0
+    @MainActor private(set) var statisticsCallCount = 0
+    @MainActor private(set) var maxConcurrentStatistics = 0
+    @MainActor private var runningStatistics = 0
 
     @MainActor var recentLogs: Deque<LogEntry> {
         []
@@ -220,21 +246,30 @@ private final class StubLogService: LogRService, @unchecked Sendable {
                          metadata: [String: LogMetadataValue]?) {}
 
     func exportLogs(format: ExportFormat) async throws -> Data {
-        exportCallCount += 1
+        let export = await MainActor.run {
+            exportCallCount += 1
+            return self.export
+        }
         return try await export()
     }
 
     func logStatistics() async -> LogStatistics {
-        statisticsCallCount += 1
-        runningStatistics += 1
-        maxConcurrentStatistics = max(maxConcurrentStatistics, runningStatistics)
-        await beforeStatistics?()
-        let snapshot = await MainActor.run { Array(storedLogs) }
-        runningStatistics -= 1
+        let gate = await MainActor.run {
+            statisticsCallCount += 1
+            runningStatistics += 1
+            maxConcurrentStatistics = max(maxConcurrentStatistics, runningStatistics)
+            return beforeStatistics
+        }
+        await gate?()
+        let snapshot = await MainActor.run {
+            runningStatistics -= 1
+            return Array(storedLogs)
+        }
         return await LogStatisticsComputer.compute(from: snapshot)
     }
 
     /// Yields until `count` computations have begun, so a test can act while one is suspended.
+    @MainActor
     func waitForStatisticsStart(count: Int) async throws {
         for _ in 0..<10_000 {
             if statisticsCallCount >= count { return }
