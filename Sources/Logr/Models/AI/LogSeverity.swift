@@ -6,12 +6,12 @@
 //
 
 import Foundation
-#if canImport(FoundationModels)
+#if LOGR_SYSTEM_MODEL
 import FoundationModels
 #endif
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-#if canImport(FoundationModels)
+#if LOGR_SYSTEM_MODEL
 @Generable(description: "Severity level of an issue: critical, high, medium, or low")
 #endif
 public enum LogSeverity: Sendable, Hashable, Equatable {

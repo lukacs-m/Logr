@@ -130,7 +130,8 @@ private extension IssueSummaryView {
     var issuesView: some View {
         if let summary = logr.logIssueSummary, !summary.issues.isEmpty {
             Section("All Issues (\(summary.issues.count))") {
-                ForEach(summary.issues) { issue in
+                // Only merged multi-chunk results are deduplicated, so ids can repeat.
+                ForEach(Array(summary.issues.enumerated()), id: \.offset) { _, issue in
                     IssueRow(issue: issue)
                 }
             }

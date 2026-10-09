@@ -400,7 +400,7 @@ private extension LogR {
 
         startCleanupTimer()
         if let writer {
-            Task {
+            Task { [weak self] in
                 await writer.setOnDrop { [weak self] count in
                     Task { @MainActor in self?.droppedLogCount += count }
                 }

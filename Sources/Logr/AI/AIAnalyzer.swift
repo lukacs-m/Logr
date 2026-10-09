@@ -6,7 +6,7 @@
 //
 
 import Foundation
-#if canImport(FoundationModels)
+#if LOGR_SYSTEM_MODEL
 import FoundationModels
 #endif
 
@@ -46,7 +46,7 @@ public struct AnalyzerConfiguration: Sendable {
     }
 }
 
-#if canImport(FoundationModels)
+#if LOGR_SYSTEM_MODEL
 
 // MARK: - Enhanced Analyzer
 
@@ -385,7 +385,7 @@ private extension AIAnalyzer {
 // MARK: - Result Merging
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-private extension AIAnalyzer {
+extension AIAnalyzer {
     func mergeResults<T: Generable & Sendable>(_ results: [T],
                                                type: AnalysisType) -> T? {
         switch type {
@@ -405,7 +405,9 @@ private extension AIAnalyzer {
     }
 
     func mergePrivacyResults(_ results: [PrivacyAnalysisResult]) -> PrivacyAnalysisResult {
-        let allWarnings = results.flatMap(\.warnings)
+        // A call site that logs in several chunks comes back once per chunk.
+        var seen = Set<String>()
+        let allWarnings = results.flatMap(\.warnings).filter { seen.insert($0.id).inserted }
         let criticalCount = allWarnings.count(where: { $0.severity == .critical })
         let highCount = allWarnings.count(where: { $0.severity == .high })
 
@@ -455,7 +457,7 @@ private extension AIAnalyzer {
         var merged: [String: LogIssue] = [:]
 
         for issue in issues {
-            let key = "\(issue.category):\(issue.title)"
+            let key = issue.id
             if let existing = merged[key] {
                 // Merge occurrences
                 merged[key] = existing.updateOccurrences(by: issue.occurrences)
@@ -553,7 +555,8 @@ private extension SystemLanguageModel.Availability.UnavailableReason {
 }
 
 #else
-/// Reports native analysis as unavailable on platforms without FoundationModels.
+/// Reports native analysis as unavailable on platforms without the on-device system language model
+/// (tvOS, watchOS).
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 public actor AIAnalyzer: LogAIAnalyzer {
     public let configuration: AnalyzerConfiguration
@@ -562,7 +565,7 @@ public actor AIAnalyzer: LogAIAnalyzer {
     }
 
     public var availabilityDescription: String {
-        "FoundationModels is unavailable on this platform."
+        "The on-device system language model is unavailable on this platform."
     }
 
     public init(configuration: AnalyzerConfiguration = .default) {

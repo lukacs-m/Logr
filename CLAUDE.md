@@ -17,7 +17,7 @@ swift package generate-documentation --target Logr --warnings-as-errors     # Do
 swift package generate-documentation --target LogrUI --warnings-as-errors
 ```
 
-CI (`.github/workflows/swift.yml`) runs on `macos-26` with the latest Xcode: `swift test --parallel`, then DocC for both targets with warnings as errors. `.github/workflows/docs.yml` builds the combined DocC archive on every push to `develop` and deploys it to GitHub Pages (https://lukacs-m.github.io/Logr/).
+CI (`.github/workflows/swift.yml`) runs on `macos-26` with the latest Xcode: `swift test --parallel`, then DocC for both targets with warnings as errors. A `platforms` job builds `LogrUI` for the iOS, tvOS and watchOS simulators with `xcodebuild` (not `swift build --triple`, which forces Logr's deployment target onto dependencies and breaks swift-perception). `.github/workflows/docs.yml` builds the combined DocC archive on every push to `develop` and deploys it to GitHub Pages (https://lukacs-m.github.io/Logr/).
 
 ## Documentation
 
@@ -61,7 +61,7 @@ SwiftFormat is a declared package dependency but is **not** wired up as a build 
 - `LogRService` — public logging API (`@Observable`, `Sendable`). Logging (`log`/`debug`/`info`/…) and `init` are `nonisolated` (callable from any domain); the observable state that drives SwiftUI (`recentLogs`, `droppedLogCount`, `canAnalyseLogs`, AI results) is `@MainActor`
 - `LogRPersistence` — storage abstraction (FileSystem or SQLite implementations)
 - `LoggerCryptoServicing` — AES-256-GCM / ChaCha20-Poly1305 encryption with Keychain-backed keys
-- `LogAIAnalyzer` — injectable analysis protocol; the native `AIAnalyzer` uses `FoundationModels` on iOS/macOS 26+ and reports unavailable on platforms without the framework
+- `LogAIAnalyzer` — injectable analysis protocol; the native `AIAnalyzer` uses `FoundationModels` (26+) where `Package.swift` defines `LOGR_SYSTEM_MODEL` (iOS, macOS, Mac Catalyst, visionOS; also set on `LogrTests`) and reports unavailable elsewhere. Guard FoundationModels code with `#if LOGR_SYSTEM_MODEL`, never `canImport(FoundationModels)`: tvOS and watchOS SDKs ship the module without the system model
 
 ### Data Flow
 
