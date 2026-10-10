@@ -18,7 +18,7 @@ swift package generate-documentation --target LogrUI --warnings-as-errors
 swift package generate-documentation --target LogrTesting --warnings-as-errors
 ```
 
-CI (`.github/workflows/swift.yml`) runs on `macos-26` with the latest Xcode: `swift test --parallel`, then DocC for both targets with warnings as errors. A `platforms` job builds `LogrUI` for the iOS, tvOS and watchOS simulators with `xcodebuild` (not `swift build --triple`, which forces Logr's deployment target onto dependencies and breaks swift-perception). `.github/workflows/docs.yml` builds the combined DocC archive on every push to `develop` and deploys it to GitHub Pages (https://lukacs-m.github.io/Logr/).
+CI (`.github/workflows/swift.yml`) runs on `macos-26` with the latest Xcode: SwiftFormat lint (a pinned, checksummed 0.63.1 release), `swift test --parallel`, then DocC for all three library targets with warnings as errors. A `platforms` job builds the `Logr-Package` scheme (every library) for the iOS, tvOS and watchOS simulators with `xcodebuild` (not `swift build --triple`, which forces Logr's deployment target onto dependencies and breaks swift-perception). `.github/workflows/docs.yml` builds the combined DocC archive (`Logr`, `LogrUI`, `LogrTesting`) on every push to `develop` and deploys it to GitHub Pages (https://lukacs-m.github.io/Logr/).
 
 ## Documentation
 
@@ -38,7 +38,7 @@ Do not add Markdown documentation files to the repository. Durable explanations 
 
 ## Code Formatting
 
-SwiftFormat is a declared package dependency but is **not** wired up as a build plugin — run the `swiftformat` CLI manually. Configuration is in `.swiftformat`:
+Lint with the `swiftformat` CLI, 0.63.1 or newer (`--minversion` in `.swiftformat`; CI uses exactly 0.63.1, so bump the CI version, its checksum and `--minversion` together). The declared SwiftFormat package dependency resolves an older version that `--minversion` rejects, so do not `swift run swiftformat`. Configuration is in `.swiftformat`:
 - `--swiftversion 6.3`, 4-space indent, 115 char max width
 - Excludes Tests and Package.swift
 - Key rules: `after-first` wrapping, `before-first` collection wrapping, no-space ranges
@@ -71,7 +71,7 @@ Logging calls (nonisolated, any domain) → `LogR` (lock-protected in-memory cac
 
 ### Storage Options
 
-- **FileSystemStorage** (actor): single append-only NDJSON file `Application Support/<bundle id>/Logr/logr_entries.ndjson` (one entry per line; the `Logr` directory is excluded from backups; a 1.3 file in `Documents` is moved on open, legacy JSON-array files are migrated oldest-first, an unterminated last line is cut), good for moderate volume
+- **FileSystemStorage** (actor): single append-only NDJSON file `Application Support/<bundle id>/Logr/logr_entries.ndjson` (one entry per line; the `Logr` directory is excluded from backups; a 1.3 file in `Documents` is moved on open, legacy JSON-array files are migrated oldest-first, an unterminated last line is cut, reads sort by timestamp, a failed append is rolled back), good for moderate volume
 - **SQLiteStorage**: GRDB-backed database at `Application Support/<bundle id>/logs.sqlite` (file excluded from backups), recommended for large volume
 
 ### Concurrency Model
@@ -100,5 +100,5 @@ Tests use Swift Testing framework (`@Suite`, `@Test` attributes). The test targe
 - **KeychainAccess** (4.2.2+): Keychain storage for encryption keys
 - **SQLiteData** (1.12.0+): SQLite via GRDB
 - **swift-collections** (1.5.1+): Deque for log cache
-- **SwiftFormat** (0.61.0+): Formatter — declared dependency for CLI use, not a build plugin
+- **SwiftFormat** (0.61.0+): declared dependency, not a build plugin and not used for linting (that is the 0.63.1 CLI, see Code Formatting)
 - **swift-docc-plugin** (1.5.0+): `swift package generate-documentation`

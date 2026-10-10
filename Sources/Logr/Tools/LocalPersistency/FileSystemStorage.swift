@@ -16,14 +16,14 @@ import OSLog
 /// previous implementation re-read, re-sorted, and rewrote the entire file on every
 /// write). Full rewrites happen only during cleanup (`deleteEntries`) and `clear()`.
 ///
-/// Entries are returned in insertion order, which — because the writer persists entries in
-/// the order they are logged — is chronological (oldest first), matching the
-/// ``LogRPersistence`` contract and ``SQLiteStorage``.
+/// Entries are returned oldest first, sorted by timestamp, matching the ``LogRPersistence`` contract and
+/// ``SQLiteStorage``; entries with the same timestamp keep the order they were written in.
 ///
 /// Files written by earlier versions (a single JSON array) are migrated to NDJSON, oldest first,
 /// the first time the file is opened. A final line left incomplete by a crash is cut on open.
 public actor FileSystemStorage: LogRPersistence {
     private let fileURL: URL
+    private let write: @Sendable (FileHandle, Data) throws -> Void
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
@@ -85,8 +85,16 @@ public actor FileSystemStorage: LogRPersistence {
     /// - Throws: A file-system error if the directory or the file cannot be created, or a
     ///   legacy file cannot be migrated.
     public init(directory: URL, fileName: String) throws {
+        try self.init(directory: directory, fileName: fileName) { handle, payload in
+            try handle.write(contentsOf: payload)
+        }
+    }
+
+    /// `write` appends a payload; tests replace it to make an append fail partway.
+    init(directory: URL, fileName: String, write: @escaping @Sendable (FileHandle, Data) throws -> Void) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         fileURL = directory.appendingPathComponent(fileName)
+        self.write = write
 
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
@@ -115,7 +123,14 @@ public actor FileSystemStorage: LogRPersistence {
             try payload.append(encoder.encode(entry))
             payload.append(Self.newline)
         }
-        try handle.write(contentsOf: payload)
+        do {
+            try write(handle, payload)
+        } catch {
+            // All or nothing: a partial batch would leave a fragment, and the writer's retry would
+            // duplicate the lines that did land.
+            try? handle.truncate(atOffset: end)
+            throw error
+        }
     }
 
     public func fetchEntries() async throws -> [EncryptedLogEntry] {
@@ -135,6 +150,13 @@ public actor FileSystemStorage: LogRPersistence {
 
     public func clear() async throws {
         try Data().write(to: fileURL, options: .atomic)
+        // Unreadable files moved aside on open still hold encrypted entries.
+        let directory = fileURL.deletingLastPathComponent()
+        let unreadablePrefix = "\(fileURL.lastPathComponent).unreadable-"
+        for name in try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            where name.hasPrefix(unreadablePrefix) {
+            try FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
     }
 
     public func count() async throws -> Int {
@@ -157,20 +179,32 @@ private extension FileSystemStorage {
             try Data().write(to: url, options: .atomic)
             return
         }
-        guard let data = try? Data(contentsOf: url), let last = data.last else { return }
-        if data.first == openBracket {
+        // Opening runs at launch, usually on the main thread: peek at two bytes and read the whole file
+        // only to migrate or repair it.
+        guard let handle = try? FileHandle(forUpdating: url) else { return }
+        defer { try? handle.close() }
+        guard let first = try? handle.read(upToCount: 1)?.first else { return }
+        if first == openBracket {
+            guard let data = try? Data(contentsOf: url) else { return }
             try migrateLegacyArray(data, at: url, encoder: encoder, decoder: decoder)
             return
         }
-        guard last != newline else { return }
+        let end = try handle.seekToEnd()
+        try handle.seek(toOffset: end - 1)
+        guard try handle.read(upToCount: 1)?.first != newline,
+              let data = try? Data(contentsOf: url)
+        else {
+            return
+        }
         let completeLength = data.lastIndex(of: newline).map { data.distance(from: data.startIndex, to: $0) + 1 }
-        let handle = try FileHandle(forWritingTo: url)
-        defer { try? handle.close() }
         try handle.truncate(atOffset: UInt64(completeLength ?? 0))
     }
 
-    /// Rewrites a pre-1.2 JSON array, which was stored newest-first, as oldest-first NDJSON. An array that
+    /// Rewrites a pre-1.2 JSON array, which was stored newest first, as oldest-first NDJSON. An array that
     /// cannot be decoded is moved aside, never overwritten, and the log starts empty.
+    ///
+    /// Reversed rather than sorted: the file's dates drop fractions of a second, so only the file order
+    /// tells entries from the same second apart.
     static func migrateLegacyArray(_ data: Data, at url: URL, encoder: JSONEncoder, decoder: JSONDecoder) throws {
         guard let entries = try? decoder.decode([EncryptedLogEntry].self, from: data) else {
             let stamp = Date().formatted(.iso8601.timeSeparator(.omitted))
@@ -181,7 +215,7 @@ private extension FileSystemStorage {
             logger.fault("Unreadable legacy log file moved to \(aside.lastPathComponent, privacy: .public)")
             return
         }
-        try writeAll(entries.sorted { $0.timestamp < $1.timestamp }, to: url, using: encoder)
+        try writeAll(entries.reversed(), to: url, using: encoder)
     }
 
     /// Rewrites the whole file as NDJSON. Used only by migration and cleanup.
@@ -201,9 +235,12 @@ private extension FileSystemStorage {
             return (try? decoder.decode([EncryptedLogEntry].self, from: data)) ?? []
         }
         // NDJSON: one entry per line. Skip any unreadable line (e.g. a partial write
-        // after a crash) rather than discarding the whole file.
+        // after a crash) rather than discarding the whole file. Sorted because files converted by
+        // 1.2 and 1.3 start with a newest-first block; the sort is stable, so same-second entries
+        // keep their file order.
         return data.split(separator: newline, omittingEmptySubsequences: true).compactMap {
             try? decoder.decode(EncryptedLogEntry.self, from: Data($0))
         }
+        .sorted { $0.timestamp < $1.timestamp }
     }
 }

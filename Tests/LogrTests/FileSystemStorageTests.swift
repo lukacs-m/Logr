@@ -132,6 +132,60 @@ struct FileSystemStorageTests {
         #expect(try Data(contentsOf: directory.url.appendingPathComponent(asideName)) == corrupt)
     }
 
+    @Test("clear() also deletes a moved-aside unreadable file")
+    func testClearDeletesUnreadableLegacyFile() async throws {
+        let fileName = "entries.json"
+        try Data(#"[{"id":"broken","#.utf8).write(to: directory.url.appendingPathComponent(fileName))
+        let storage = try FileSystemStorage(directory: directory.url, fileName: fileName)
+
+        try await storage.clear()
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.url.path) == [fileName])
+    }
+
+    @Test("A legacy array keeps its within-second order when migrated oldest first")
+    func testLegacyArrayMigrationKeepsSameSecondOrder() async throws {
+        // The pre-1.2 writer stored newest first, and its ISO 8601 dates drop fractions of a second.
+        let fileName = "entries.json"
+        let newestFirst = ["e3", "e2", "e1"].map {
+            EncryptedLogEntry(id: $0, timestamp: Date(timeIntervalSince1970: 1_767_225_600), data: Data($0.utf8))
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(newestFirst).write(to: directory.url.appendingPathComponent(fileName))
+
+        let storage = try FileSystemStorage(directory: directory.url, fileName: fileName)
+
+        #expect(try await storage.fetchEntries().map(\.id) == ["e1", "e2", "e3"])
+    }
+
+    @Test("Entries come back oldest first even when the file holds them out of order")
+    func testFetchSortsByTimestamp() async throws {
+        // Logr 1.2 and 1.3 converted array files without reordering them, leaving a newest-first block.
+        let storage = try FileSystemStorage(directory: directory.url, fileName: "entries.json")
+        try await storage.store([Self.entry(3), Self.entry(2), Self.entry(1)])
+        try await storage.store([Self.entry(4), Self.entry(5)])
+
+        #expect(try await storage.fetchEntries().map(\.id) == ["e1", "e2", "e3", "e4", "e5"])
+        #expect(try await storage.fetchEntries(limit: 2).map(\.id) == ["e4", "e5"])
+    }
+
+    @Test("A store that fails partway leaves the file as it was")
+    func testFailedStoreLeavesFileUnchanged() async throws {
+        let fileName = "entries.json"
+        let fileURL = directory.url.appendingPathComponent(fileName)
+        try await FileSystemStorage(directory: directory.url, fileName: fileName).store((1 ... 2).map(Self.entry))
+        let before = try Data(contentsOf: fileURL)
+        let storage = try FileSystemStorage(directory: directory.url, fileName: fileName) { handle, payload in
+            try handle.write(contentsOf: payload.prefix(payload.count / 2))
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
+
+        await #expect(throws: CocoaError.self) { try await storage.store((3 ... 4).map(Self.entry)) }
+
+        #expect(try Data(contentsOf: fileURL) == before)
+    }
+
     // Whole seconds: the file stores ISO 8601 dates, which drop fractions.
     private static func entry(_ index: Int) -> EncryptedLogEntry {
         EncryptedLogEntry(id: "e\(index)",

@@ -305,6 +305,30 @@ struct LoggerCryptoServiceTests {
         #expect(decrypted == "after")
     }
 
+    @Test("Rotation removes only stored keys, so a store that rejects unknown keys keeps working")
+    func testRotationOnlyRemovesStoredKeys() throws {
+        let base = InMemoryKeychainStore()
+        let cryptoService = try LoggerCryptoService(store: StrictRemovalKeychainStore(base: base))
+
+        try cryptoService.rotateKey(removeOldKeys: true)
+        try cryptoService.rotateKey(removeOldKeys: true)
+
+        #expect(base.items.keys.filter { $0.hasPrefix("logger_sym_key_v") } == ["logger_sym_key_v3"])
+    }
+
+    @Test("Rotation stops at the last key version instead of writing one the next launch would reject")
+    func testRotationStopsAtTheVersionCap() throws {
+        let store = InMemoryKeychainStore(items: ["logger_current_key_version": Data(#"{"value":1000000}"#.utf8),
+                                                  "logger_sym_key_v1000000": Data(repeating: 1, count: 32)])
+        let cryptoService = try LoggerCryptoService(store: store)
+        let items = store.items
+
+        #expect(throws: LoggerCryptoError.self) { try cryptoService.rotateKey() }
+
+        #expect(store.items == items)
+        #expect(cryptoService.currentKeyVersion.value == KeyVersion(1_000_000))
+    }
+
     @Test("Rotation adopts a key already stored for the next version instead of replacing it")
     func testRotationNeverReplacesAnExistingKey() throws {
         let store = InMemoryKeychainStore()
@@ -334,10 +358,11 @@ struct LoggerCryptoServiceTests {
         #expect(entry == LegacyFixtures.entries[0])
     }
 
-    @Test("An undecodable version record throws instead of regenerating the key")
-    func testCorruptVersionRecordThrows() throws {
+    @Test("A damaged version record throws instead of regenerating the key",
+          arguments: ["not a version", #"{"value":0}"#, #"{"value":-2}"#, #"{"value":1000001}"#])
+    func testCorruptVersionRecordThrows(record: String) throws {
         var items = try LegacyFixtures.keychain().items
-        items["logger_current_key_version"] = Data("not a version".utf8)
+        items["logger_current_key_version"] = Data(record.utf8)
         let store = InMemoryKeychainStore(items: items)
 
         let error = #expect(throws: LoggerCryptoError.self) {
@@ -503,4 +528,19 @@ private struct UnreadableKeychainStore: KeychainStore {
 
     func set(_ data: Data, forKey key: String) throws { try base.set(data, forKey: key) }
     func remove(forKey key: String) throws { try base.remove(forKey: key) }
+}
+
+/// Throws when asked to remove a key it does not hold, as a strict custom store may.
+private struct StrictRemovalKeychainStore: KeychainStore {
+    struct MissingKey: Error {}
+
+    let base: InMemoryKeychainStore
+
+    func data(forKey key: String) throws -> Data? { try base.data(forKey: key) }
+    func set(_ data: Data, forKey key: String) throws { try base.set(data, forKey: key) }
+
+    func remove(forKey key: String) throws {
+        guard try base.data(forKey: key) != nil else { throw MissingKey() }
+        try base.remove(forKey: key)
+    }
 }

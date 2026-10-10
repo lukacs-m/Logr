@@ -130,7 +130,7 @@ public extension String {
     private func redactedIPv6() -> String {
         // Empty groups are the `::` compression; keeping them keeps the address shape.
         let groups = split(separator: ":", omittingEmptySubsequences: false)
-        guard let last = groups.last else { return "***" }
+        let last = groups.last!
         let masked = groups.dropLast().map { $0.isEmpty ? "" : "****" }
         let tail = last.contains(".") ? String(last).redactedIPv4() : String(last)
         return (masked + [tail]).joined(separator: ":")
