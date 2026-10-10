@@ -207,7 +207,7 @@ public final class LogR: LogRService {
             let categoryLogger = logger(for: category)
             if configuration.logVerbosity == .verbose {
                 let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
-                // Source locations are not sensitive; left private, Console shows them as <private>.
+                // Source locations are not sensitive, so they are public; the message stays private.
                 categoryLogger.log(level: level.osLogType,
                                    "\(message) (\(fileName, privacy: .public):\(line) \(function, privacy: .public))")
             } else {
