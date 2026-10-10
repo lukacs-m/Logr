@@ -175,6 +175,8 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
     private let currentKeyRef = "logger_current_key_version"
     private let keyPrefix = "logger_sym_key_v"
     private let keySize = 32 // 256 bits
+    /// Far beyond any real rotation count; a larger stored version can only come from a damaged record.
+    private let maxKeyVersion = 1_000_000
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let cacheKeys: SafeMutex<[KeyVersion: SymmetricKey]> = .init([:])
@@ -218,38 +220,42 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     // MARK: - Init
 
+    /// Loads the current key version from `store`, creating key version 1 only on a true first run.
+    ///
+    /// A key found in the store is never replaced: a failed Keychain read, or a version record that cannot
+    /// be decoded or holds a version outside 1...1,000,000, throws
+    /// ``LoggerCryptoError/initializationFailed(underlying:)`` (wrapping the read error or a `DecodingError`)
+    /// instead of provisioning a new key over the one that encrypted earlier logs. When key version 1 exists
+    /// without a version record, that key is adopted.
+    ///
+    /// - Parameters:
+    ///   - store: Where keys live. Defaults to the Keychain, device-only and not synchronized.
+    ///   - encryptionAlgo: The cipher for new entries. Defaults to AES-256-GCM. Decryption reads the
+    ///     cipher from each entry, so changing it keeps earlier entries readable.
+    /// - Throws: ``LoggerCryptoError/initializationFailed(underlying:)``.
     public init(store: any KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
                 encryptionAlgo: CryptoAlgo = .aes256gcm) throws {
         self.store = store
         self.encryptionAlgo = encryptionAlgo
-        let versionData: Data?
         do {
-            versionData = try store.data(forKey: currentKeyRef)
-        } catch {
-            // A failed read (e.g. keychain locked during a background launch) is not "first run":
-            // provisioning here would overwrite the existing key and orphan every persisted log.
-            throw LoggerCryptoError.initializationFailed(underlying: error)
-        }
-        if let versionData,
-           let version = try? decoder.decode(KeyVersion.self, from: versionData) {
-            currentKeyVersion.withLock {
-                $0 = version
+            // A failed read (e.g. keychain locked during a background launch) is not "first run".
+            if let versionData = try store.data(forKey: currentKeyRef) {
+                let version = try decoder.decode(KeyVersion.self, from: versionData)
+                guard (1...maxKeyVersion).contains(version.value) else {
+                    let reason = "Key version \(version.value) is outside 1...\(maxKeyVersion)"
+                    throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: reason))
+                }
+                currentKeyVersion.withLock { $0 = version }
+                return
             }
-        } else {
-            do {
-                let newKeyVersion = KeyVersion.default
-                let key = try Self.generateKey(version: newKeyVersion, store: store, keyPrefix: keyPrefix,
+            let firstVersion = KeyVersion.default
+            let key = try Self.loadOrCreateKey(version: firstVersion, store: store, keyPrefix: keyPrefix,
                                                keySize: keySize)
-                try store.set(encoder.encode(newKeyVersion), forKey: currentKeyRef)
-                currentKeyVersion.withLock {
-                    $0 = newKeyVersion
-                }
-                cacheKeys.withLock {
-                    $0[newKeyVersion] = key
-                }
-            } catch {
-                throw LoggerCryptoError.initializationFailed(underlying: error)
-            }
+            try store.set(encoder.encode(firstVersion), forKey: currentKeyRef)
+            currentKeyVersion.withLock { $0 = firstVersion }
+            cacheKeys.withLock { $0[firstVersion] = key }
+        } catch {
+            throw LoggerCryptoError.initializationFailed(underlying: error)
         }
     }
 
@@ -288,21 +294,32 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     /// Serializes rotations within this service. Retained keys keep earlier entries readable.
     ///
-    /// With `removeOldKeys`, entries encrypted with the previous key become unreadable, including
-    /// in-flight encryptions that already selected it. If removal fails, the new key remains active
-    /// and the removal error is thrown.
+    /// A key already stored for the next version is adopted rather than replaced. With
+    /// `removeOldKeys`, every older key version is removed, so all entries encrypted before the
+    /// rotation become unreadable, including in-flight encryptions that already selected an older
+    /// key. If removal fails, the new key remains active and the removal error is thrown.
+    ///
+    /// Versions stop at 1,000,000: rotating from it throws ``LoggerCryptoError/keychainFailure(_:)`` and
+    /// keeps the current key.
     public func rotateKey(removeOldKeys: Bool = false) throws {
         try currentKeyVersion.withLock { version in
-            let previousVersion = version
+            guard version.value < maxKeyVersion else {
+                throw LoggerCryptoError.keychainFailure("Key version \(maxKeyVersion) is the last; cannot rotate")
+            }
             let newVersion = KeyVersion(version.value + 1)
-            let newKey = try Self.generateKey(version: newVersion, store: store, keyPrefix: keyPrefix,
-                                              keySize: keySize)
+            let newKey = try Self.loadOrCreateKey(version: newVersion, store: store, keyPrefix: keyPrefix,
+                                                  keySize: keySize)
             try store.set(encoder.encode(newVersion), forKey: currentKeyRef)
             cacheKeys.withLock { $0[newVersion] = newKey }
             version = newVersion
             if removeOldKeys {
-                try store.remove(forKey: keyName(for: previousVersion))
-                _ = cacheKeys.withLock { $0.removeValue(forKey: previousVersion) }
+                for value in 1..<newVersion.value {
+                    let oldVersion = KeyVersion(value)
+                    _ = cacheKeys.withLock { $0.removeValue(forKey: oldVersion) }
+                    // Earlier rotations already removed most versions; custom stores may throw for those.
+                    guard try store.data(forKey: keyName(for: oldVersion)) != nil else { continue }
+                    try store.remove(forKey: keyName(for: oldVersion))
+                }
             }
         }
     }
@@ -329,12 +346,19 @@ private extension LoggerCryptoService {
         return symmetricKey
     }
 
-    static func generateKey(version: KeyVersion,
-                            store: any KeychainStore,
-                            keyPrefix: String,
-                            keySize: Int) throws -> SymmetricKey {
+    /// Returns the stored key for `version`, generating and storing one only when none exists, so a key
+    /// that may have encrypted entries is never replaced. The read and the add are separate calls: two
+    /// services provisioning the same store at the same moment can still both add.
+    static func loadOrCreateKey(version: KeyVersion,
+                                store: any KeychainStore,
+                                keyPrefix: String,
+                                keySize: Int) throws -> SymmetricKey {
+        let name = "\(keyPrefix)\(version.value)"
+        if let existing = try store.data(forKey: name) {
+            return SymmetricKey(data: existing)
+        }
         let data = try Data.randomBytes(count: keySize)
-        try store.set(data, forKey: "\(keyPrefix)\(version.value)")
+        try store.set(data, forKey: name)
         return SymmetricKey(data: data)
     }
 }

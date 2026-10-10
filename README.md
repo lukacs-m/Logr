@@ -10,7 +10,7 @@ encrypted at rest with Keychain-backed keys, can be browsed in a drop-in SwiftUI
 iOS 26+ can be analysed on-device by Apple Intelligence.
 
 - **Log from anywhere**: logging is `nonisolated`, no `await`, safe from any actor or thread; persistence runs on a background actor
-- **Two modules**: `Logr` (core) and `LogrUI` (viewer, statistics, mock)
+- **Three modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock) and `LogrTesting` (test doubles)
 - **Storage**: SQLite (recommended), an append-only NDJSON file, or your own `LogRPersistence`
 - **Encryption**: AES-256-GCM or ChaCha20-Poly1305, versioned keys with rotation
 - **Structure**: six levels, 49 predefined categories plus `.custom`, typed metadata on every entry
@@ -29,8 +29,8 @@ dependencies: [
 ]
 ```
 
-Add `Logr` to your target, and `LogrUI` if you want the SwiftUI views. In Xcode: File → Add
-Package Dependencies → `https://github.com/lukacs-m/logr`.
+Add `Logr` to your target, `LogrUI` if you want the SwiftUI views, and `LogrTesting` to your test
+target. In Xcode: File → Add Package Dependencies → `https://github.com/lukacs-m/logr`.
 
 ## Quick start
 
@@ -130,8 +130,12 @@ transition when you need pending writes processed immediately:
 
 ```swift
 let sqlite = try LogR(storage: SQLiteStorage())      // Application Support/<bundle id>/logs.sqlite
-let file = try LogR(storage: FileSystemStorage())    // Documents/logr_entries.json, one JSON entry per line
+let file = try LogR(storage: FileSystemStorage())    // Application Support/<bundle id>/Logr/logr_entries.ndjson
 ```
+
+Both default locations are excluded from backups: entries are encrypted with a key that never leaves
+the device. The file storage writes one JSON entry per line; a file Logr 1.3 or earlier left in
+`Documents` is moved there on first open.
 
 Entries are encrypted before they reach storage. Pick the cipher or rotate the key through
 `LoggerCryptoService`:
@@ -167,20 +171,16 @@ Results are also published as `privacyAnalysisResult`, `logIssueSummary` and `an
 `MockLogR` (in `LogrUI`) ships with 5,000 sample entries for previews and UI tests;
 `MockLogR(empty: true)` starts blank. Its inserts hop to the main actor, so hop once before asserting.
 
-The real `LogR` runs without Keychain or disk when the crypto service is backed by an in-memory store:
+The real `LogR` runs without Keychain or disk when the crypto service is backed by
+`InMemoryKeychainStore`, from the `LogrTesting` product:
 
 ```swift
-final class InMemoryKeychain: KeychainStore, @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: [String: Data] = [:]
-
-    func data(forKey key: String) throws -> Data? { lock.withLock { storage[key] } }
-    func set(_ data: Data, forKey key: String) throws { lock.withLock { storage[key] = data } }
-    func remove(forKey key: String) throws { lock.withLock { _ = storage.removeValue(forKey: key) } }
-}
+import Logr
+import LogrTesting
+import Testing
 
 @Test func logsAreCachedSynchronously() throws {
-    let crypto = try LoggerCryptoService(store: InMemoryKeychain())
+    let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
     let logr = LogR(cryptoService: crypto)   // no storage: nothing is persisted, and this init does not throw
 
     logr.info("hello", category: .test)
@@ -206,6 +206,7 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 | `Sources/LogrUI/AIAnalysisViews/` | Privacy warnings, issue summary and progress views |
 | `Sources/LogrUI/Mock+Previews/` | `MockLogR` |
 | `Sources/LogrUI/Tools+Extensions/` | The `\.logService` environment key, `.logRService(_:)`, the no-op default logger, level and severity colours |
+| `Sources/LogrTesting/` | `InMemoryKeychainStore` |
 | `Tests/LogrTests/` | Swift Testing suites; `ReadmeSnippetsTests.swift` compiles every snippet in this file |
 | `LogRExample/` | Xcode sample app exercising every feature |
 

@@ -1,0 +1,1 @@
+{"enabledLevels":["fault","info","warning","error"],"maxLogAge":259200,"coalesceWindowMillis":250,"mirrorToOSLog":false,"subsystem":"com.logr.fixtures","cleanupInterval":600,"logVerbosity":{"normal":{}},"categoryLevelOverrides":[{"network":{}},"warning",{"custom":{"_0":"Checkout"}},"debug"],"maxLogEntries":2000}

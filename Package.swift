@@ -21,7 +21,9 @@ let package = Package(
             targets: ["Logr"]
         ),
         .library(name: "LogrUI",
-                 targets: ["LogrUI"])
+                 targets: ["LogrUI"]),
+        .library(name: "LogrTesting",
+                 targets: ["LogrTesting"])
     ],
     dependencies: [
         .package(url: "https://github.com/kishikawakatsumi/KeychainAccess", .upToNextMajor(from: "4.2.2")),
@@ -55,9 +57,19 @@ let package = Package(
               .enableUpcomingFeature("InferIsolatedConformances")
             ]
         ),
+        .target(
+            name: "LogrTesting",
+            dependencies: ["Logr"],
+            swiftSettings: [
+              .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+              .enableUpcomingFeature("InferIsolatedConformances"),
+              .enableUpcomingFeature("ExistentialAny")
+            ]
+        ),
         .testTarget(
             name: "LogrTests",
-            dependencies: ["Logr", "LogrUI"],
+            dependencies: ["Logr", "LogrUI", "LogrTesting"],
+            resources: [.copy("Fixtures")],
             swiftSettings: [systemModel]
         ),
     ],

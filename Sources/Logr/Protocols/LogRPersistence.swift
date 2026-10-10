@@ -128,7 +128,9 @@ public protocol LogRPersistence: Sendable {
     /// Part of the automatic cleanup process. Called periodically based on
     /// the configured cleanup interval and `maxLogAge`.
     ///
-    /// - Parameter date: The cutoff date. Entries older than this are deleted.
+    /// "Older than" is strict: an entry whose timestamp equals `date` is kept.
+    ///
+    /// - Parameter date: The cutoff date. Entries with a timestamp earlier than this are deleted.
     /// - Throws: Storage-specific errors if the operation fails.
     func deleteEntries(olderThan date: Date) async throws
 

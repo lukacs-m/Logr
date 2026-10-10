@@ -206,8 +206,10 @@ public final class LogR: LogRService {
         if configuration.mirrorToOSLog {
             let categoryLogger = logger(for: category)
             if configuration.logVerbosity == .verbose {
+                let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
+                // Source locations are not sensitive, so they are public; the message stays private.
                 categoryLogger.log(level: level.osLogType,
-                                   "[\(category.rawValue)][\(level.rawValue)] \(message) (\(file):\(function):\(line)")
+                                   "\(message) (\(fileName, privacy: .public):\(line) \(function, privacy: .public))")
             } else {
                 categoryLogger.log(level: level.osLogType, "\(message)")
             }
@@ -315,8 +317,9 @@ public extension LogR {
         // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/toArray below.
         let snapshot = recentLogs
 
-        // Reset progress at start
+        // Reset progress at start; clear it however the analysis ends, including when it throws.
         _analysisProgress = AnalysisProgress.starting(totalLogs: snapshot.count)
+        defer { _analysisProgress = nil }
 
         let result: PrivacyAnalysisResult = if snapshot.isEmpty {
             PrivacyAnalysisResult.empty
@@ -326,8 +329,6 @@ public extension LogR {
             }
         }
 
-        // Clear progress when complete
-        _analysisProgress = nil
         _privacyAnalysisResult = result
         return result
     }
@@ -341,8 +342,9 @@ public extension LogR {
         // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/toArray below.
         let snapshot = recentLogs
 
-        // Reset progress at start
+        // Reset progress at start; clear it however the analysis ends, including when it throws.
         _analysisProgress = AnalysisProgress.starting(totalLogs: snapshot.count)
+        defer { _analysisProgress = nil }
 
         let result: LogIssueSummary = if snapshot.isEmpty {
             LogIssueSummary.empty
@@ -352,8 +354,6 @@ public extension LogR {
             }
         }
 
-        // Clear progress when complete
-        _analysisProgress = nil
         _logIssueSummary = result
         return result
     }
@@ -370,7 +370,7 @@ extension LogR {
     /// entire deque on every cleanup tick. Pure (no instance state) so it is `static` and
     /// directly unit-testable.
     static func trimExpiredEntries(_ entries: inout Deque<LogEntry>, olderThan cutoff: Date) {
-        while let oldest = entries.last, oldest.timestamp <= cutoff {
+        while let oldest = entries.last, oldest.timestamp < cutoff {
             entries.removeLast()
         }
     }
@@ -561,10 +561,13 @@ actor LogWriterActor {
     private let batchSize: Int
     private let maxRetries: Int
     private let maxPendingWrites: Int
+    private let partialBatchDeadline: Duration
     private let continuation: AsyncStream<Event>.Continuation
     /// `let` of a `Sendable` type, so the nonisolated producer can touch it without hopping actors.
     private let backlog: SafeMutex<Backlog> = .init(Backlog())
     private var onDrop: (@Sendable (Int) -> Void)?
+    /// Drops counted while no `onDrop` handler was registered yet; delivered by ``setOnDrop(_:)``.
+    private var undeliveredDrops = 0
     private var flushTask: Task<Void, Never>?
     private var flushDeadline: UUID?
 
@@ -573,12 +576,14 @@ actor LogWriterActor {
          configuration: LogrConfiguration,
          batchSize: Int = 50,
          maxRetries: Int = 3,
-         maxPendingWrites: Int = 100_000) {
+         maxPendingWrites: Int = 100_000,
+         partialBatchDeadline: Duration = .seconds(1)) {
         self.storage = storage
         self.cryptoService = cryptoService
         self.batchSize = batchSize
         self.maxRetries = maxRetries
         self.maxPendingWrites = max(1, maxPendingWrites)
+        self.partialBatchDeadline = partialBatchDeadline
         logger = Logger(subsystem: configuration.subsystem, category: LogCategory.persistence.rawValue)
         let (stream, continuation) = AsyncStream<Event>.makeStream()
         self.continuation = continuation
@@ -586,9 +591,11 @@ actor LogWriterActor {
     }
 
     /// Registers a callback invoked with the number of entries dropped (encryption failures, a
-    /// batch abandoned after exhausting retries, or entries shed under backpressure).
+    /// batch abandoned after exhausting retries, or entries shed under backpressure). Drops counted
+    /// before registration are delivered immediately, so none are lost to a late handler.
     func setOnDrop(_ handler: @escaping @Sendable (Int) -> Void) {
         onDrop = handler
+        reportBackpressureDrops(consumedInFlight: 0)
     }
 
     /// Hands a plaintext entry to the writer. Synchronous and non-isolated so the main
@@ -685,9 +692,10 @@ private extension LogWriterActor {
         let id = UUID()
         flushDeadline = id
         let continuation = continuation
+        let deadline = partialBatchDeadline
         // The timer only enqueues an event; persistence stays ordered with flush and clear.
         flushTask = Task { @concurrent in
-            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            do { try await Task.sleep(for: deadline) } catch { return }
             continuation.yield(.deadline(id))
         }
     }
@@ -709,8 +717,16 @@ private extension LogWriterActor {
         }
         if dropped > 0 {
             logger.error("Shed \(dropped) log entries under backpressure (storage fell behind)")
-            onDrop?(dropped)
         }
+        reportDrops(dropped)
+    }
+
+    /// The single path every drop takes to `onDrop`; holds the count until a handler exists.
+    func reportDrops(_ count: Int) {
+        undeliveredDrops += count
+        guard undeliveredDrops > 0, let onDrop else { return }
+        onDrop(undeliveredDrops)
+        undeliveredDrops = 0
     }
 
     func encrypt(_ entry: LogEntry) -> EncryptedLogEntry? {
@@ -719,7 +735,7 @@ private extension LogWriterActor {
             return EncryptedLogEntry(id: entry.id, timestamp: entry.timestamp, data: data)
         } catch {
             logger.error("Failed to encrypt log entry: \(error.localizedDescription)")
-            onDrop?(1)
+            reportDrops(1)
             return nil
         }
     }
@@ -744,7 +760,7 @@ private extension LogWriterActor {
                     Dropping \(toStore.count) log entries after \(attempt) failed store \
                     attempts: \(error.localizedDescription)
                     """)
-                    onDrop?(toStore.count)
+                    reportDrops(toStore.count)
                     batch.removeAll(keepingCapacity: true)
                     return
                 }

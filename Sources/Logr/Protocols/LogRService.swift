@@ -283,11 +283,21 @@ public extension LogRService {
         }
 
         let filteredLogs = recentLogs.lazy.filter { entry in
-            if let levels, !levels.contains(entry.level) { return false }
-            if let categories, !categories.contains(entry.category) { return false }
-            if let subsystems, !subsystems.contains(entry.subsystem) { return false }
-            if let startDate, entry.timestamp < startDate { return false }
-            if let endDate, entry.timestamp > endDate { return false }
+            if let levels, !levels.contains(entry.level) {
+                return false
+            }
+            if let categories, !categories.contains(entry.category) {
+                return false
+            }
+            if let subsystems, !subsystems.contains(entry.subsystem) {
+                return false
+            }
+            if let startDate, entry.timestamp < startDate {
+                return false
+            }
+            if let endDate, entry.timestamp > endDate {
+                return false
+            }
             return true
         }
         if let limit {
@@ -336,15 +346,26 @@ package enum LogExporter {
 
         case .csv:
             let formatter = ISO8601DateFormatter()
+            // RFC 4180: every text field is quoted, with any quote inside it doubled.
+            func quoted(_ field: String) -> String {
+                "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
+            }
             var rows = ["Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata"]
             for log in logs {
-                let timestamp = formatter.string(from: log.timestamp)
-                let escapedMessage = log.message.replacingOccurrences(of: "\"", with: "\"\"")
-                let metadataStr = log.metadata?.map { "\($0.key)=\($0.value.stringValue)" }
+                let metadata = log.metadata?.map { "\($0.key)=\($0.value.stringValue)" }
                     .joined(separator: "; ") ?? ""
-                let escapedMetadata = metadataStr.replacingOccurrences(of: "\"", with: "\"\"")
-                rows
-                    .append("\"\(timestamp)\",\"\(log.level.rawValue)\",\"\(log.category)\",\"\(log.subsystem)\",\"\(escapedMessage)\",\"\(log.file)\",\"\(log.function)\",\(log.line),\"\(escapedMetadata)\"")
+                let fields = [
+                    quoted(formatter.string(from: log.timestamp)),
+                    quoted(log.level.rawValue),
+                    quoted(log.category.description),
+                    quoted(log.subsystem),
+                    quoted(log.message),
+                    quoted(log.file),
+                    quoted(log.function),
+                    String(log.line),
+                    quoted(metadata)
+                ]
+                rows.append(fields.joined(separator: ","))
             }
             guard let data = rows.joined(separator: "\n").data(using: .utf8) else {
                 throw LogExportError.encodingFailed

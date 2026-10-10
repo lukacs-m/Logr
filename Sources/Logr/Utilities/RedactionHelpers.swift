@@ -55,7 +55,8 @@ import Foundation
 public extension String {
     /// Redacts an email address while optionally preserving the domain.
     ///
-    /// Keeps the first character of the local part and masks the rest.
+    /// Keeps the first character of the local part and masks the rest; a one-character local part is
+    /// masked entirely.
     /// - Parameter showDomain: Whether to reveal the full domain. Defaults to `true`.
     /// - Returns: The redacted email string.
     func redactedEmail(showDomain: Bool = true) -> String {
@@ -66,7 +67,7 @@ public extension String {
         let localPart = self[..<atIndex]
         let domainPart = self[index(after: atIndex)...]
 
-        let redactedLocal = localPart.prefix(1) + (localPart.count > 1 ? "***" : "")
+        let redactedLocal = localPart.count > 1 ? localPart.prefix(1) + "***" : "***"
         let redactedDomain = showDomain ? String(domainPart) : "***"
 
         return "\(redactedLocal)@\(redactedDomain)"
@@ -104,9 +105,10 @@ public extension String {
         maskedCreditCard(visibleDigits: visibleDigits)
     }
 
-    /// Redacts an IP address (IPv4 or IPv6).
+    /// Redacts an IP address (IPv4 or IPv6), keeping only the last group.
     ///
-    /// - Note: For IPv6, this assumes full notation without compression.
+    /// IPv6 keeps its `::` compression, so `::1` is returned unchanged, and an IPv4-mapped address
+    /// (`::ffff:192.168.1.42`) has its IPv4 part redacted too.
     /// - Returns: The redacted IP string.
     func redactedIP() -> String {
         if contains(":") {
@@ -126,10 +128,12 @@ public extension String {
     }
 
     private func redactedIPv6() -> String {
-        let parts = split(separator: ":")
-        guard let last = parts.last else { return "***" }
-        let masked = Array(repeating: "****", count: parts.count - 1)
-        return masked.joined(separator: ":") + ":\(last)"
+        // Empty groups are the `::` compression; keeping them keeps the address shape.
+        let groups = split(separator: ":", omittingEmptySubsequences: false)
+        let last = groups.last!
+        let masked = groups.dropLast().map { $0.isEmpty ? "" : "****" }
+        let tail = last.contains(".") ? String(last).redactedIPv4() : String(last)
+        return (masked + [tail]).joined(separator: ":")
     }
 
     /// Redacts a Social Security Number keeping only the last 4 digits.
@@ -159,9 +163,13 @@ public extension String {
         }
     }
 
-    /// Creates a cryptographically secure one-way hash for logging.
+    /// Creates a one-way hash for logging.
     ///
     /// Useful for tracking identifiers across logs without exposing original values.
+    ///
+    /// - Important: The hash is unsalted, so anyone can hash likely inputs and compare. Low-entropy
+    ///   values (emails, phone numbers, short or sequential IDs) are recoverable by guessing; use it
+    ///   only for identifiers that are hard to guess.
     /// - Parameter algorithm: The hash algorithm. Defaults to `.sha256Truncated`.
     /// - Returns: A hexadecimal hash string.
     func hashed(algorithm: HashAlgorithm = .sha256Truncated) -> String {

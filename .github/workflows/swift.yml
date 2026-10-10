@@ -28,6 +28,19 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # Pinned and checksummed: a new SwiftFormat release can change rules and fail unrelated PRs.
+      # Bump the version, the checksum and `--minversion` in .swiftformat together.
+      - name: Lint (SwiftFormat 0.63.1, rules in .swiftformat)
+        env:
+          SWIFTFORMAT_VERSION: 0.63.1
+          SWIFTFORMAT_SHA256: 385ef1a263ba28685157b98c5536b9c9105e124518f28b7ef8a2bee4b167eaeb
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/swiftformat.zip" \
+            "https://github.com/nicklockwood/SwiftFormat/releases/download/$SWIFTFORMAT_VERSION/swiftformat.zip"
+          echo "$SWIFTFORMAT_SHA256  $RUNNER_TEMP/swiftformat.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/swiftformat.zip" -d "$RUNNER_TEMP/swiftformat"
+          "$RUNNER_TEMP/swiftformat/swiftformat" --lint .
+
       - name: Run tests
         run: swift test --parallel
 
@@ -35,6 +48,7 @@ jobs:
         run: |
           swift package generate-documentation --target Logr --warnings-as-errors
           swift package generate-documentation --target LogrUI --warnings-as-errors
+          swift package generate-documentation --target LogrTesting --warnings-as-errors
 
   platforms:
     name: Build (${{ matrix.platform }})
@@ -50,10 +64,10 @@ jobs:
           xcode-version: latest
       # xcodebuild, not `swift build --triple`: a triple forces Logr's deployment target onto every dependency,
       # and swift-perception's `Bindable` is obsoleted at exactly those versions.
-      - name: Compile core and UI at their minimum deployment targets
+      - name: Compile every library at its minimum deployment target
         run: >-
           xcodebuild build
-          -scheme LogrUI
+          -scheme Logr-Package
           -destination 'generic/platform=${{ matrix.platform }}'
           -skipMacroValidation
           ARCHS=arm64

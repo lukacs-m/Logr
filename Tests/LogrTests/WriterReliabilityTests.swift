@@ -1,19 +1,32 @@
 import Testing
 @testable import Logr
+import LogrTesting
 import Foundation
 import os
 
 /// In-memory storage whose batch `store` throws for the first `failingFirst` calls,
 /// then succeeds. Used to prove the background writer re-tries a failed batch instead
 /// of silently dropping it.
+///
+/// Every batch it accepts is also published on `stores`, so tests await persistence instead of
+/// polling. `stores` finishes when the storage is released.
 actor FlakyStorage: LogRPersistence {
     enum StorageError: Error { case transient }
 
+    let stores: AsyncStream<[EncryptedLogEntry]>
+    private let storesContinuation: AsyncStream<[EncryptedLogEntry]>.Continuation
     private var failuresRemaining: Int
     private(set) var entries: [EncryptedLogEntry] = []
 
     init(failingFirst failures: Int) {
         failuresRemaining = failures
+        let (stores, continuation) = AsyncStream<[EncryptedLogEntry]>.makeStream()
+        self.stores = stores
+        storesContinuation = continuation
+    }
+
+    deinit {
+        storesContinuation.finish()
     }
 
     var storedCount: Int { entries.count }
@@ -28,6 +41,7 @@ actor FlakyStorage: LogRPersistence {
             throw StorageError.transient
         }
         entries.append(contentsOf: newEntries)
+        storesContinuation.yield(newEntries)
     }
 
     func fetchEntries() async throws -> [EncryptedLogEntry] { entries }
@@ -73,7 +87,7 @@ actor SlowStorage: LogRPersistence {
 @Suite("Writer Reliability")
 struct WriterReliabilityTests {
     private func makeCrypto() throws -> LoggerCryptoService {
-        try LoggerCryptoService(store: MockKeychainService())
+        try LoggerCryptoService(store: InMemoryKeychainStore())
     }
 
     @Test("A transient store failure does not lose log entries")
@@ -105,7 +119,9 @@ struct WriterReliabilityTests {
         #expect(stored == 120)
     }
 
-    @Test("droppedLogCount surfaces persistence loss through the LogRService existential")
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
+    @Test("droppedLogCount surfaces persistence loss through the LogRService existential",
+          .timeLimit(.minutes(1)))
     func testDroppedLogCountVisibleViaExistential() async throws {
         // Fails enough times to exhaust the writer's retries, so the batch is dropped and reported.
         let storage = FlakyStorage(failingFirst: 3)
@@ -114,11 +130,9 @@ struct WriterReliabilityTests {
         service.info("x")
         await service.flush()
 
-        // onDrop hops to the main actor via a Task, so allow the pending update to apply.
-        for _ in 0 ..< 50 where service.droppedLogCount == 0 {
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(service.droppedLogCount == 1)
+        // onDrop hops to the main actor via a Task, so the count may land after flush() returns.
+        let dropped = await Observations { service.droppedLogCount }.first { @Sendable in $0 > 0 }
+        #expect(dropped == 1)
     }
 
     @Test("Backpressure bounds the pending buffer and accounts every shed entry")
@@ -148,5 +162,52 @@ struct WriterReliabilityTests {
         #expect(stored + dropped == total)
         // The buffer shed load instead of growing without bound.
         #expect(dropped > 0)
+    }
+
+    @Test("Drops that happen before a handler is registered are delivered when it is")
+    func testDropsBeforeHandlerAreDelivered() async throws {
+        let storage = SlowStorage(delay: .milliseconds(50))
+        let writer = LogWriterActor(storage: storage,
+                                    cryptoService: try makeCrypto(),
+                                    configuration: .default,
+                                    batchSize: 5,
+                                    maxRetries: 1,
+                                    maxPendingWrites: 10)
+        let total = 200
+        for index in 0 ..< total {
+            writer.ingest(LogEntry(level: .info, category: .system, subsystem: "t", message: "m\(index)"))
+        }
+        await writer.flush()
+        let stored = await storage.storedCount
+        try #require(stored < total, "the burst must shed for this test to mean anything")
+
+        let droppedBox = OSAllocatedUnfairLock(initialState: 0)
+        await writer.setOnDrop { count in droppedBox.withLock { $0 += count } }
+
+        #expect(droppedBox.withLock { $0 } == total - stored)
+    }
+
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
+    @Test("droppedLogCount counts every entry that fails to encrypt, however early", .timeLimit(.minutes(1)))
+    func testDroppedLogCountIsExactForEncryptionFailures() async throws {
+        let logr = LogR(storage: FlakyStorage(failingFirst: 0), cryptoService: FailingCrypto())
+
+        for index in 0 ..< 5 {
+            logr.info("unencryptable \(index)")
+        }
+        await logr.flush()
+
+        let dropped = await Observations { logr.droppedLogCount }.first { @Sendable in $0 >= 5 }
+        #expect(dropped == 5)
+    }
+}
+
+private struct FailingCrypto: LoggerCryptoServicing {
+    func symmetricEncrypt(object: some Codable & Sendable) throws -> Data {
+        throw LoggerCryptoError.encryptionFailed
+    }
+
+    func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T {
+        throw LoggerCryptoError.decryptionFailed
     }
 }

@@ -14,11 +14,11 @@ import Foundation
 /// - **verbose**: Includes file name, function name, and line number in logs
 /// - **normal**: Only includes the log message without source location details
 public enum LogVerbosity: Sendable, Equatable, Codable {
-    /// Verbose logging with full source location details.
+    /// Verbose logging with the source location.
     ///
-    /// Output format: `[category][level] message (file:function:line)`
+    /// Output format: `message (file:line function)`; Console already shows the category and level.
     ///
-    /// Example: `[ui][info] Button tapped (ContentView.swift:viewDidLoad():42)`
+    /// Example: `Button tapped (ContentView.swift:42 viewDidLoad())`
     case verbose
 
     /// Normal logging with just the message.

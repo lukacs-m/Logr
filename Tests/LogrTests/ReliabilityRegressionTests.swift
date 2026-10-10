@@ -1,31 +1,26 @@
 import Collections
 import Foundation
 import Testing
-import os
 @testable import Logr
+import LogrTesting
 
-final class LockedKeychainStore: KeychainStore {
-    private let values = OSAllocatedUnfairLock(initialState: [String: Data]())
-
-    func data(forKey key: String) throws -> Data? { values.withLock { $0[key] } }
-    func set(_ data: Data, forKey key: String) throws { values.withLock { $0[key] = data } }
-    func remove(forKey key: String) throws { values.withLock { $0[key] = nil } }
-}
-
-@Suite("Reliability regressions")
+// Tests await events, not the clock; the limit turns a missed event into a failure instead of a hang.
+@Suite("Reliability regressions", .timeLimit(.minutes(1)))
 struct ReliabilityRegressionTests {
     @Test func partialBatchPersistsWithoutExplicitFlush() async throws {
         let storage = FlakyStorage(failingFirst: 0)
+        var persisted = storage.stores.makeAsyncIterator()
         let writer = LogWriterActor(storage: storage,
-                                    cryptoService: try LoggerCryptoService(store: LockedKeychainStore()),
-                                    configuration: .default)
+                                    cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
+                                    configuration: .default,
+                                    partialBatchDeadline: .milliseconds(10))
         defer { writer.shutdown() }
-        writer.ingest(LogEntry(level: .error, category: .system, subsystem: "test", message: "last error"))
-        for _ in 0..<100 {
-            if await storage.storedCount == 1 { return }
-            try await Task.sleep(for: .milliseconds(25))
-        }
-        #expect(await storage.storedCount == 1)
+        let entry = LogEntry(level: .error, category: .system, subsystem: "test", message: "last error")
+        writer.ingest(entry)
+
+        let batch = await persisted.next()
+
+        #expect(batch?.map(\.id) == [entry.id])
     }
 
     @Test func startupMergeKeepsUniqueEntries() {
@@ -36,8 +31,9 @@ struct ReliabilityRegressionTests {
         #expect(Set(current.map(\.id)).count == current.count)
     }
 
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @Test func startupFetchOverlappingLiveWritesDoesNotDuplicateThem() async throws {
-        let crypto = try LoggerCryptoService(store: LockedKeychainStore())
+        let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
         let historical = LogEntry(level: .info, category: .system, subsystem: "test", message: "history")
         let encrypted = EncryptedLogEntry(id: historical.id, timestamp: historical.timestamp,
                                           data: try crypto.symmetricEncrypt(object: historical))
@@ -47,44 +43,41 @@ struct ReliabilityRegressionTests {
         logger.info("live")
         await logger.flush()
         await storage.releaseFetch()
-        for _ in 0..<100 {
-            if logger.recentLogs.contains(where: { $0.id == historical.id }) { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        _ = await Observations { logger.recentLogs }.first { $0.contains { $0.id == historical.id } }
         #expect(logger.recentLogs.map(\.message) == ["live", "history"])
         #expect(Set(logger.recentLogs.map(\.id)).count == logger.recentLogs.count)
     }
 
     @Test func shutdownDrainsPartialBatchAndReleasesWriter() async throws {
-        let storage = FlakyStorage(failingFirst: 0)
-        var writer: LogWriterActor? = LogWriterActor(storage: storage,
-            cryptoService: try LoggerCryptoService(store: LockedKeychainStore()), configuration: .default)
-        weak var releasedWriter = writer
+        var storage: FlakyStorage? = FlakyStorage(failingFirst: 0)
+        let stores = storage!.stores
+        var writer: LogWriterActor? = LogWriterActor(storage: storage!,
+            cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()), configuration: .default)
+        storage = nil
         writer?.ingest(LogEntry(level: .info, category: .system, subsystem: "test", message: "shutdown"))
         writer?.shutdown()
         writer = nil
-        for _ in 0..<100 {
-            if releasedWriter == nil { break }
-            try await Task.sleep(for: .milliseconds(10))
+
+        // The writer owns the storage now, so `stores` only finishes once the writer is released.
+        var persisted = 0
+        for await batch in stores {
+            persisted += batch.count
         }
-        #expect(releasedWriter == nil)
-        #expect(await storage.storedCount == 1)
+        #expect(persisted == 1)
     }
 
     @Test func timedFlushAfterClearOnlyPersistsNewEntries() async throws {
         let storage = FlakyStorage(failingFirst: 0)
         let writer = LogWriterActor(storage: storage,
-                                    cryptoService: try LoggerCryptoService(store: LockedKeychainStore()),
-                                    configuration: .default)
+                                    cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
+                                    configuration: .default,
+                                    partialBatchDeadline: .milliseconds(10))
         defer { writer.shutdown() }
         writer.ingest(LogEntry(level: .error, category: .system, subsystem: "test", message: "cleared"))
         try await writer.clearPending()
         let survivor = LogEntry(level: .info, category: .system, subsystem: "test", message: "survivor")
         writer.ingest(survivor)
-        for _ in 0..<100 {
-            if await storage.storedCount == 1 { break }
-            try await Task.sleep(for: .milliseconds(25))
-        }
+        _ = await storage.stores.first { $0.contains { $0.id == survivor.id } }
         #expect(await storage.entries.map(\.id) == [survivor.id])
         await writer.flush()
         #expect(await storage.entries.map(\.id) == [survivor.id])
@@ -92,28 +85,30 @@ struct ReliabilityRegressionTests {
 
     @Test func partialBatchRetriesOnDeadline() async throws {
         let storage = FlakyStorage(failingFirst: 1)
+        var persisted = storage.stores.makeAsyncIterator()
         let writer = LogWriterActor(storage: storage,
-                                    cryptoService: try LoggerCryptoService(store: LockedKeychainStore()),
-                                    configuration: .default)
+                                    cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
+                                    configuration: .default,
+                                    partialBatchDeadline: .milliseconds(10))
         defer { writer.shutdown() }
-        writer.ingest(LogEntry(level: .error, category: .system, subsystem: "test", message: "retry"))
-        for _ in 0..<100 {
-            if await storage.storedCount == 1 { return }
-            try await Task.sleep(for: .milliseconds(25))
-        }
-        #expect(await storage.storedCount == 1)
+        let entry = LogEntry(level: .error, category: .system, subsystem: "test", message: "retry")
+        writer.ingest(entry)
+
+        let batch = await persisted.next()
+
+        #expect(batch?.map(\.id) == [entry.id])
     }
 
     @Test(arguments: [LoggerCryptoService.CryptoAlgo.aes256gcm, .chacha])
     func rotationDuringEncodingPreservesDecryptability(algorithm: LoggerCryptoService.CryptoAlgo) throws {
-        let crypto = try LoggerCryptoService(store: LockedKeychainStore(), encryptionAlgo: algorithm)
+        let crypto = try LoggerCryptoService(store: InMemoryKeychainStore(), encryptionAlgo: algorithm)
         let data = try crypto.symmetricEncrypt(object: RotatingPayload(crypto: crypto))
         let decoded: String = try crypto.symmetricDecrypt(encryptedData: data)
         #expect(decoded == "payload")
     }
 
     @Test func concurrentRotationsKeepDistinctVersions() async throws {
-        let crypto = try LoggerCryptoService(store: LockedKeychainStore())
+        let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
         let original = try crypto.symmetricEncrypt(object: "before rotation")
         try await withThrowingTaskGroup(of: Data.self) { group in
             for _ in 0..<30 {
