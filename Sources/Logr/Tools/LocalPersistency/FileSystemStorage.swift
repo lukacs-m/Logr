@@ -20,7 +20,9 @@ import OSLog
 /// ``SQLiteStorage``; entries with the same timestamp keep the order they were written in.
 ///
 /// Files written by earlier versions (a single JSON array) are migrated to NDJSON, oldest first,
-/// the first time the file is opened. A final line left incomplete by a crash is cut on open.
+/// the first time the file is opened. An array that cannot be decoded is moved aside to
+/// `<fileName>.unreadable-<date>` and logged as a fault; ``clear()`` deletes those files too.
+/// A final line left incomplete by a crash is cut on open.
 public actor FileSystemStorage: LogRPersistence {
     private let fileURL: URL
     private let write: @Sendable (FileHandle, Data) throws -> Void
