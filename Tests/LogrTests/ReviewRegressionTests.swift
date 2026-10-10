@@ -2,6 +2,7 @@ import Collections
 import Foundation
 import Testing
 @testable import Logr
+import LogrTesting
 
 // MARK: - Shared test storage
 
@@ -26,7 +27,7 @@ actor PreMRInMemoryStore: LogRPersistence {
 struct CryptoEnvelopeBackCompatTests {
     @Test("Legacy envelope without an `algorithm` field decrypts as ChaCha20-Poly1305")
     func testLegacyEnvelopeDecodesAsChaCha() throws {
-        let crypto = try LoggerCryptoService(store: MockKeychainService(), encryptionAlgo: .chacha)
+        let crypto = try LoggerCryptoService(store: InMemoryKeychainStore(), encryptionAlgo: .chacha)
 
         let original = LogEntry(level: .error, category: .network, subsystem: "t", message: "secret")
         let modern = try crypto.symmetricEncrypt(object: original)
@@ -44,7 +45,7 @@ struct CryptoEnvelopeBackCompatTests {
     @Test("Both AES-256-GCM and ChaCha20-Poly1305 round-trip")
     func testAlgorithmsRoundTrip() throws {
         for algo in [LoggerCryptoService.CryptoAlgo.aes256gcm, .chacha] {
-            let crypto = try LoggerCryptoService(store: MockKeychainService(), encryptionAlgo: algo)
+            let crypto = try LoggerCryptoService(store: InMemoryKeychainStore(), encryptionAlgo: algo)
             let original = LogEntry(level: .info, category: .system, subsystem: "t", message: "hello")
             let data = try crypto.symmetricEncrypt(object: original)
             let decrypted: LogEntry = try crypto.symmetricDecrypt(encryptedData: data)
@@ -59,7 +60,7 @@ struct CryptoEnvelopeBackCompatTests {
 @Suite("Review regressions (C2, C3, R-Flush)")
 struct ReviewRegressionTests {
     private func makeCrypto() throws -> LoggerCryptoService {
-        try LoggerCryptoService(store: MockKeychainService())
+        try LoggerCryptoService(store: InMemoryKeychainStore())
     }
 
     @Test("A custom backend implementing only pre-MR methods batches via the default (C2)")
@@ -88,7 +89,7 @@ struct ReviewRegressionTests {
         #expect(try await storage.count() == 0)
     }
 
-    @Test("flush() returns promptly after the writer's stream has finished (R-Flush)")
+    @Test("flush() returns promptly after the writer's stream has finished (R-Flush)", .timeLimit(.minutes(1)))
     func testFlushAfterShutdownDoesNotHang() async throws {
         let writer = LogWriterActor(storage: PreMRInMemoryStore(),
                                     cryptoService: try makeCrypto(),
@@ -96,16 +97,9 @@ struct ReviewRegressionTests {
         writer.ingest(LogEntry(level: .info, category: .system, subsystem: "t", message: "m"))
         writer.shutdown() // finishes the stream
 
-        // Race flush() against a timeout. With the `.terminated` guard, flush resumes immediately;
-        // without it the continuation would be dropped and this would never return.
-        let returned = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { await writer.flush(); return true }
-            group.addTask { try? await Task.sleep(for: .seconds(2)); return false }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
-        }
-        #expect(returned)
+        // With the `.terminated` guard, flush resumes immediately; without it the continuation
+        // would be dropped and this would never return.
+        await writer.flush()
     }
 
     @Test("logStatistics() computes correct per-level counts (R-Perf)")

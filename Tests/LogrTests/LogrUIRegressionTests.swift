@@ -5,6 +5,7 @@ import Testing
 import UniformTypeIdentifiers
 @testable import Logr
 @testable import LogrUI
+import LogrTesting
 
 @MainActor
 @Suite("LogrUI regressions")
@@ -14,7 +15,7 @@ struct LogrUIRegressionTests {
     }
 
     private func makeLogger(maxLogEntries: Int = 100) throws -> LogR {
-        LogR(cryptoService: try LoggerCryptoService(store: LockedKeychainStore()),
+        LogR(cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
              configuration: LogrConfiguration(maxLogEntries: maxLogEntries, mirrorToOSLog: false))
     }
 

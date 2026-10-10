@@ -31,7 +31,7 @@ struct ContentView: View {
         }
         .navigationTitle("LogR Example")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { showSettings.toggle() } label: {
                     Text("Settings")
                 }
@@ -270,11 +270,15 @@ private struct StatCard: View {
     let icon: String
     let color: Color
 
+    /// Symbols differ in height; a common box keeps cards in the same row equally tall.
+    @ScaledMetric(relativeTo: .title2) private var iconHeight = 28.0
+
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundStyle(color)
+                .frame(height: iconHeight)
 
             Text(value)
                 .font(.title.bold())
@@ -295,11 +299,15 @@ private struct ActionButton: View {
     let color: Color
     let action: () -> Void
 
+    /// Symbols differ in height; a common box keeps buttons in the same row equally tall.
+    @ScaledMetric(relativeTo: .title3) private var iconHeight = 24.0
+
     var body: some View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.title3)
+                    .frame(height: iconHeight)
                 Text(title)
                     .font(.caption)
             }

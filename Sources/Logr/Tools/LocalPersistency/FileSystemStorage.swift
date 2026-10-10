@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Append-only file storage for encrypted log entries using newline-delimited JSON
 /// (one entry per line).
@@ -19,8 +20,8 @@ import Foundation
 /// the order they are logged — is chronological (oldest first), matching the
 /// ``LogRPersistence`` contract and ``SQLiteStorage``.
 ///
-/// Files written by earlier versions (a single JSON array) are migrated to NDJSON the
-/// first time the file is opened.
+/// Files written by earlier versions (a single JSON array) are migrated to NDJSON, oldest first,
+/// the first time the file is opened. A final line left incomplete by a crash is cut on open.
 public actor FileSystemStorage: LogRPersistence {
     private let fileURL: URL
     private let encoder = JSONEncoder()
@@ -28,13 +29,64 @@ public actor FileSystemStorage: LogRPersistence {
 
     private static let newline = UInt8(ascii: "\n")
     private static let openBracket = UInt8(ascii: "[")
+    private static let logger = Logger(subsystem: LogrConfiguration.default.subsystem,
+                                       category: LogCategory.persistence.rawValue)
 
-    public init(fileName: String = "logr_entries.json") throws {
-        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    /// Stores entries in `Application Support/<bundle id>/Logr/<fileName>`.
+    ///
+    /// The `Logr` directory is created if needed and excluded from backups: entries are encrypted with a
+    /// key that never leaves this device, so a restored backup could not be read anyway.
+    ///
+    /// Logr 1.3 and earlier wrote to `Documents`. When `Documents/<fileName>` exists and the new file
+    /// does not, it is moved once; for the default name the old file is `Documents/logr_entries.json`.
+    ///
+    /// - Parameter fileName: The log file's name. Defaults to `logr_entries.ndjson`.
+    /// - Throws: ``LogRErrors/directoryNotFound`` when the system directories cannot be resolved, or a
+    ///   file-system error if the directory or file cannot be created, moved or migrated.
+    public init(fileName: String = "logr_entries.ndjson") throws {
+        let fileManager = FileManager.default
+        let applicationSupportURLs = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        guard let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let applicationSupport = applicationSupportURLs.first
         else {
             throw LogRErrors.directoryNotFound
         }
-        fileURL = documentsPath.appendingPathComponent(fileName)
+        try self.init(fileName: fileName, documents: documents, applicationSupport: applicationSupport)
+    }
+
+    /// The default-location initializer with both system directories injected, so tests never touch the
+    /// real ones.
+    init(fileName: String, documents: URL, applicationSupport: URL) throws {
+        var directory = applicationSupport
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "LogRPersistence")
+            .appendingPathComponent("Logr", isDirectory: true)
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        // On the directory, not the file: cleanup rewrites the file atomically, which would drop the flag.
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try directory.setResourceValues(values)
+
+        let file = directory.appendingPathComponent(fileName)
+        let legacyName = fileName == "logr_entries.ndjson" ? "logr_entries.json" : fileName
+        let legacyFile = documents.appendingPathComponent(legacyName)
+        if !fileManager.fileExists(atPath: file.path), fileManager.fileExists(atPath: legacyFile.path) {
+            try fileManager.moveItem(at: legacyFile, to: file)
+        }
+        try self.init(directory: directory, fileName: fileName)
+    }
+
+    /// Stores entries in `fileName` inside `directory`, creating the directory (with any missing
+    /// parents) and an empty file when they don't exist yet.
+    ///
+    /// - Parameters:
+    ///   - directory: The directory that holds the log file.
+    ///   - fileName: The log file's name within `directory`.
+    /// - Throws: A file-system error if the directory or the file cannot be created, or a
+    ///   legacy file cannot be migrated.
+    public init(directory: URL, fileName: String) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        fileURL = directory.appendingPathComponent(fileName)
 
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
@@ -48,14 +100,21 @@ public actor FileSystemStorage: LogRPersistence {
 
     public func store(_ entries: [EncryptedLogEntry]) async throws {
         guard !entries.isEmpty else { return }
+        let handle = try FileHandle(forUpdating: fileURL)
+        defer { try? handle.close() }
         var payload = Data()
+        let end = try handle.seekToEnd()
+        if end > 0 {
+            try handle.seek(toOffset: end - 1)
+            // Without this, the first entry would be glued onto an unterminated line and lost.
+            if try handle.read(upToCount: 1)?.first != Self.newline {
+                payload.append(Self.newline)
+            }
+        }
         for entry in entries {
             try payload.append(encoder.encode(entry))
             payload.append(Self.newline)
         }
-        let handle = try FileHandle(forWritingTo: fileURL)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
         try handle.write(contentsOf: payload)
     }
 
@@ -64,7 +123,7 @@ public actor FileSystemStorage: LogRPersistence {
     }
 
     public func deleteEntries(olderThan date: Date) async throws {
-        let remaining = Self.readEntries(at: fileURL, using: decoder).filter { $0.timestamp > date }
+        let remaining = Self.readEntries(at: fileURL, using: decoder).filter { $0.timestamp >= date }
         try Self.writeAll(remaining, to: fileURL, using: encoder)
     }
 
@@ -87,7 +146,8 @@ public actor FileSystemStorage: LogRPersistence {
 }
 
 private extension FileSystemStorage {
-    /// Creates the file if missing, or migrates a legacy single-JSON-array file to NDJSON.
+    /// Creates the file if missing, migrates a legacy single-JSON-array file to NDJSON, or cuts an
+    /// unterminated final line (a write interrupted by a crash; the partial entry cannot be decoded).
     ///
     /// `static` (like ``readEntries(at:using:)``) so the throwing initializer can call it without
     /// crossing actor isolation, and so a file-mutating helper never depends on — or appears to
@@ -97,12 +157,31 @@ private extension FileSystemStorage {
             try Data().write(to: url, options: .atomic)
             return
         }
-        guard let data = try? Data(contentsOf: url), data.first == openBracket else {
-            return // already NDJSON (or empty)
+        guard let data = try? Data(contentsOf: url), let last = data.last else { return }
+        if data.first == openBracket {
+            try migrateLegacyArray(data, at: url, encoder: encoder, decoder: decoder)
+            return
         }
-        // Legacy format detected: rewrite the JSON array as NDJSON.
-        let entries = (try? decoder.decode([EncryptedLogEntry].self, from: data)) ?? []
-        try writeAll(entries, to: url, using: encoder)
+        guard last != newline else { return }
+        let completeLength = data.lastIndex(of: newline).map { data.distance(from: data.startIndex, to: $0) + 1 }
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: UInt64(completeLength ?? 0))
+    }
+
+    /// Rewrites a pre-1.2 JSON array, which was stored newest-first, as oldest-first NDJSON. An array that
+    /// cannot be decoded is moved aside, never overwritten, and the log starts empty.
+    static func migrateLegacyArray(_ data: Data, at url: URL, encoder: JSONEncoder, decoder: JSONDecoder) throws {
+        guard let entries = try? decoder.decode([EncryptedLogEntry].self, from: data) else {
+            let stamp = Date().formatted(.iso8601.timeSeparator(.omitted))
+            let aside = url.deletingLastPathComponent()
+                .appendingPathComponent("\(url.lastPathComponent).unreadable-\(stamp)")
+            try FileManager.default.moveItem(at: url, to: aside)
+            try Data().write(to: url, options: .atomic)
+            logger.fault("Unreadable legacy log file moved to \(aside.lastPathComponent, privacy: .public)")
+            return
+        }
+        try writeAll(entries.sorted { $0.timestamp < $1.timestamp }, to: url, using: encoder)
     }
 
     /// Rewrites the whole file as NDJSON. Used only by migration and cleanup.

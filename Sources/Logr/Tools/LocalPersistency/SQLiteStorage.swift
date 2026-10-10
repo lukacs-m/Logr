@@ -39,21 +39,31 @@ public final class SQLiteStorage: LogRPersistence {
         }
     }
 
-    /// Initialize with default database path in Application Support directory
+    /// Initialize with the default database path, `Application Support/<bundle id>/logs.sqlite`.
+    ///
+    /// The database file is excluded from backups: entries are encrypted with a key that never leaves
+    /// this device, so a restored backup could not be read anyway.
     public convenience init() throws {
         let fileManager = FileManager.default
         guard let appSupportURL = fileManager.urls(for: .applicationSupportDirectory,
                                                    in: .userDomainMask).first else {
             throw DatabaseError.invalidDatabasePath
         }
+        try self.init(applicationSupport: appSupportURL)
+    }
 
+    /// The default-path initializer with Application Support injected, so tests never touch the real one.
+    convenience init(applicationSupport: URL) throws {
         let appBundleID = Bundle.main.bundleIdentifier ?? "LogRPersistence"
-        let appDirectory = appSupportURL.appendingPathComponent(appBundleID)
-        let databasePath = appDirectory
+        var databaseURL = applicationSupport
+            .appendingPathComponent(appBundleID)
             .appendingPathComponent("logs.sqlite")
-            .path
 
-        try self.init(databasePath: databasePath)
+        try self.init(databasePath: databaseURL.path)
+
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try databaseURL.setResourceValues(values)
     }
 
     private func runMigrations() throws {

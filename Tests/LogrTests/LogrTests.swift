@@ -1,30 +1,8 @@
 import Testing
 @testable import Logr
+import LogrTesting
 import Foundation
 import Collections
-
-final class MockKeychainService: @unchecked Sendable, KeychainStore {
-    var storage: [String: Data] = [:]
-    var readError: Error?
-
-    func set(_ data: Data, forKey key: String) throws{
-        storage[key] = data
-    }
-
-    func data(forKey key: String) throws -> Data? {
-        if let readError {
-            throw readError
-        }
-        guard let data = storage[key] else {
-            return nil
-        }
-        return data
-    }
-    
-    func remove(forKey key: String) throws {
-        storage.removeValue(forKey: key)
-    }
-}
 
 /// Counts how many times its message factory is evaluated. Used to prove that
 /// the logging `@autoclosure` is only invoked when the level is actually enabled.
@@ -41,7 +19,7 @@ final class EvaluationCounter {
 @Suite("LogR Core Functionality")
 struct LogrTests {
 
-    let cryptoService = try! LoggerCryptoService(store: MockKeychainService())
+    let cryptoService = try! LoggerCryptoService(store: InMemoryKeychainStore())
     // MARK: - Basic Logging Tests
 
     @Test("Test basic debug logging")
@@ -174,6 +152,22 @@ struct LogrTests {
         #expect(logr.recentLogs.contains { $0.message == "concrete-typed call off main" })
     }
 
+    // MARK: - AI analysis
+
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
+    @Test("analysisProgress is cleared when the analyzer throws")
+    func testAnalysisProgressClearsWhenAnalyzerThrows() async throws {
+        let logr = LogR(logAnalyser: ThrowingAnalyzer(), cryptoService: cryptoService,
+                        configuration: LogrConfiguration(mirrorToOSLog: false))
+        logr.info("something to analyse")
+
+        await #expect(throws: ThrowingAnalyzer.Failure.self) { try await logr.scanForPrivacyIssues() }
+        #expect(logr.analysisProgress == nil)
+
+        await #expect(throws: ThrowingAnalyzer.Failure.self) { try await logr.summarizeIssues() }
+        #expect(logr.analysisProgress == nil)
+    }
+
     // MARK: - Lazy Evaluation Tests
 
     @Test("Disabled log level does not evaluate the message autoclosure")
@@ -228,6 +222,20 @@ struct LogrTests {
         LogR.trimExpiredEntries(&deque, olderThan: cutoff)
 
         #expect(deque.map(\.message) == ["fresh-2", "fresh-1"])
+    }
+
+    @Test("An entry stamped exactly at the cutoff is not older than it, so it is kept")
+    func testTrimKeepsEntryAtCutoff() async throws {
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-60)
+        var deque: Deque<LogEntry> = [
+            agedEntry("at-cutoff", ageSeconds: 60, now: now),
+            agedEntry("older", ageSeconds: 61, now: now)
+        ]
+
+        LogR.trimExpiredEntries(&deque, olderThan: cutoff)
+
+        #expect(deque.map(\.message) == ["at-cutoff"])
     }
 
     @Test("Trimming is a no-op when nothing has expired")
@@ -575,6 +583,20 @@ struct LogrTests {
         #expect(csvString!.contains("\"\""))
     }
 
+    @Test("CSV export quotes and escapes every text field")
+    func testCSVEscapesEveryTextField() async throws {
+        let tricky = #"a "quoted", value"#
+        let entry = LogEntry(level: .info, category: .custom(tricky), subsystem: tricky, message: tricky,
+                             file: tricky, function: tricky, line: 7, metadata: ["key": .string(tricky)])
+
+        let csv = try await LogExporter.serialize([entry], format: .csv)
+
+        let rows = parseCSV(String(decoding: csv, as: UTF8.self))
+        #expect(rows.map(\.count) == [9, 9])
+        #expect(rows.last?.dropFirst(2) == [entry.category.description, tricky, tricky, tricky, tricky, "7",
+                                            "key=\(tricky)"])
+    }
+
     // MARK: - Clear Logs Tests
 
     @Test("Test clear logs")
@@ -719,4 +741,69 @@ struct LogrTests {
         #expect(!entry.id.isEmpty)
         #expect(entry.timestamp <= Date())
     }
+}
+
+/// Reports one progress step, then fails, like an analysis interrupted halfway.
+@available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
+private struct ThrowingAnalyzer: LogAIAnalyzer {
+    struct Failure: Error {}
+
+    var isAvailable: Bool { true }
+
+    func scanForPrivacyIssues(logs: [LogEntry]) async throws -> PrivacyAnalysisResult { throw Failure() }
+
+    func summarizeIssues(logs: [LogEntry]) async throws -> LogIssueSummary { throw Failure() }
+
+    func scanForPrivacyIssues(logs: [LogEntry],
+                              onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void) async throws
+        -> PrivacyAnalysisResult {
+        await onProgress(AnalysisProgress(totalLogs: logs.count, analyzedLogs: 1))
+        throw Failure()
+    }
+
+    func summarizeIssues(logs: [LogEntry],
+                         onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void) async throws
+        -> LogIssueSummary {
+        await onProgress(AnalysisProgress(totalLogs: logs.count, analyzedLogs: 1))
+        throw Failure()
+    }
+}
+
+/// Splits RFC 4180 CSV into rows of fields: quoted fields, doubled quotes, separators inside quotes.
+private func parseCSV(_ text: String) -> [[String]] {
+    var rows: [[String]] = []
+    var row: [String] = []
+    var field = ""
+    var inQuotes = false
+    var characters = text.makeIterator()
+    var pending = characters.next()
+    while let character = pending {
+        pending = characters.next()
+        switch (inQuotes, character) {
+        case (true, "\""):
+            if pending == "\"" {
+                field.append("\"")
+                pending = characters.next()
+            } else {
+                inQuotes = false
+            }
+        case (true, _):
+            field.append(character)
+        case (false, "\""):
+            inQuotes = true
+        case (false, ","):
+            row.append(field)
+            field = ""
+        case (false, "\n"):
+            row.append(field)
+            rows.append(row)
+            row = []
+            field = ""
+        default:
+            field.append(character)
+        }
+    }
+    row.append(field)
+    rows.append(row)
+    return rows
 }

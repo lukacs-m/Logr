@@ -1,22 +1,24 @@
 import Testing
 @testable import Logr
+import LogrTesting
 import Foundation
 
 @Suite("Concurrent Logging Tests")
 struct ConcurrentLoggingTests {
+    private let directory: TemporaryDirectory
+
+    init() throws {
+        directory = try TemporaryDirectory()
+    }
 
     // MARK: - Helper to create test database
 
     func createTestDatabase() throws -> SQLiteStorage {
-        let tempDir = FileManager.default.temporaryDirectory
-        let testDBPath = tempDir
-            .appendingPathComponent("concurrent_test_\(UUID().uuidString).sqlite")
-            .path
-        return try SQLiteStorage(databasePath: testDBPath)
+        try SQLiteStorage(databasePath: directory.url.appendingPathComponent("logs.sqlite").path)
     }
 
     func createMockCryptoService() throws -> LoggerCryptoService {
-        return try LoggerCryptoService(store: MockKeychainService())
+        return try LoggerCryptoService(store: InMemoryKeychainStore())
     }
 
     // MARK: - Basic Concurrent Tests
@@ -62,7 +64,7 @@ struct ConcurrentLoggingTests {
             for threadId in 0..<threadCount {
                 group.addTask {
                     for i in 0..<logCount {
-                        await logr.info("Thread \(threadId) - Message \(i)", category: .test)
+                        logr.info("Thread \(threadId) - Message \(i)", category: .test)
                     }
                 }
             }
@@ -99,7 +101,7 @@ struct ConcurrentLoggingTests {
                     for i in 0..<logCount {
                         let level: LogLevel = [.debug, .info, .notice, .error, .fault].randomElement()!
                         let category: LogCategory = [.system, .network, .database, .ui, .test].randomElement()!
-                        await logr.log(
+                        logr.log(
                             level: level,
                             message: "Thread \(threadId) - Message \(i) - \(UUID().uuidString)",
                             category: category
@@ -171,7 +173,7 @@ struct ConcurrentLoggingTests {
             for threadId in 0..<threadCount {
                 group.addTask {
                     for i in 0..<logCount {
-                        await logr.info("Thread \(threadId) - Message \(i)", category: .test)
+                        logr.info("Thread \(threadId) - Message \(i)", category: .test)
                     }
                 }
             }

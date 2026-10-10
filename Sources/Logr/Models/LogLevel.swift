@@ -98,13 +98,14 @@ public enum LogLevel: String, CaseIterable, Sendable, Codable, Hashable, Identif
 
     /// The corresponding OSLog type for this log level.
     ///
-    /// Maps LogR levels to Apple's `OSLogType` for native logging support.
+    /// Matches how Apple's `Logger` maps its own levels: `notice` is `.default` and `warning` is
+    /// `.error`, so Console filters treat Logr entries like any other.
     public var osLogType: OSLogType {
         switch self {
         case .debug: .debug
         case .info: .info
-        case .notice: .info
-        case .warning: .default
+        case .notice: .default
+        case .warning: .error
         case .error: .error
         case .fault: .fault
         }

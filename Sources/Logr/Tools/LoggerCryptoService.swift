@@ -31,7 +31,7 @@ public protocol KeychainStore: Sendable {
     /// - Throws: Keychain access errors.
     func set(_ data: Data, forKey key: String) throws
 
-    /// Removes data from the keychain.
+    /// Removes data from the keychain. Removing a key that is not stored is not an error.
     ///
     /// - Parameter key: The keychain key.
     /// - Throws: Keychain access errors.
@@ -218,38 +218,37 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     // MARK: - Init
 
+    /// Loads the current key version from `store`, creating key version 1 only on a true first run.
+    ///
+    /// An existing key is never replaced: a failed Keychain read, or a version record that cannot be
+    /// decoded, throws ``LoggerCryptoError/initializationFailed(underlying:)`` (wrapping the read error or
+    /// the `DecodingError`) instead of provisioning a new key over the one that encrypted earlier logs.
+    /// When key version 1 exists without a version record, that key is adopted.
+    ///
+    /// - Parameters:
+    ///   - store: Where keys live. Defaults to the Keychain, device-only and not synchronized.
+    ///   - encryptionAlgo: The cipher for new entries. Defaults to AES-256-GCM. Decryption reads the
+    ///     cipher from each entry, so changing it keeps earlier entries readable.
+    /// - Throws: ``LoggerCryptoError/initializationFailed(underlying:)``.
     public init(store: any KeychainStore = KeychainAccessStore(service: "com.logr.KeychainStore"),
                 encryptionAlgo: CryptoAlgo = .aes256gcm) throws {
         self.store = store
         self.encryptionAlgo = encryptionAlgo
-        let versionData: Data?
         do {
-            versionData = try store.data(forKey: currentKeyRef)
-        } catch {
-            // A failed read (e.g. keychain locked during a background launch) is not "first run":
-            // provisioning here would overwrite the existing key and orphan every persisted log.
-            throw LoggerCryptoError.initializationFailed(underlying: error)
-        }
-        if let versionData,
-           let version = try? decoder.decode(KeyVersion.self, from: versionData) {
-            currentKeyVersion.withLock {
-                $0 = version
+            // A failed read (e.g. keychain locked during a background launch) is not "first run".
+            if let versionData = try store.data(forKey: currentKeyRef) {
+                let version = try decoder.decode(KeyVersion.self, from: versionData)
+                currentKeyVersion.withLock { $0 = version }
+                return
             }
-        } else {
-            do {
-                let newKeyVersion = KeyVersion.default
-                let key = try Self.generateKey(version: newKeyVersion, store: store, keyPrefix: keyPrefix,
+            let firstVersion = KeyVersion.default
+            let key = try Self.loadOrCreateKey(version: firstVersion, store: store, keyPrefix: keyPrefix,
                                                keySize: keySize)
-                try store.set(encoder.encode(newKeyVersion), forKey: currentKeyRef)
-                currentKeyVersion.withLock {
-                    $0 = newKeyVersion
-                }
-                cacheKeys.withLock {
-                    $0[newKeyVersion] = key
-                }
-            } catch {
-                throw LoggerCryptoError.initializationFailed(underlying: error)
-            }
+            try store.set(encoder.encode(firstVersion), forKey: currentKeyRef)
+            currentKeyVersion.withLock { $0 = firstVersion }
+            cacheKeys.withLock { $0[firstVersion] = key }
+        } catch {
+            throw LoggerCryptoError.initializationFailed(underlying: error)
         }
     }
 
@@ -288,21 +287,23 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     /// Serializes rotations within this service. Retained keys keep earlier entries readable.
     ///
-    /// With `removeOldKeys`, entries encrypted with the previous key become unreadable, including
-    /// in-flight encryptions that already selected it. If removal fails, the new key remains active
-    /// and the removal error is thrown.
+    /// A key already stored for the next version is adopted rather than replaced. With
+    /// `removeOldKeys`, every older key version is removed, so all entries encrypted before the
+    /// rotation become unreadable, including in-flight encryptions that already selected an older
+    /// key. If removal fails, the new key remains active and the removal error is thrown.
     public func rotateKey(removeOldKeys: Bool = false) throws {
         try currentKeyVersion.withLock { version in
-            let previousVersion = version
             let newVersion = KeyVersion(version.value + 1)
-            let newKey = try Self.generateKey(version: newVersion, store: store, keyPrefix: keyPrefix,
-                                              keySize: keySize)
+            let newKey = try Self.loadOrCreateKey(version: newVersion, store: store, keyPrefix: keyPrefix,
+                                                  keySize: keySize)
             try store.set(encoder.encode(newVersion), forKey: currentKeyRef)
             cacheKeys.withLock { $0[newVersion] = newKey }
             version = newVersion
             if removeOldKeys {
-                try store.remove(forKey: keyName(for: previousVersion))
-                _ = cacheKeys.withLock { $0.removeValue(forKey: previousVersion) }
+                for oldVersion in (1..<newVersion.value).map(KeyVersion.init) {
+                    try store.remove(forKey: keyName(for: oldVersion))
+                    _ = cacheKeys.withLock { $0.removeValue(forKey: oldVersion) }
+                }
             }
         }
     }
@@ -329,12 +330,18 @@ private extension LoggerCryptoService {
         return symmetricKey
     }
 
-    static func generateKey(version: KeyVersion,
-                            store: any KeychainStore,
-                            keyPrefix: String,
-                            keySize: Int) throws -> SymmetricKey {
+    /// Returns the stored key for `version`, generating and storing one only when none exists, so a key
+    /// that may have encrypted entries is never replaced.
+    static func loadOrCreateKey(version: KeyVersion,
+                                store: any KeychainStore,
+                                keyPrefix: String,
+                                keySize: Int) throws -> SymmetricKey {
+        let name = "\(keyPrefix)\(version.value)"
+        if let existing = try store.data(forKey: name) {
+            return SymmetricKey(data: existing)
+        }
         let data = try Data.randomBytes(count: keySize)
-        try store.set(data, forKey: "\(keyPrefix)\(version.value)")
+        try store.set(data, forKey: name)
         return SymmetricKey(data: data)
     }
 }

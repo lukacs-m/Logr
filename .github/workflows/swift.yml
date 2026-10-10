@@ -28,6 +28,11 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Lint (SwiftFormat, rules in .swiftformat)
+        run: |
+          brew install swiftformat
+          swiftformat --lint .
+
       - name: Run tests
         run: swift test --parallel
 

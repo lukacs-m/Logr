@@ -54,12 +54,12 @@ struct ModelsTests {
             #expect(LogLevel.error.priority < LogLevel.fault.priority)
         }
 
-        @Test("Test log level OSLogType mapping")
+        @Test("Log levels map to OSLogType the way Apple's Logger maps its own levels")
         func testLogLevelOSLogTypeMapping() {
             #expect(LogLevel.debug.osLogType == .debug)
             #expect(LogLevel.info.osLogType == .info)
-            #expect(LogLevel.notice.osLogType == .info)
-            #expect(LogLevel.warning.osLogType == .default)
+            #expect(LogLevel.notice.osLogType == .default)
+            #expect(LogLevel.warning.osLogType == .error)
             #expect(LogLevel.error.osLogType == .error)
             #expect(LogLevel.fault.osLogType == .fault)
         }

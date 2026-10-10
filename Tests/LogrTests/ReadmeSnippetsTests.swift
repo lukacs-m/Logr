@@ -9,6 +9,7 @@
 //
 
 import Logr
+import LogrTesting
 import LogrUI
 import SwiftUI
 import Testing
@@ -83,7 +84,7 @@ private func configurationSnippet() throws {
 
 private func storageSnippet() throws {
     let sqlite = try LogR(storage: SQLiteStorage())      // Application Support/<bundle id>/logs.sqlite
-    let file = try LogR(storage: FileSystemStorage())    // Documents/logr_entries.json, one JSON entry per line
+    let file = try LogR(storage: FileSystemStorage())    // Application Support/<bundle id>/Logr/logr_entries.ndjson
     _ = (sqlite, file)
 }
 
@@ -107,17 +108,8 @@ private func aiSnippet() throws {
 
 // MARK: - Testing
 
-final class InMemoryKeychain: KeychainStore, @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: [String: Data] = [:]
-
-    func data(forKey key: String) throws -> Data? { lock.withLock { storage[key] } }
-    func set(_ data: Data, forKey key: String) throws { lock.withLock { storage[key] = data } }
-    func remove(forKey key: String) throws { lock.withLock { _ = storage.removeValue(forKey: key) } }
-}
-
 @Test func logsAreCachedSynchronously() throws {
-    let crypto = try LoggerCryptoService(store: InMemoryKeychain())
+    let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
     let logr = LogR(cryptoService: crypto)   // no storage: nothing is persisted, and this init does not throw
 
     logr.info("hello", category: .test)
