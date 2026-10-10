@@ -3,6 +3,10 @@
 
 import PackageDescription
 
+// tvOS and watchOS SDKs ship FoundationModels without the on-device system language model.
+let systemModel: SwiftSetting = .define("LOGR_SYSTEM_MODEL",
+                                        .when(platforms: [.iOS, .macOS, .macCatalyst, .visionOS]))
+
 let package = Package(
     name: "Logr",
     platforms: [
@@ -38,7 +42,8 @@ let package = Package(
               .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
               .enableUpcomingFeature("InferIsolatedConformances"),
               .enableUpcomingFeature("ExistentialAny"),
-              .enableUpcomingFeature("ImmutableWeakCaptures")
+              .enableUpcomingFeature("ImmutableWeakCaptures"),
+              systemModel
             ]
         ),
         .target(
@@ -52,7 +57,8 @@ let package = Package(
         ),
         .testTarget(
             name: "LogrTests",
-            dependencies: ["Logr", "LogrUI"]
+            dependencies: ["Logr", "LogrUI"],
+            swiftSettings: [systemModel]
         ),
     ],
     swiftLanguageModes: [.v6]

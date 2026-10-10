@@ -32,7 +32,11 @@ import SwiftUI
 public struct LogStatisticsView: View {
     @Environment(\.logService) private var logr
 
-    @State private var statistics: LogStatistics = .empty
+    @State private var statisticsRefresher = LogStatisticsRefresher()
+
+    private var statistics: LogStatistics {
+        statisticsRefresher.statistics
+    }
 
     public init() {}
 
@@ -47,11 +51,8 @@ public struct LogStatisticsView: View {
             .padding()
         }
         .navigationTitle("Log Statistics")
-        // Recompute off the main actor when the number of cached logs changes, instead of on every
-        // body pass: the previous computed property re-ran the full aggregation (a Calendar op per
-        // entry, up to `maxLogEntries`) on each SwiftUI update.
-        .task(id: logr.recentLogs.count) {
-            statistics = await logr.logStatistics()
+        .task(id: logr.recentLogs) {
+            await statisticsRefresher.refresh(from: logr)
         }
     }
 

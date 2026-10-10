@@ -190,10 +190,11 @@ public protocol LogRService: Observable, Sendable {
 
     /// Flushes any pending log entries to persistent storage.
     ///
-    /// This ensures that all queued log entries are written to storage immediately,
-    /// rather than waiting for the normal background write cycle.
+    /// Waits for entries queued before this call to complete their persistence attempts,
+    /// without waiting for the one-second partial-batch deadline. Exhausted retries and
+    /// encryption failures are reported through ``droppedLogCount``; this method does not throw.
     ///
-    /// - Note: Useful before app termination or when you need to guarantee persistence.
+    /// Call before a lifecycle transition to drain pending writes.
     func flush() async
 
     /// Scans logs for potential privacy issues using AI analysis (iOS 26+).
@@ -321,9 +322,9 @@ public enum LogExportError: Error, Sendable {
 ///
 /// A dedicated, single-responsibility serializer: a new ``ExportFormat`` is added by extending the
 /// switch here, not by touching the logging facade.
-enum LogExporter {
+package enum LogExporter {
     @concurrent
-    static func serialize(_ logs: [LogEntry], format: ExportFormat) async throws -> Data {
+    package static func serialize(_ logs: [LogEntry], format: ExportFormat) async throws -> Data {
         guard !logs.isEmpty else { return Data() }
 
         switch format {
@@ -372,9 +373,9 @@ enum LogExporter {
 }
 
 /// Computes aggregate ``LogStatistics`` off the main actor.
-enum LogStatisticsComputer {
+package enum LogStatisticsComputer {
     @concurrent
-    static func compute(from logs: [LogEntry]) async -> LogStatistics {
+    package static func compute(from logs: [LogEntry]) async -> LogStatistics {
         guard !logs.isEmpty else { return .empty }
 
         let calendar = Calendar.current

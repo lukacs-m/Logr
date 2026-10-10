@@ -35,3 +35,25 @@ jobs:
         run: |
           swift package generate-documentation --target Logr --warnings-as-errors
           swift package generate-documentation --target LogrUI --warnings-as-errors
+
+  platforms:
+    name: Build (${{ matrix.platform }})
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [iOS Simulator, tvOS Simulator, watchOS Simulator]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest
+      # xcodebuild, not `swift build --triple`: a triple forces Logr's deployment target onto every dependency,
+      # and swift-perception's `Bindable` is obsoleted at exactly those versions.
+      - name: Compile core and UI at their minimum deployment targets
+        run: >-
+          xcodebuild build
+          -scheme LogrUI
+          -destination 'generic/platform=${{ matrix.platform }}'
+          -skipMacroValidation
+          ARCHS=arm64

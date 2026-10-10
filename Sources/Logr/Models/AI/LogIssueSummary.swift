@@ -6,15 +6,15 @@
 //
 
 import Foundation
+
+// `@Generable` copies member declarations into its expansion, so `#if` must wrap whole declarations, never
+// individual `@Guide` attributes.
+#if LOGR_SYSTEM_MODEL
 import FoundationModels
 
 @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
 @Generable(description: "Individual issue detected in application logs")
 public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
-    public var id: String {
-        "\(category):\(file):\(line)"
-    }
-
     @Guide(description: "Category of the issue: error, warning, crash, performance, or other")
     public var category: String
 
@@ -97,12 +97,80 @@ public struct LogIssueSummary: Sendable, Equatable {
         self.patterns = patterns
         self.priorityActions = priorityActions
     }
+}
+#else
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
+    public var category: String
+    public var title: String
+    public var description: String
+    public var file: String
+    public var line: Int
+    public var occurrences: Int
+    public var severity: LogSeverity
+    public var suggestedFix: String
 
-    public var isEmpty: Bool {
+    public init(category: String,
+                title: String,
+                description: String,
+                file: String,
+                line: Int,
+                occurrences: Int,
+                severity: LogSeverity,
+                suggestedFix: String) {
+        self.category = category
+        self.title = title
+        self.description = description
+        self.file = file
+        self.line = line
+        self.occurrences = occurrences
+        self.severity = severity
+        self.suggestedFix = suggestedFix
+    }
+}
+
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+public struct LogIssueSummary: Sendable, Equatable {
+    public var executiveSummary: String
+    public var issues: [LogIssue]
+    public var totalErrors: Int
+    public var totalWarnings: Int
+    public var totalFaults: Int
+    public var patterns: [String]
+    public var priorityActions: [String]
+
+    public init(executiveSummary: String,
+                issues: [LogIssue],
+                totalErrors: Int,
+                totalWarnings: Int,
+                totalFaults: Int,
+                patterns: [String],
+                priorityActions: [String]) {
+        self.executiveSummary = executiveSummary
+        self.issues = issues
+        self.totalErrors = totalErrors
+        self.totalWarnings = totalWarnings
+        self.totalFaults = totalFaults
+        self.patterns = patterns
+        self.priorityActions = priorityActions
+    }
+}
+#endif
+
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+public extension LogIssue {
+    var id: String {
+        "\(category):\(title)"
+    }
+}
+
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+public extension LogIssueSummary {
+    var isEmpty: Bool {
         issues.isEmpty && totalErrors == 0 && totalWarnings == 0 && totalFaults == 0
     }
 
-    public static var empty: LogIssueSummary {
+    static var empty: LogIssueSummary {
         LogIssueSummary(executiveSummary: "",
                         issues: [],
                         totalErrors: 0,

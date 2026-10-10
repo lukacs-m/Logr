@@ -107,7 +107,8 @@ private extension PrivacyWarningsView {
     @ViewBuilder
     var warningSections: some View {
         if let privacyAnalysis = logr.privacyAnalysisResult, !privacyAnalysis.warnings.isEmpty {
-            ForEach(privacyAnalysis.warnings) { warning in
+            // Only merged multi-chunk results are deduplicated, so ids can repeat.
+            ForEach(Array(privacyAnalysis.warnings.enumerated()), id: \.offset) { _, warning in
                 Section {
                     PrivacyWarningRow(warning: warning)
                 }

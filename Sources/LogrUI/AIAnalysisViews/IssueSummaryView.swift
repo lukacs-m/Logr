@@ -130,7 +130,8 @@ private extension IssueSummaryView {
     var issuesView: some View {
         if let summary = logr.logIssueSummary, !summary.issues.isEmpty {
             Section("All Issues (\(summary.issues.count))") {
-                ForEach(summary.issues) { issue in
+                // Only merged multi-chunk results are deduplicated, so ids can repeat.
+                ForEach(Array(summary.issues.enumerated()), id: \.offset) { _, issue in
                     IssueRow(issue: issue)
                 }
             }
@@ -195,7 +196,7 @@ struct IssueRow: View {
     @State private var isExpanded = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        LogDisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 12) {
                 IssueDetailRow(label: "Description", value: issue.description)
 
@@ -211,42 +212,44 @@ struct IssueRow: View {
     }
 
     var mainContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                categoryIcon
-                    .font(.title3)
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    categoryIcon
+                        .font(.title3)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(issue.title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(issue.title)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
 
-                    HStack(spacing: 8) {
-                        Text(issue.category.capitalized)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if issue.occurrences > 1 {
-                            Text("•")
-                                .foregroundStyle(.secondary)
-                            Text("\(issue.occurrences)× occurred")
+                        HStack(spacing: 8) {
+                            Text(issue.category.capitalized)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+
+                            if issue.occurrences > 1 {
+                                Text("•")
+                                    .foregroundStyle(.secondary)
+                                Text("\(issue.occurrences)× occurred")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
-                }
 
-                Spacer()
+                    Spacer()
 
-                severityBadge
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isExpanded.toggle()
+                    severityBadge
                 }
+                .contentShape(Rectangle())
             }
         }
+        .buttonStyle(.plain)
     }
 
     private var categoryIcon: some View {

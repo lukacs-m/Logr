@@ -18,7 +18,9 @@ iOS 26+ can be analysed on-device by Apple Intelligence.
 ## Installation
 
 Requires a Swift 6.3 toolchain. Platforms: iOS 17, macOS 14, tvOS 17, watchOS 10.
-AI analysis needs iOS 26, macOS 26, tvOS 26 or watchOS 12.
+Native AI analysis needs iOS 26 or macOS 26 and an available Apple Intelligence model.
+On tvOS and watchOS, core logging remains available and the native analyzer reports unavailable.
+The native file exporter is available on iOS and macOS.
 
 ```swift
 // Package.swift
@@ -122,7 +124,9 @@ Every option and its default is documented on `LogrConfiguration`.
 
 ## Storage and encryption
 
-`LogR()` alone keeps logs in memory and mirrors them to OSLog. Pass a storage to persist them:
+`LogR()` alone keeps logs in memory and mirrors them to OSLog. Pass a storage to persist them.
+Partial batches are submitted after one second; call `await logger.flush()` before a lifecycle
+transition when you need pending writes processed immediately:
 
 ```swift
 let sqlite = try LogR(storage: SQLiteStorage())      // Application Support/<bundle id>/logs.sqlite
@@ -191,7 +195,7 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 
 | Path | What lives there |
 |---|---|
-| `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (encrypt → batch of 50 → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
+| `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
 | `Sources/Logr/Protocols/` | `LogRService` (public API plus `getLogs`, `exportLogs`, `logStatistics`), `LogRPersistence`, `LogAIAnalyzer` |
 | `Sources/Logr/Models/` | `LogEntry`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
 | `Sources/Logr/Tools/` | `LoggerCryptoService` and `KeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |

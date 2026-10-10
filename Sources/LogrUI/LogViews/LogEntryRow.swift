@@ -14,7 +14,7 @@ struct LogEntryRow: View, @MainActor Equatable {
     @State private var isExpanded = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        LogDisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 4) {
                 VStack(spacing: 5) {
                     DetailRow("File", URL(fileURLWithPath: entry.file).lastPathComponent)

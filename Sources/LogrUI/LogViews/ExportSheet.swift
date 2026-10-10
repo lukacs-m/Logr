@@ -8,10 +8,15 @@
 import Logr
 import SwiftUI
 
+#if os(iOS) || os(macOS)
 struct ExportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.logService) var logr
     @State private var selectedFormat: ExportFormat = .json
+    @State private var exportItem: ShareItem?
+    @State private var isPreparing = false
+    @State private var showingExporter = false
+    @State private var exportError: Error?
 
     var body: some View {
         NavigationStack {
@@ -28,23 +33,43 @@ struct ExportSheet: View {
                 }
             }
         }
+        #if os(macOS)
+        .frame(minWidth: 420, minHeight: 350)
+        #endif
+        .fileExporter(isPresented: $showingExporter,
+                      item: exportItem,
+                      contentTypes: [selectedFormat.contentType],
+                      defaultFilename: exportItem?.fileName) { result in
+            switch result {
+            case .success:
+                dismiss()
+            case let .failure(error):
+                exportError = error
+            }
+        }
+        .alert("Export Failed", isPresented: Binding(get: { exportError != nil },
+                                                     set: {
+                                                         if !$0 {
+                                                             exportError = nil
+                                                         }
+                                                     })) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(exportError?.localizedDescription ?? "Please try again.")
+        }
     }
 
     private func exportLogs(format: ExportFormat) async {
+        isPreparing = true
+        defer { isPreparing = false }
         do {
             let data = try await logr.exportLogs(format: format)
             guard !data.isEmpty else { return }
-            let fileName = "logs_\(Date().timeIntervalSince1970).\(format.fileExtension)"
-
-            // Save to app's Documents directory
-            guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            else {
-                return
-            }
-            let fileURL = documentsPath.appendingPathComponent(fileName)
-            try data.write(to: fileURL)
+            exportItem = ShareItem(data: data, fileName: "logs.\(format.fileExtension)",
+                                   contentType: format.contentType)
+            showingExporter = true
         } catch {
-            print("Export failed: \(error)")
+            exportError = error
         }
     }
 }
@@ -80,19 +105,21 @@ private extension ExportSheet {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(isPreparing || showingExporter)
             }
         }
     }
 
     var exportingActionsSection: some View {
         Section {
-            Button("Export to Files App") {
+            Button(isPreparing ? "Preparing Export…" : "Export to Files") {
                 Task {
                     await exportLogs(format: selectedFormat)
-                    dismiss()
                 }
             }
+            .disabled(isPreparing || showingExporter || logr.recentLogs.isEmpty)
             .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 }
+#endif
