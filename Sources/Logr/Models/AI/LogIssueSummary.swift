@@ -12,7 +12,7 @@ import Foundation
 #if LOGR_SYSTEM_MODEL
 import FoundationModels
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 @Generable(description: "Individual issue detected in application logs")
 public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
     @Guide(description: "Category of the issue: error, warning, crash, performance, or other")
@@ -58,7 +58,7 @@ public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 @Generable(description: "Comprehensive summary of issues found in application logs")
 public struct LogIssueSummary: Sendable, Equatable {
     @Guide(description: "Executive summary of the overall health of the application based on logs")
@@ -99,7 +99,7 @@ public struct LogIssueSummary: Sendable, Equatable {
     }
 }
 #else
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
     public var category: String
     public var title: String
@@ -129,7 +129,7 @@ public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public struct LogIssueSummary: Sendable, Equatable {
     public var executiveSummary: String
     public var issues: [LogIssue]
@@ -157,14 +157,14 @@ public struct LogIssueSummary: Sendable, Equatable {
 }
 #endif
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public extension LogIssue {
     var id: String {
         "\(category):\(title)"
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public extension LogIssueSummary {
     var isEmpty: Bool {
         issues.isEmpty && totalErrors == 0 && totalWarnings == 0 && totalFaults == 0

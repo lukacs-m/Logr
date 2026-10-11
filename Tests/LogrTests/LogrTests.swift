@@ -19,8 +19,50 @@ final class EvaluationCounter {
 @Suite("LogR Core Functionality")
 struct LogrTests {
 
-    let cryptoService = try! LoggerCryptoService(store: InMemoryKeychainStore())
+    let cryptoService = LoggerCryptoService(store: InMemoryKeychainStore())
     // MARK: - Basic Logging Tests
+
+    @Test("An out-of-range maxLogEntries is clamped instead of crashing on log, history load or cleanup",
+          arguments: [(-1, 100), (0, 100), (Int.max, 100_000)])
+    func testOutOfRangeMaxLogEntriesIsClamped(requested: Int, effective: Int) async throws {
+        let directory = try TemporaryDirectory()
+        let storage = try FileSystemStorage(directory: directory.url, fileName: "logs.ndjson")
+        let stored = LogEntry(level: .info, category: .system, subsystem: "s", message: "stored")
+        try await storage.store(EncryptedLogEntry(id: stored.id, timestamp: stored.timestamp,
+                                                  data: cryptoService.symmetricEncrypt(object: stored)))
+        let logr = LogR(storage: .custom(storage), cryptoService: cryptoService,
+                        configuration: LogrConfiguration(maxLogEntries: requested, mirrorToOSLog: false))
+
+        for index in 1 ... 150 {
+            logr.info("live \(index)")
+        }
+        await logr.flush()
+        logr.performCleanup()
+        await logr.flush()
+
+        #expect(logr.configuration.maxLogEntries == effective)
+        // The stored entry may still be merging into memory; the cap holds either way.
+        #expect(logr.recentLogs.count <= effective)
+        #expect(logr.recentLogs.first?.message == "live 150")
+        // The writer read history before writing, and cleanup is ordered after both.
+        #expect(try await storage.count() == min(151, effective))
+    }
+
+    @Test("recentLogs is a newest-first snapshot that later logging does not change")
+    func testRecentLogsIsASnapshot() {
+        let logr = LogR(cryptoService: cryptoService)
+        logr.info("first")
+        logr.info("second")
+
+        let snapshot = logr.recentLogs
+        logr.info("third")
+
+        #expect(snapshot.map(\.message) == ["second", "first"])
+        #expect(snapshot[0].message == "second")
+        #expect(snapshot.indices == 0 ..< 2)
+        #expect(logr.recentLogs.map(\.message) == ["third", "second", "first"])
+        #expect(snapshot == LogEntries(Array(logr.recentLogs.dropFirst())))
+    }
 
     @Test("Test basic debug logging")
     func testDebugLogging() async throws {
@@ -309,7 +351,7 @@ struct LogrTests {
 
     @Test("LogrConfiguration round-trips through Codable")
     func testConfigCodableRoundTrip() throws {
-        let original = LogrConfiguration(maxLogEntries: 42,
+        let original = LogrConfiguration(maxLogEntries: 4_200,
                                          enabledLevels: [.warning, .error],
                                          subsystem: "com.test.roundtrip",
                                          logVerbosity: .normal,
@@ -318,7 +360,7 @@ struct LogrTests {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(LogrConfiguration.self, from: data)
 
-        #expect(decoded.maxLogEntries == 42)
+        #expect(decoded.maxLogEntries == 4_200)
         #expect(decoded.enabledLevels == [.warning, .error])
         #expect(decoded.subsystem == "com.test.roundtrip")
         #expect(decoded.logVerbosity == .normal)
@@ -328,21 +370,20 @@ struct LogrTests {
 
     @Test("Test custom configuration max log entries")
     func testMaxLogEntriesConfiguration() async throws {
-        let config = LogrConfiguration(maxLogEntries: 3)
+        let config = LogrConfiguration(maxLogEntries: 100)
         let logr = LogR(cryptoService: cryptoService,configuration: config)
 
-        logr.info("Message 1")
-        logr.info("Message 2")
-        logr.info("Message 3")
-        logr.info("Message 4")
+        for index in 1 ... 103 {
+            logr.info("Message \(index)")
+        }
 
         await logr.flush()
 
-        // Should only keep the 3 most recent logs
-        #expect(logr.recentLogs.count == 3)
-        #expect(logr.recentLogs[0].message == "Message 4")
-        #expect(logr.recentLogs[1].message == "Message 3")
-        #expect(logr.recentLogs[2].message == "Message 2")
+        // Should only keep the 100 most recent logs
+        #expect(logr.recentLogs.count == 100)
+        #expect(logr.recentLogs[0].message == "Message 103")
+        #expect(logr.recentLogs[1].message == "Message 102")
+        #expect(logr.recentLogs[99].message == "Message 4")
     }
 
     @Test("Test enabled log levels configuration")
@@ -586,7 +627,7 @@ struct LogrTests {
     @Test("CSV export quotes and escapes every text field")
     func testCSVEscapesEveryTextField() async throws {
         let tricky = #"a "quoted", value"#
-        let entry = LogEntry(level: .info, category: .custom(tricky), subsystem: tricky, message: tricky,
+        let entry = LogEntry(level: .info, category: LogCategory(rawValue: tricky), subsystem: tricky, message: tricky,
                              file: tricky, function: tricky, line: 7, metadata: ["key": .string(tricky)])
 
         let csv = try await LogExporter.serialize([entry], format: .csv)
@@ -626,7 +667,7 @@ struct LogrTests {
         logr.info("Network message", category: .network)
         logr.info("Database message", category: .database)
         logr.info("UI message", category: .ui)
-        logr.info("Custom message", category: .custom("MyCategory"))
+        logr.info("Custom message", category: LogCategory(rawValue: "MyCategory"))
 
         await logr.flush()
 
@@ -637,7 +678,7 @@ struct LogrTests {
         #expect(categories.contains(.network))
         #expect(categories.contains(.database))
         #expect(categories.contains(.ui))
-        #expect(categories.contains(.custom("MyCategory")))
+        #expect(categories.contains(LogCategory(rawValue: "MyCategory")))
     }
 
     // MARK: - Empty State Tests

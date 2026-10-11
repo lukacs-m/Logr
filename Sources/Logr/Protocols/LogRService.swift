@@ -5,8 +5,6 @@
 //  Created by Martin Lukacs on 16/11/2025.
 //
 
-import Collections
-import DequeModule
 import Foundation
 
 /// The main logging service protocol that defines all logging operations.
@@ -32,8 +30,7 @@ import Foundation
 ///
 /// @main
 /// struct MyApp: App {
-///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
-///     let logger = try! LogR()
+///     let logger = LogR(storage: .sqlite())
 ///
 ///     var body: some Scene {
 ///         WindowGroup {
@@ -60,6 +57,7 @@ import Foundation
 /// - ``recentLogs``
 /// - ``canAnalyseLogs``
 /// - ``droppedLogCount``
+/// - ``persistenceStatus``
 /// - ``privacyAnalysisResult``
 /// - ``logIssueSummary``
 ///
@@ -83,11 +81,11 @@ import Foundation
 public protocol LogRService: Observable, Sendable {
     /// Recent logs maintained in memory for quick access.
     ///
-    /// This deque holds the most recent log entries (newest first), up to the configured `maxLogEntries` limit.
+    /// The most recent log entries (newest first), up to the configured `maxLogEntries` limit.
     /// The logs are automatically updated as new entries are added and old entries are cleaned up.
     ///
     /// - Note: This is an in-memory cache. For persistent storage, configure a storage backend.
-    @MainActor var recentLogs: Deque<LogEntry> { get }
+    @MainActor var recentLogs: LogEntries { get }
 
     /// Indicates whether AI analysis features are available.
     ///
@@ -103,13 +101,21 @@ public protocol LogRService: Observable, Sendable {
     /// silent log loss in diagnostics UI.
     @MainActor var droppedLogCount: Int { get }
 
+    /// Whether entries reach persistent storage, for diagnostics UI.
+    ///
+    /// ``LogR`` reports ``PersistenceStatus/opening`` until its first attempt to open storage and read the key
+    /// ends, ``PersistenceStatus/waitingForProtectedData`` while its encryption key cannot be read before the
+    /// device's first unlock, and ``PersistenceStatus/failed(_:)`` when storage cannot be opened or written, or
+    /// entries cannot be encrypted. ``PersistenceStatus/disabled`` when no storage is configured.
+    @MainActor var persistenceStatus: PersistenceStatus { get }
+
     /// The most recent privacy analysis result (iOS 26+).
     ///
     /// Contains warnings about potential privacy issues detected in logs, along with
     /// a summary and critical/high counts.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? { get }
 
     /// The most recent AI-generated issue summary (iOS 26+).
@@ -117,8 +123,8 @@ public protocol LogRService: Observable, Sendable {
     /// Provides an intelligent summary of critical issues found in logs, including
     /// an executive summary, individual issues, patterns and priority actions.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var logIssueSummary: LogIssueSummary? { get }
 
     /// The current progress of an ongoing AI analysis operation (iOS 26+).
@@ -126,8 +132,8 @@ public protocol LogRService: Observable, Sendable {
     /// This property is updated in real-time during analysis operations and can be
     /// observed in SwiftUI views to display progress indicators.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var analysisProgress: AnalysisProgress? { get }
 
     /// Logs a message with the specified level, category, and source information.
@@ -178,6 +184,10 @@ public protocol LogRService: Observable, Sendable {
 
     /// Clears all logs from both memory and persistent storage.
     ///
+    /// ``LogR`` clears memory at once, and storage even while the encryption key cannot be read. When the storage
+    /// itself cannot be opened yet (see ``persistenceStatus``), it returns and clears the storage as soon as it
+    /// opens; entries logged before the call are never written.
+    ///
     /// - Throws: Storage-related errors if the operation fails.
     ///
     /// ## Example
@@ -193,6 +203,8 @@ public protocol LogRService: Observable, Sendable {
     /// Waits for entries queued before this call to complete their persistence attempts,
     /// without waiting for the one-second partial-batch deadline. Exhausted retries and
     /// encryption failures are reported through ``droppedLogCount``; this method does not throw.
+    /// While the storage or the key cannot be read yet (see ``persistenceStatus``), it returns once those
+    /// entries are held in memory.
     ///
     /// Call before a lifecycle transition to drain pending writes.
     func flush() async
@@ -205,7 +217,7 @@ public protocol LogRService: Observable, Sendable {
     /// - Returns: A `PrivacyAnalysisResult` containing warnings, a summary and critical/high counts.
     /// - Throws: `AIAnalyzerError` if AI analysis is unavailable or fails.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
     ///
     /// ## Example
     /// ```swift
@@ -219,7 +231,7 @@ public protocol LogRService: Observable, Sendable {
     ///     }
     /// }
     /// ```
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor @discardableResult func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult
 
     /// Generates an AI-powered summary of critical issues in logs (iOS 26+).
@@ -230,7 +242,7 @@ public protocol LogRService: Observable, Sendable {
     /// - Returns: A `LogIssueSummary` with an executive summary, issues, patterns and priority actions.
     /// - Throws: `AIAnalyzerError` if AI analysis is unavailable or fails.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
     ///
     /// ## Example
     /// ```swift
@@ -244,7 +256,7 @@ public protocol LogRService: Observable, Sendable {
     ///     }
     /// }
     /// ```
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor @discardableResult func summarizeIssues() async throws -> LogIssueSummary
 }
 
@@ -258,10 +270,15 @@ public extension LogRService {
         0
     }
 
+    /// Default: ``PersistenceStatus/disabled``, for services that do not persist.
+    @MainActor var persistenceStatus: PersistenceStatus {
+        .disabled
+    }
+
     nonisolated func log(level: LogLevel,
                          message: @autoclosure () -> String,
                          category: LogCategory,
-                         file: String = #file,
+                         file: String = #fileID,
                          function: String = #function,
                          line: Int = #line,
                          metadata: [String: LogMetadataValue]? = nil) {
@@ -463,7 +480,7 @@ public extension LogRService {
     /// ```
     nonisolated func debug(_ message: @autoclosure () -> String,
                            category: LogCategory = .debug,
-                           file: String = #file,
+                           file: String = #fileID,
                            function: String = #function,
                            line: Int = #line,
                            metadata: [String: LogMetadataValue]? = nil) {
@@ -491,7 +508,7 @@ public extension LogRService {
     /// ```
     nonisolated func info(_ message: @autoclosure () -> String,
                           category: LogCategory = .system,
-                          file: String = #file,
+                          file: String = #fileID,
                           function: String = #function,
                           line: Int = #line,
                           metadata: [String: LogMetadataValue]? = nil) {
@@ -519,7 +536,7 @@ public extension LogRService {
     /// ```
     nonisolated func notice(_ message: @autoclosure () -> String,
                             category: LogCategory = .system,
-                            file: String = #file,
+                            file: String = #fileID,
                             function: String = #function,
                             line: Int = #line,
                             metadata: [String: LogMetadataValue]? = nil) {
@@ -547,7 +564,7 @@ public extension LogRService {
     /// ```
     nonisolated func warning(_ message: @autoclosure () -> String,
                              category: LogCategory = .system,
-                             file: String = #file,
+                             file: String = #fileID,
                              function: String = #function,
                              line: Int = #line,
                              metadata: [String: LogMetadataValue]? = nil) {
@@ -575,7 +592,7 @@ public extension LogRService {
     /// ```
     nonisolated func error(_ message: @autoclosure () -> String,
                            category: LogCategory = .system,
-                           file: String = #file,
+                           file: String = #fileID,
                            function: String = #function,
                            line: Int = #line,
                            metadata: [String: LogMetadataValue]? = nil) {
@@ -603,7 +620,7 @@ public extension LogRService {
     /// ```
     nonisolated func fault(_ message: @autoclosure () -> String,
                            category: LogCategory = .system,
-                           file: String = #file,
+                           file: String = #fileID,
                            function: String = #function,
                            line: Int = #line,
                            metadata: [String: LogMetadataValue]? = nil) {

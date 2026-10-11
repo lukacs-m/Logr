@@ -2,9 +2,9 @@ name: "Swift Package CI"
 
 on:
   push:
-    branches: ["main", "develop"]
+    branches: ["main", "develop", "feature/logr-2.0"]
   pull_request:
-    branches: ["main", "develop"]
+    branches: ["main", "develop", "feature/logr-2.0"]
 
 permissions:
   contents: read

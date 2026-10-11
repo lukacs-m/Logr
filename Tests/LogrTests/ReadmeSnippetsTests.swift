@@ -17,15 +17,7 @@ import Testing
 // MARK: - Quick start
 
 struct MyApp: App {
-    @State private var logger: LogR
-
-    init() {
-        do {
-            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
-        } catch {
-            fatalError("Could not initialize LogR: \(error)")
-        }
-    }
+    @State private var logger = LogR(storage: .sqlite())
 
     var body: some Scene {
         WindowGroup {
@@ -69,7 +61,7 @@ func processImages(logger: any LogRService) async {
 
 // MARK: - Configuration, storage, encryption, AI (compile-only)
 
-private func configurationSnippet() throws {
+private func configurationSnippet() {
     let config = LogrConfiguration(
         maxLogEntries: 5_000,
         maxLogAge: 24 * 60 * 60,
@@ -78,39 +70,43 @@ private func configurationSnippet() throws {
         logVerbosity: .normal,
         mirrorToOSLog: false
     )
-    let logger = try LogR(configuration: config)
+    let logger = LogR(configuration: config)
     _ = logger
 }
 
-private func storageSnippet() throws {
-    let sqlite = try LogR(storage: SQLiteStorage())      // Application Support/<bundle id>/logs.sqlite
-    let file = try LogR(storage: FileSystemStorage())    // Application Support/<bundle id>/Logr/logr_entries.ndjson
+private func storageSnippet() {
+    let sqlite = LogR(storage: .sqlite())    // Application Support/<bundle id>/logs.sqlite
+    let file = LogR(storage: .file())        // Application Support/<bundle id>/Logr/logr_entries.ndjson
     _ = (sqlite, file)
 }
 
 private func encryptionSnippet() throws {
-    let crypto = try LoggerCryptoService(encryptionAlgo: .chacha)   // default is .aes256gcm
-    let logger = try LogR(storage: SQLiteStorage(), cryptoService: crypto)
+    let crypto = LoggerCryptoService(encryptionAlgo: .chacha)   // default is .aes256gcm
+    let logger = LogR(storage: .sqlite(), cryptoService: crypto)
     try crypto.rotateKey()   // earlier entries stay readable unless removeOldKeys: true
     _ = logger
 }
 
-private func aiSnippet() throws {
+private func aiSnippet() {
     if #available(iOS 26.0, macOS 26.0, *) {
-        let logger = try LogR(logAnalyser: AIAnalyzer())
+        let logger = LogR(logAnalyser: AIAnalyzer())
         Task { @MainActor in
-            let privacy = try await logger.scanForPrivacyIssues()
-            let issues = try await logger.summarizeIssues()
-            print(privacy.summary, issues.executiveSummary)
+            do {
+                let privacy = try await logger.scanForPrivacyIssues()
+                let issues = try await logger.summarizeIssues()
+                print(privacy.summary, issues.executiveSummary)
+            } catch {
+                print("Analysis failed: \(error)")
+            }
         }
     }
 }
 
 // MARK: - Testing
 
-@Test func logsAreCachedSynchronously() throws {
-    let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
-    let logr = LogR(cryptoService: crypto)   // no storage: nothing is persisted, and this init does not throw
+@Test func logsAreCachedSynchronously() {
+    let crypto = LoggerCryptoService(store: InMemoryKeychainStore())
+    let logr = LogR(cryptoService: crypto)   // no storage: nothing is persisted
 
     logr.info("hello", category: .test)
 

@@ -63,7 +63,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     /// The log message content.
     public let message: String
 
-    /// The source file where this log was created.
+    /// The source file where this log was created, as `#fileID` gives it: `Module/File.swift`.
     public let file: String
 
     /// The function name where this log was created.
@@ -93,7 +93,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     ///   - category: The category for organizing logs.
     ///   - subsystem: The subsystem identifier.
     ///   - message: The log message content.
-    ///   - file: Source file (automatically captured).
+    ///   - file: Source file. Defaults to the caller's `#fileID` (`Module/File.swift`).
     ///   - function: Function name (automatically captured).
     ///   - line: Line number (automatically captured).
     ///   - metadata: Optional structured metadata key-value pairs.
@@ -103,7 +103,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
                 category: LogCategory,
                 subsystem: String,
                 message: String,
-                file: String = #file,
+                file: String = #fileID,
                 function: String = #function,
                 line: Int = #line,
                 metadata: [String: LogMetadataValue]? = nil) {
