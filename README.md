@@ -201,7 +201,7 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 |---|---|
 | `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (opens the storage in the background and holds entries while the key or storage cannot be read; encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
 | `Sources/Logr/Protocols/` | `LogRService` (public API plus `getLogs`, `exportLogs`, `logStatistics`), `LogRPersistence`, `LogAIAnalyzer` |
-| `Sources/Logr/Models/` | `LogEntry`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
+| `Sources/Logr/Models/` | `LogEntry`, `LogEntries`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogStorage`, `PersistenceStatus`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
 | `Sources/Logr/Tools/` | `LoggerCryptoService`, `KeychainStore` and `SystemKeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |
 | `Sources/Logr/Utilities/` | `String` redaction helpers |
 | `Sources/Logr/AI/` | `AIAnalyzer`: FoundationModels, chunked and parallel, iOS 26+ |
