@@ -12,7 +12,7 @@ import Foundation
 #if LOGR_SYSTEM_MODEL
 import FoundationModels
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 @Generable(description: "Privacy warning detected in application logs")
 public struct PrivacyWarning: Sendable, Identifiable, Hashable, Equatable {
     @Guide(description: "The source file where the exposure was detected")
@@ -53,7 +53,7 @@ public struct PrivacyWarning: Sendable, Identifiable, Hashable, Equatable {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 @Generable(description: "Collection of privacy warnings detected in logs")
 public struct PrivacyAnalysisResult: Sendable, Equatable {
     @Guide(description: "List of all privacy warnings found in the logs")
@@ -76,7 +76,7 @@ public struct PrivacyAnalysisResult: Sendable, Equatable {
     }
 }
 #else
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public struct PrivacyWarning: Sendable, Identifiable, Hashable, Equatable {
     public var file: String
     public var line: Int
@@ -103,7 +103,7 @@ public struct PrivacyWarning: Sendable, Identifiable, Hashable, Equatable {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public struct PrivacyAnalysisResult: Sendable, Equatable {
     public var warnings: [PrivacyWarning]
     public var summary: String
@@ -119,14 +119,14 @@ public struct PrivacyAnalysisResult: Sendable, Equatable {
 }
 #endif
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public extension PrivacyWarning {
     var id: String {
         "\(file):\(line):\(exposureType)"
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public extension PrivacyAnalysisResult {
     var isEmpty: Bool {
         warnings.isEmpty

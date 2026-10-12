@@ -56,7 +56,7 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 ///
 /// ```swift
 /// // Use default configuration
-/// let logger = try LogR()
+/// let logger = LogR()
 ///
 /// // Custom configuration for production
 /// let config = LogrConfiguration(
@@ -67,7 +67,7 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 ///     cleanupInterval: 30 * 60,  // 30 minutes
 ///     logVerbosity: .normal
 /// )
-/// let logger = try LogR(configuration: config)
+/// let logger = LogR(configuration: config)
 /// ```
 ///
 /// ## Topics
@@ -90,9 +90,12 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 public struct LogrConfiguration: Sendable, Codable {
     /// Maximum number of log entries to keep in memory and storage.
     ///
-    /// When this limit is reached, the oldest entries are removed.
-    /// Default: 10,000 entries.
+    /// When this limit is reached, the oldest entries are removed. Values are clamped to 100...100,000: fewer
+    /// would make the viewer and the analysis useless, and more would hold too much in memory, which also sizes
+    /// the history read at launch (100,000 is the writer's backpressure cap). Default: 10,000 entries.
     public let maxLogEntries: Int
+
+    static let maxLogEntriesRange = 100...100_000
 
     /// Maximum age of log entries in seconds before cleanup.
     ///
@@ -144,9 +147,12 @@ public struct LogrConfiguration: Sendable, Codable {
 
     /// Time interval between automatic cleanup operations in seconds.
     ///
-    /// Cleanup removes old entries and enforces entry count limits.
-    /// Default: 3,600 seconds (1 hour).
+    /// Cleanup removes old entries and enforces entry count limits. Values are clamped to 60...86,400 (one minute
+    /// to one day): a pass more often would keep rewriting the storage, and one less often may never run in a
+    /// session. NaN means the default. Default: 3,600 seconds (1 hour).
     public let cleanupInterval: TimeInterval
+
+    static let cleanupIntervalRange: ClosedRange<TimeInterval> = 60...86_400
 
     /// Controls the verbosity of log output.
     ///
@@ -183,12 +189,12 @@ public struct LogrConfiguration: Sendable, Codable {
     /// All parameters have sensible defaults. Only specify the values you want to customize.
     ///
     /// - Parameters:
-    ///   - maxLogEntries: Maximum log entries to keep. Default: 10,000
+    ///   - maxLogEntries: Maximum log entries to keep, clamped to 100...100,000. Default: 10,000
     ///   - maxLogAge: Maximum age in seconds. Default: 7 days
     ///   - enabledLevels: Which log levels to process. Default: All levels
     ///   - categoryLevelOverrides: Per-category minimum log level overrides. Default: Empty
     ///   - subsystem: OSLog subsystem identifier. Default: Bundle identifier
-    ///   - cleanupInterval: Cleanup frequency in seconds. Default: 1 hour
+    ///   - cleanupInterval: Cleanup frequency in seconds, clamped to 60...86,400. Default: 1 hour
     ///   - logVerbosity: Output verbosity. Default: `.verbose`
     ///   - coalesceWindowMillis: Min interval between `recentLogs` publications. Default: 100ms
     ///   - mirrorToOSLog: Mirror each log to OSLog. Default: `true`
@@ -202,12 +208,12 @@ public struct LogrConfiguration: Sendable, Codable {
                 logVerbosity: LogVerbosity = LogrConfiguration.default.logVerbosity,
                 coalesceWindowMillis: Int = LogrConfiguration.default.coalesceWindowMillis,
                 mirrorToOSLog: Bool = LogrConfiguration.default.mirrorToOSLog) {
-        self.maxLogEntries = maxLogEntries
+        self.maxLogEntries = maxLogEntries.clamped(to: Self.maxLogEntriesRange)
         self.maxLogAge = maxLogAge
         self.enabledLevels = enabledLevels
         self.categoryLevelOverrides = categoryLevelOverrides
         self.subsystem = subsystem
-        self.cleanupInterval = cleanupInterval
+        self.cleanupInterval = Self.validCleanupInterval(cleanupInterval)
         self.logVerbosity = logVerbosity
         self.coalesceWindowMillis = coalesceWindowMillis
         self.mirrorToOSLog = mirrorToOSLog
@@ -225,8 +231,8 @@ public struct LogrConfiguration: Sendable, Codable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = LogrConfiguration.default
-        maxLogEntries = try container.decodeIfPresent(Int.self, forKey: .maxLogEntries)
-            ?? defaults.maxLogEntries
+        maxLogEntries = try (container.decodeIfPresent(Int.self, forKey: .maxLogEntries) ?? defaults.maxLogEntries)
+            .clamped(to: Self.maxLogEntriesRange)
         maxLogAge = try container.decodeIfPresent(TimeInterval.self, forKey: .maxLogAge)
             ?? defaults.maxLogAge
         enabledLevels = try container.decodeIfPresent(Set<LogLevel>.self, forKey: .enabledLevels)
@@ -236,8 +242,8 @@ public struct LogrConfiguration: Sendable, Codable {
             ?? defaults.categoryLevelOverrides
         subsystem = try container.decodeIfPresent(String.self, forKey: .subsystem)
             ?? defaults.subsystem
-        cleanupInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .cleanupInterval)
-            ?? defaults.cleanupInterval
+        let decodedCleanupInterval = try container.decodeIfPresent(TimeInterval.self, forKey: .cleanupInterval)
+        cleanupInterval = Self.validCleanupInterval(decodedCleanupInterval ?? defaults.cleanupInterval)
         logVerbosity = try container.decodeIfPresent(LogVerbosity.self, forKey: .logVerbosity)
             ?? defaults.logVerbosity
         coalesceWindowMillis = try container.decodeIfPresent(Int.self, forKey: .coalesceWindowMillis)
@@ -267,4 +273,17 @@ public struct LogrConfiguration: Sendable, Codable {
                                                     logVerbosity: .verbose,
                                                     coalesceWindowMillis: 100,
                                                     mirrorToOSLog: true)
+}
+
+private extension LogrConfiguration {
+    /// NaN lies in no range, so it gets the default hour (written out: `default` is built through this).
+    static func validCleanupInterval(_ interval: TimeInterval) -> TimeInterval {
+        interval.isNaN ? 60 * 60 : interval.clamped(to: cleanupIntervalRange)
+    }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
+    }
 }

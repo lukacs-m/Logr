@@ -280,7 +280,7 @@ struct LogDemoView: View {
             logger.info("Sample log for \(category.rawValue) category", category: category)
         }
 
-        logger.info("Custom category example", category: .custom("feature-flags"))
+        logger.info("Custom category example", category: "feature-flags")
     }
 
     private func logPerformanceMetrics() {
@@ -373,5 +373,5 @@ struct LogDemoView: View {
     NavigationStack {
         LogDemoView()
     }
-    .environment(\.logService, try! LogR())
+    .environment(\.logService, LogR())
 }

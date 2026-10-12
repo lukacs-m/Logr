@@ -11,9 +11,9 @@ iOS 26+ can be analysed on-device by Apple Intelligence.
 
 - **Log from anywhere**: logging is `nonisolated`, no `await`, safe from any actor or thread; persistence runs on a background actor
 - **Three modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock) and `LogrTesting` (test doubles)
-- **Storage**: SQLite (recommended), an append-only NDJSON file, or your own `LogRPersistence`
+- **Storage**: SQLite, an append-only NDJSON file, or your own `LogRPersistence`
 - **Encryption**: AES-256-GCM or ChaCha20-Poly1305, versioned keys with rotation
-- **Structure**: six levels, 49 predefined categories plus `.custom`, typed metadata on every entry
+- **Structure**: six levels, 49 predefined categories plus your own (`static let checkout: LogCategory = "checkout"`), typed metadata on every entry
 
 ## Installation
 
@@ -43,15 +43,7 @@ import SwiftUI
 
 @main
 struct MyApp: App {
-    @State private var logger: LogR
-
-    init() {
-        do {
-            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
-        } catch {
-            fatalError("Could not initialize LogR: \(error)")
-        }
-    }
+    @State private var logger = LogR(storage: .sqlite())
 
     var body: some Scene {
         WindowGroup {
@@ -117,7 +109,7 @@ let config = LogrConfiguration(
     logVerbosity: .normal,
     mirrorToOSLog: false
 )
-let logger = try LogR(configuration: config)
+let logger = LogR(configuration: config)
 ```
 
 Every option and its default is documented on `LogrConfiguration`.
@@ -129,20 +121,28 @@ Partial batches are submitted after one second; call `await logger.flush()` befo
 transition when you need pending writes processed immediately:
 
 ```swift
-let sqlite = try LogR(storage: SQLiteStorage())      // Application Support/<bundle id>/logs.sqlite
-let file = try LogR(storage: FileSystemStorage())    // Application Support/<bundle id>/Logr/logr_entries.ndjson
+let sqlite = LogR(storage: .sqlite())    // Application Support/<bundle id>/logs.sqlite
+let file = LogR(storage: .file())        // Application Support/<bundle id>/Logr/logr_entries.ndjson
 ```
 
-Both default locations are excluded from backups: entries are encrypted with a key that never leaves
-the device. The file storage writes one JSON entry per line; a file Logr 1.3 or earlier left in
-`Documents` is moved there on first open.
+Pass a file URL to either to choose the location, or `.custom(_:)` with your own `LogRPersistence`.
+Storage opens in the background, so creating a logger never throws. Until the key and the storage can be
+read (before the device's first unlock after a restart, during a background launch), entries wait in
+memory, `persistenceStatus` is `.waitingForProtectedData`, and they are written once both can be read.
 
-Entries are encrypted before they reach storage. Pick the cipher or rotate the key through
-`LoggerCryptoService`:
+Both keep the same window: the newest `maxLogEntries` entries younger than `maxLogAge`. They differ in
+cleanup: SQLite deletes expired rows in place, while the file storage, which writes one JSON entry per
+line, rewrites the whole file. Both default locations are excluded from backups: entries are encrypted
+with a key that never leaves the device. A file Logr 1.3 or earlier left in `Documents` is moved to
+Application Support on first open.
+
+Entries are encrypted before they reach storage, with keys kept in the Keychain by `SystemKeychainStore`
+(on macOS: the data-protection keychain when the app has a provisioning profile, the login keychain
+otherwise). Pick the cipher or rotate the key through `LoggerCryptoService`:
 
 ```swift
-let crypto = try LoggerCryptoService(encryptionAlgo: .chacha)   // default is .aes256gcm
-let logger = try LogR(storage: SQLiteStorage(), cryptoService: crypto)
+let crypto = LoggerCryptoService(encryptionAlgo: .chacha)   // default is .aes256gcm
+let logger = LogR(storage: .sqlite(), cryptoService: crypto)
 try crypto.rotateKey()   // earlier entries stay readable unless removeOldKeys: true
 ```
 
@@ -154,11 +154,15 @@ Both protocol docs carry a worked example. Opt-in `String` helpers such as `reda
 
 ```swift
 if #available(iOS 26.0, macOS 26.0, *) {
-    let logger = try LogR(logAnalyser: AIAnalyzer())
+    let logger = LogR(logAnalyser: AIAnalyzer())
     Task { @MainActor in
-        let privacy = try await logger.scanForPrivacyIssues()
-        let issues = try await logger.summarizeIssues()
-        print(privacy.summary, issues.executiveSummary)
+        do {
+            let privacy = try await logger.scanForPrivacyIssues()
+            let issues = try await logger.summarizeIssues()
+            print(privacy.summary, issues.executiveSummary)
+        } catch {
+            print("Analysis failed: \(error)")
+        }
     }
 }
 ```
@@ -179,9 +183,9 @@ import Logr
 import LogrTesting
 import Testing
 
-@Test func logsAreCachedSynchronously() throws {
-    let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
-    let logr = LogR(cryptoService: crypto)   // no storage: nothing is persisted, and this init does not throw
+@Test func logsAreCachedSynchronously() {
+    let crypto = LoggerCryptoService(store: InMemoryKeychainStore())
+    let logr = LogR(cryptoService: crypto)   // no storage: nothing is persisted
 
     logr.info("hello", category: .test)
 
@@ -195,10 +199,10 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 
 | Path | What lives there |
 |---|---|
-| `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
+| `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (opens the storage in the background and holds entries while the key or storage cannot be read; encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
 | `Sources/Logr/Protocols/` | `LogRService` (public API plus `getLogs`, `exportLogs`, `logStatistics`), `LogRPersistence`, `LogAIAnalyzer` |
-| `Sources/Logr/Models/` | `LogEntry`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
-| `Sources/Logr/Tools/` | `LoggerCryptoService` and `KeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |
+| `Sources/Logr/Models/` | `LogEntry`, `LogEntries`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogStorage`, `PersistenceStatus`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
+| `Sources/Logr/Tools/` | `LoggerCryptoService`, `KeychainStore` and `SystemKeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |
 | `Sources/Logr/Utilities/` | `String` redaction helpers |
 | `Sources/Logr/AI/` | `AIAnalyzer`: FoundationModels, chunked and parallel, iOS 26+ |
 | `Sources/LogrUI/LogViews/` | `LogViewer`, its filter and export sheets, the entry row |

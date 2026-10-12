@@ -1,7 +1,7 @@
 import Logr
 import SwiftUI
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public struct IssueSummaryView: View {
     @Environment(\.logService) var logr
     @State private var loading = false
@@ -48,7 +48,7 @@ public struct IssueSummaryView: View {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension IssueSummaryView {
     var mainContent: some View {
         List {
@@ -139,7 +139,7 @@ private extension IssueSummaryView {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension IssueSummaryView {
     var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
@@ -156,7 +156,7 @@ private extension IssueSummaryView {
 
 // MARK: - Overlay
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension IssueSummaryView {
     @ViewBuilder
     var overlayContent: some View {
@@ -190,7 +190,7 @@ private extension IssueSummaryView {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 struct IssueRow: View {
     let issue: LogIssue
     @State private var isExpanded = false
@@ -329,7 +329,7 @@ struct StatBadgeView: View {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 #Preview {
     @Previewable @State var mock = MockLogR()
     NavigationStack {

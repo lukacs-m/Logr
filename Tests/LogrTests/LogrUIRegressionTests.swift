@@ -15,24 +15,25 @@ struct LogrUIRegressionTests {
     }
 
     private func makeLogger(maxLogEntries: Int = 100) throws -> LogR {
-        LogR(cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
+        LogR(cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
              configuration: LogrConfiguration(maxLogEntries: maxLogEntries, mirrorToOSLog: false))
     }
 
     @available(macOS 15.2, iOS 18.2, tvOS 18.2, watchOS 11.2, *)
     @Test func rollingCacheUpdatesStatisticsAndSharedContent() async throws {
-        let logger = try makeLogger(maxLogEntries: 2)
-        logger.info("old one")
-        logger.info("old two")
+        let logger = try makeLogger(maxLogEntries: 100)
+        for index in 1 ... 100 {
+            logger.info("old \(index)")
+        }
         let initial = Array(logger.recentLogs)
-        #expect(await logger.logStatistics().countByLevel[.info] == 2)
+        #expect(await logger.logStatistics().countByLevel[.info] == 100)
 
         logger.error("replacement")
         let replacement = Array(logger.recentLogs)
         #expect(initial.count == replacement.count)
         #expect(initial != replacement)
         let statistics = await logger.logStatistics()
-        #expect(statistics.countByLevel[.info] == 1)
+        #expect(statistics.countByLevel[.info] == 99)
         #expect(statistics.countByLevel[.error] == 1)
 
         let item = ShareItem.logExport(from: logger, format: .json)
@@ -40,7 +41,7 @@ struct LogrUIRegressionTests {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let entries = try decoder.decode([LogEntry].self, from: data)
-        #expect(entries.map(\.message) == ["replacement", "old two"])
+        #expect(entries.map(\.message) == ["replacement"] + (2 ... 100).reversed().map { "old \($0)" })
     }
 
     @available(macOS 15.2, iOS 18.2, tvOS 18.2, watchOS 11.2, *)
@@ -215,7 +216,7 @@ private final class StubLogService: LogRService {
     @MainActor private(set) var maxConcurrentStatistics = 0
     @MainActor private var runningStatistics = 0
 
-    @MainActor var recentLogs: Deque<LogEntry> {
+    @MainActor var recentLogs: LogEntries {
         []
     }
 
@@ -223,17 +224,17 @@ private final class StubLogService: LogRService {
         false
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? {
         nil
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var logIssueSummary: LogIssueSummary? {
         nil
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var analysisProgress: AnalysisProgress? {
         nil
     }
@@ -285,12 +286,12 @@ private final class StubLogService: LogRService {
 
     func flush() async {}
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
         throw CancellationError()
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor func summarizeIssues() async throws -> LogIssueSummary {
         throw CancellationError()
     }

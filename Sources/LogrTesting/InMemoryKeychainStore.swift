@@ -14,7 +14,7 @@ import os
 /// are thread-safe.
 ///
 /// ```swift
-/// let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
+/// let crypto = LoggerCryptoService(store: InMemoryKeychainStore())
 /// let logr = LogR(cryptoService: crypto)
 /// ```
 public final class InMemoryKeychainStore: KeychainStore {
@@ -40,6 +40,17 @@ public final class InMemoryKeychainStore: KeychainStore {
     /// Stores `data` under `key`, replacing any existing item. Never throws.
     public func set(_ data: Data, forKey key: String) throws {
         storage.withLock { $0[key] = data }
+    }
+
+    /// Stores `data` under `key` unless an item already exists there. Never throws.
+    ///
+    /// - Returns: `true` if `data` was stored, `false` if an item already existed; that item is left unchanged.
+    public func add(_ data: Data, forKey key: String) throws -> Bool {
+        storage.withLock { items in
+            guard items[key] == nil else { return false }
+            items[key] = data
+            return true
+        }
     }
 
     /// Removes the item stored under `key`, if any. Never throws.

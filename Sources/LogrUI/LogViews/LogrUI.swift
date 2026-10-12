@@ -6,7 +6,6 @@
 //
 
 import Combine
-import DequeModule
 import Logr
 import SwiftUI
 import UniformTypeIdentifiers
@@ -67,8 +66,7 @@ import UniformTypeIdentifiers
 ///
 /// @main
 /// struct MyApp: App {
-///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
-///     let logger = try! LogR(storage: SQLiteStorage())
+///     let logger = LogR(storage: .sqlite())
 ///
 ///     var body: some Scene {
 ///         WindowGroup {
@@ -159,8 +157,7 @@ public struct LogViewer: View {
     ///
     /// @main
     /// struct MyApp: App {
-    ///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
-    ///     let logger = try! LogR()
+    ///     let logger = LogR()
     ///
     ///     var body: some Scene {
     ///         WindowGroup {
@@ -205,7 +202,7 @@ public struct LogViewer: View {
             FilterSheet()
                 .environment(logFilterPreferences)
         case .privacyLogChecks:
-            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *) {
+            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *) {
                 NavigationStack {
                     PrivacyWarningsView()
                 }
@@ -213,7 +210,7 @@ public struct LogViewer: View {
                 NonAccessibleFeatureView()
             }
         case .issuesSummary:
-            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *) {
+            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *) {
                 NavigationStack {
                     IssueSummaryView()
                 }
@@ -297,7 +294,7 @@ private extension LogViewer {
     }
 
     /// `nil` while the summary panel is hidden, so nothing schedules a refresh no one reads.
-    var compactStatisticsRefreshID: Deque<LogEntry>? {
+    var compactStatisticsRefreshID: LogEntries? {
         logFilterPreferences.showStatisticsPanel ? logr.recentLogs : nil
     }
 
