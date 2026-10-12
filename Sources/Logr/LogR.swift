@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import DequeModule
 import Foundation
 import Observation
@@ -12,15 +13,23 @@ import UIKit
 ///
 /// ## Pipeline
 ///
-/// ``log(level:message:category:file:function:line:metadata:)`` runs synchronously on the caller's
+/// ``LogRService/log(level:message:category:file:function:line:metadata:)`` runs synchronously on the caller's
 /// thread. It filters on ``LogrConfiguration/enabledLevels`` and
 /// ``LogrConfiguration/categoryLevelOverrides`` (the `@autoclosure` message is never evaluated for a
-/// filtered entry), mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set, prepends the
-/// entry to a lock-protected deque capped at ``LogrConfiguration/maxLogEntries``, and hands it to a
+/// filtered entry), renders the ``LogMessage`` with its private values in clear or redacted (see
+/// ``LogrConfiguration/storesPrivateValues``), mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set,
+/// prepends the entry to a lock-protected deque capped at ``LogrConfiguration/maxLogEntries``, and hands it to a
 /// private writer actor. The writer encrypts through ``LoggerCryptoServicing``, accumulates batches of
 /// 50, or submits a partial batch after one second. Storage failures get three attempts with linear
 /// backoff before the batch is dropped. Once 100,000 entries are waiting on storage the newest are shed. Every
 /// dropped entry, whatever the reason, is counted in ``droppedLogCount``.
+///
+/// ## OSLog mirror
+///
+/// The mirror logs the message with every value that is not public redacted, as public text, then those values
+/// as one private argument: Console shows them only while a debugger is attached or private data logging is
+/// enabled. Xcode's "jump to source" for a mirrored message points into Logr, as for any wrapper around OSLog;
+/// ``LogVerbosity/verbose`` appends the call site, `(File.swift:42 function())`, to find it.
 ///
 /// ## Isolation
 ///
@@ -121,6 +130,9 @@ public final class LogR: LogRService {
 
     @ObservationIgnored
     private let writer: LogWriterActor?
+    /// Hashes ``LogPrivacy/Mask/hash`` values for every logger without storage in this process: they have
+    /// no writer to derive a key from the crypto service, and their entries never outlive the process.
+    private static let processHashKey = SymmetricKey(size: .bits256)
 
     // Type-erased so these stored properties carry no `@available` requirement (a stored property
     // cannot be annotated `@available`, and the analyzer types are iOS 26+). The mutable result
@@ -202,36 +214,35 @@ public final class LogR: LogRService {
         writer?.shutdown()
     }
 
-    public nonisolated func log(level: LogLevel,
-                                message: @autoclosure () -> String,
-                                category: LogCategory,
-                                file: String = #fileID,
-                                function: String = #function,
-                                line: Int = #line,
-                                metadata: [String: LogMetadataValue]? = nil) {
+    public nonisolated func record(level: LogLevel,
+                                   message: @autoclosure () -> LogMessage,
+                                   category: LogCategory,
+                                   file: String,
+                                   function: String,
+                                   line: Int,
+                                   metadata: [String: LogMetadataValue]?) {
         guard shouldLog(level: level, category: category) else { return }
 
         let message = message()
+        let hashKey = message.redactions.contains { $0.kind == .hashed } ? privacyHashKey() : nil
+        let stored = message.rendered(keepingPrivateValues: configuration.storesPrivateValues, hashKey: hashKey)
 
         let entry = LogEntry(level: level,
                              category: category,
                              subsystem: configuration.subsystem,
-                             message: message,
+                             message: stored.text,
                              file: file,
                              function: function,
                              line: line,
-                             metadata: metadata)
+                             metadata: metadata,
+                             privateRanges: stored.privateRanges)
 
         if configuration.mirrorToOSLog {
-            let categoryLogger = logger(for: category)
-            if configuration.logVerbosity == .verbose {
-                let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
-                // Source locations are not sensitive, so they are public; the message stays private.
-                categoryLogger.log(level: level.osLogType,
-                                   "\(message) (\(fileName, privacy: .public):\(line) \(function, privacy: .public))")
-            } else {
-                categoryLogger.log(level: level.osLogType, "\(message)")
-            }
+            let redacted = configuration.storesPrivateValues
+                ? message.rendered(keepingPrivateValues: false, hashKey: hashKey).text
+                : stored.text
+            mirror(message, redacted: redacted, level: level, category: category, file: file, function: function,
+                   line: line)
         }
 
         // Append synchronously under the lock so every reader — including reads made through the
@@ -486,6 +497,42 @@ private extension LogR {
             }
     }
 
+    /// The hash key from the crypto service once the writer could read it; until then `nil`, so hashed values
+    /// render as `<private>`.
+    nonisolated func privacyHashKey() -> SymmetricKey? {
+        guard let writer else { return Self.processHashKey }
+        return writer.privacyHashKey.value
+    }
+
+    /// `OSLogMessage` cannot be built at run time and takes its privacy statically, so the message goes
+    /// out through fixed templates: the redacted text as public, the values that are not public after it as
+    /// private, so they show when private data is enabled or a debugger is attached.
+    nonisolated func mirror(_ message: LogMessage, redacted: String, level: LogLevel, category: LogCategory,
+                            file: String, function: String, line: Int) {
+        let osLogger = logger(for: category)
+        let type = level.osLogType
+        let privateValues = message.joinedPrivateValues
+        guard configuration.logVerbosity == .verbose else {
+            if privateValues.isEmpty {
+                osLogger.log(level: type, "\(redacted, privacy: .public)")
+            } else {
+                osLogger.log(level: type, "\(redacted, privacy: .public) \(privateValues, privacy: .private)")
+            }
+            return
+        }
+        let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
+        if privateValues.isEmpty {
+            osLogger.log(level: type, """
+            \(redacted, privacy: .public) (\(fileName, privacy: .public):\(line) \(function, privacy: .public))
+            """)
+        } else {
+            osLogger.log(level: type, """
+            \(redacted, privacy: .public) \(privateValues, privacy: .private) \
+            (\(fileName, privacy: .public):\(line) \(function, privacy: .public))
+            """)
+        }
+    }
+
     /// Returns the cached logger for a common category, or creates one on demand for uncommon /
     /// custom categories. `nonisolated` and lock-free: `commonLoggers` is immutable and `Logger`
     /// is a cheap, `Sendable` handle.
@@ -587,6 +634,10 @@ actor LogWriterActor {
     /// cleanup timer cannot pile up ahead of writes.
     private let cleanupQueued = SafeMutex(false)
     private let retrySignalForwarding: Task<Void, Never>
+    /// Read by ``LogR`` on its logging path; set once the key can be read.
+    let privacyHashKey = SafeMutex<SymmetricKey?>(nil)
+    /// The crypto service answered: with a key, or with `nil` or an error other than the locked Keychain.
+    private var isPrivacyHashKeyResolved = false
 
     private var storage: (any LogRPersistence)?
     /// The persisted entries, read once when storage opens and kept until ``persistedHistory()`` takes them.
@@ -787,6 +838,7 @@ private extension LogWriterActor {
     /// Opens the storage and applies a pending clear, which need no key; then checks the key, reads the history
     /// once, and encrypts what waits in `pending`. On failure, reports why and tries again later.
     func open() async {
+        resolvePrivacyHashKey()
         do {
             guard let storage = try openStorage() else { return }
             if clearOnOpen {
@@ -794,6 +846,8 @@ private extension LogWriterActor {
                 clearOnOpen = false
             }
             try checkKey()
+            // The Keychain may have unlocked since the attempt above.
+            resolvePrivacyHashKey()
             if history == nil {
                 history = try await readHistory(from: storage)
                 deliverHistory()
@@ -832,6 +886,22 @@ private extension LogWriterActor {
         }
         historyWaiters.removeAll()
         self.history = []
+    }
+
+    /// Independent of storage, so hashing starts once the key can be read even while storage cannot open. A
+    /// service without a hash key, or whose key fails for another reason, leaves hashed values as `<private>`.
+    func resolvePrivacyHashKey() {
+        guard !isPrivacyHashKeyResolved else { return }
+        let key: SymmetricKey?
+        do {
+            key = try cryptoService.privacyHashKey()
+        } catch LoggerCryptoError.keyTemporarilyUnavailable {
+            return
+        } catch {
+            key = nil
+        }
+        isPrivacyHashKeyResolved = true
+        privacyHashKey.withLock { $0 = key }
     }
 
     /// Throws only ``LoggerCryptoError/keyTemporarilyUnavailable``: other encryption failures surface per entry,

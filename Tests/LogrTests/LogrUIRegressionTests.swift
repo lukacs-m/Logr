@@ -49,7 +49,8 @@ struct LogrUIRegressionTests {
     func nativeExportPreservesFormatAndBytes(format: ExportFormat) async throws {
         let logger = try makeLogger()
         logger.info("export me")
-        let expected = try await LogExporter.serialize(Array(logger.recentLogs), format: format)
+        let expected = try await LogExporter.serialize(Array(logger.recentLogs), format: format,
+                                                      includingPrivateValues: false)
         let item = ShareItem.logExport(from: logger, format: format)
         #expect(item.fileName == "logs.\(format.fileExtension)")
         #expect(item.exportedContentTypes().contains(format.contentType))
@@ -203,7 +204,7 @@ struct LogrUIRegressionTests {
     }
 }
 
-/// A conformer that overrides ``LogRService/exportLogs(format:)`` and ``LogRService/logStatistics()``
+/// A conformer that overrides ``LogRService/exportLogs(format:includingPrivateValues:)`` and ``LogRService/logStatistics()``
 /// — the documented extension points for redaction or for reporting persisted history rather than the
 /// in-memory cache. Its logs are deliberately absent from `recentLogs`, so a caller that bypasses an
 /// override sees an empty service.
@@ -239,15 +240,15 @@ private final class StubLogService: LogRService {
         nil
     }
 
-    nonisolated func log(level: LogLevel,
-                         message: @autoclosure () -> String,
-                         category: LogCategory,
-                         file: String,
-                         function: String,
-                         line: Int,
-                         metadata: [String: LogMetadataValue]?) {}
+    nonisolated func record(level: LogLevel,
+                            message: @autoclosure () -> LogMessage,
+                            category: LogCategory,
+                            file: String,
+                            function: String,
+                            line: Int,
+                            metadata: [String: LogMetadataValue]?) {}
 
-    func exportLogs(format: ExportFormat) async throws -> Data {
+    func exportLogs(format: ExportFormat, includingPrivateValues: Bool) async throws -> Data {
         let export = await MainActor.run {
             exportCallCount += 1
             return self.export

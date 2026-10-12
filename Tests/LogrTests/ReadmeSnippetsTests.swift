@@ -59,6 +59,17 @@ func processImages(logger: any LogRService) async {
     logger.warning("Image processing is slow", category: .performance)
 }
 
+// MARK: - Privacy
+
+func signIn(email: String, attempts: Int, token: String, logger: any LogRService) {
+    logger.info("Signed in \(email) after \(attempts) tries", category: .authentication)
+    // Release builds store "Signed in <private> after 3 tries"
+    logger.info("Account \(email, privacy: .private(mask: .hash))", category: .user)
+    // "Account <private:3f9a1c2e>": equal values give equal hashes
+    logger.debug("Token \(token, privacy: .sensitive)", category: .authentication)
+    // "Token <sensitive>", even in DEBUG builds
+}
+
 // MARK: - Configuration, storage, encryption, AI (compile-only)
 
 private func configurationSnippet() {

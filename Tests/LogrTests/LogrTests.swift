@@ -9,7 +9,7 @@ import Collections
 @MainActor
 final class EvaluationCounter {
     private(set) var count = 0
-    func track() -> String {
+    func track() -> LogMessage {
         count += 1
         return "tracked-message"
     }
@@ -630,7 +630,7 @@ struct LogrTests {
         let entry = LogEntry(level: .info, category: LogCategory(rawValue: tricky), subsystem: tricky, message: tricky,
                              file: tricky, function: tricky, line: 7, metadata: ["key": .string(tricky)])
 
-        let csv = try await LogExporter.serialize([entry], format: .csv)
+        let csv = try await LogExporter.serialize([entry], format: .csv, includingPrivateValues: false)
 
         let rows = parseCSV(String(decoding: csv, as: UTF8.self))
         #expect(rows.map(\.count) == [9, 9])
@@ -737,7 +737,7 @@ struct LogrTests {
         let logr = LogR(cryptoService: cryptoService)
         let longMessage = String(repeating: "A", count: 10000)
 
-        logr.info(longMessage, category: .system)
+        logr.info(LogMessage(longMessage, privacy: .public), category: .system)
 
         #expect(logr.recentLogs.count == 1)
         #expect(logr.recentLogs.first?.message.count == 10000)
@@ -811,7 +811,7 @@ private struct ThrowingAnalyzer: LogAIAnalyzer {
 }
 
 /// Splits RFC 4180 CSV into rows of fields: quoted fields, doubled quotes, separators inside quotes.
-private func parseCSV(_ text: String) -> [[String]] {
+func parseCSV(_ text: String) -> [[String]] {
     var rows: [[String]] = []
     var row: [String] = []
     var field = ""

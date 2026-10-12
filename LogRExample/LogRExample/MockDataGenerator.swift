@@ -8,8 +8,10 @@
 import Foundation
 import Logr
 
-/// Helper to log with level and category using convenience methods
+/// Helper to log with level and category using convenience methods. Public, so the privacy scanner demo can
+/// find the fake personal data in release builds too.
 private func logMessage(logger: LogRService, level: LogLevel, message: String, category: LogCategory) {
+    let message = LogMessage(message, privacy: .public)
     switch level {
     case .debug: logger.debug(message, category: category)
     case .info: logger.info(message, category: category)

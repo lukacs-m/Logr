@@ -124,7 +124,7 @@ struct LogDemoView: View {
     private func categoryButtons(_ categories: [LogCategory]) -> some View {
         ForEach(categories) { category in
             Button {
-                logger.info("Sample log for \(category.rawValue) category", category: category)
+                logger.info("Sample log for \(category.rawValue, privacy: .public) category", category: category)
             } label: {
                 Text(category.rawValue)
             }
@@ -154,7 +154,7 @@ struct LogDemoView: View {
             Button {
                 guard !customMessage.isEmpty else { return }
                 logger.log(level: selectedLevel,
-                           message: customMessage,
+                           message: LogMessage(customMessage, privacy: .public),
                            category: selectedCategory,
                            file: #file,
                            function: #function,
@@ -255,7 +255,7 @@ struct LogDemoView: View {
         ]
 
         logger.log(level: level,
-                   message: messages[level] ?? "Sample \(level.displayName) message",
+                   message: LogMessage(messages[level] ?? "Sample \(level.displayName) message", privacy: .public),
                    category: .system,
                    file: #file,
                    function: #function,
@@ -277,7 +277,7 @@ struct LogDemoView: View {
         ]
 
         for category in sampleCategories {
-            logger.info("Sample log for \(category.rawValue) category", category: category)
+            logger.info("Sample log for \(category.rawValue, privacy: .public) category", category: category)
         }
 
         logger.info("Custom category example", category: "feature-flags")
@@ -313,7 +313,7 @@ struct LogDemoView: View {
             let category = categories.randomElement() ?? .system
             let message = messages.randomElement() ?? "Log entry"
             logger.log(level: level,
-                       message: "\(message) #\(i + 1)",
+                       message: "\(message, privacy: .public) #\(i + 1)",
                        category: category,
                        file: #file,
                        function: #function,

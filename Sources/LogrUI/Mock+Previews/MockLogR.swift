@@ -159,13 +159,13 @@ public final class MockLogR: LogRService, Sendable {
 
     // MARK: - LogRService Implementation
 
-    public nonisolated func log(level: LogLevel,
-                                message: @autoclosure () -> String,
-                                category: LogCategory,
-                                file: String = #fileID,
-                                function: String = #function,
-                                line: Int = #line,
-                                metadata: [String: LogMetadataValue]? = nil) {
+    public nonisolated func record(level: LogLevel,
+                                   message: @autoclosure () -> LogMessage,
+                                   category: LogCategory,
+                                   file: String,
+                                   function: String,
+                                   line: Int,
+                                   metadata: [String: LogMetadataValue]?) {
         // Evaluate the message synchronously (preserving lazy semantics), then hop the insert to
         // the main actor where the observable cache lives.
         //
@@ -175,14 +175,17 @@ public final class MockLogR: LogRService, Sendable {
         // of order. That is fine for the previews/sample data this mock exists for; a test that
         // asserts on `recentLogs` right after `log()` must first hop to the main actor (e.g.
         // `await Task { @MainActor in }.value`) to observe the entry.
+        let rendered = message().rendered(keepingPrivateValues: LogrConfiguration.default.storesPrivateValues,
+                                          hashKey: nil)
         let entry = LogEntry(level: level,
                              category: category,
                              subsystem: "com.logr.mock",
-                             message: message(),
+                             message: rendered.text,
                              file: file,
                              function: function,
                              line: line,
-                             metadata: metadata)
+                             metadata: metadata,
+                             privateRanges: rendered.privateRanges)
         Task { @MainActor in append(entry) }
     }
 

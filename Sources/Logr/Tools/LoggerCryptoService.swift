@@ -141,6 +141,7 @@ public struct KeyVersion: Codable, Sendable, Hashable {
 /// ### Encryption Operations
 /// - ``symmetricEncrypt(object:)``
 /// - ``symmetricDecrypt(encryptedData:)``
+/// - ``privacyHashKey()``
 public protocol LoggerCryptoServicing: Sendable {
     /// Encrypts a codable object for secure storage.
     ///
@@ -167,6 +168,23 @@ public protocol LoggerCryptoServicing: Sendable {
     /// - Throws: ``LoggerCryptoError`` if decryption fails or the key is not found;
     ///   ``LoggerCryptoError/keyTemporarilyUnavailable`` when the key cannot be read yet.
     func symmetricDecrypt<T: Codable & Sendable>(encryptedData: Data) throws -> T
+
+    /// The key ``LogR`` hashes ``LogPrivacy/Mask/hash`` values with, or `nil` when the service has none; those
+    /// values then render as `<private>`.
+    ///
+    /// Derive it from your encryption key rather than returning that key. ``LogR`` asks when it starts opening
+    /// storage, again on each retry while this throws ``LoggerCryptoError/keyTemporarilyUnavailable``, and keeps
+    /// the first other answer for the launch. The default implementation returns `nil`.
+    ///
+    /// - Throws: ``LoggerCryptoError/keyTemporarilyUnavailable`` when the key cannot be read yet.
+    func privacyHashKey() throws -> SymmetricKey?
+}
+
+public extension LoggerCryptoServicing {
+    /// No hashing: ``LogPrivacy/Mask/hash`` values render as `<private>`.
+    func privacyHashKey() throws -> SymmetricKey? {
+        nil
+    }
 }
 
 // MARK: - Actor: LoggerCryptoService
@@ -247,15 +265,7 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 
     /// Encrypts with a consistent key/version snapshot, even when rotation overlaps encoding.
     public func symmetricEncrypt(object: some Codable) throws -> Data {
-        let (version, symmetricKey) = try withKeychain {
-            try currentKeyVersion.withLock { version in
-                let current = try resolve(&version)
-                guard let key = try loadKey(version: current) else {
-                    throw LoggerCryptoError.keyNotFound(version: current.value)
-                }
-                return (current, key)
-            }
-        }
+        let (version, symmetricKey) = try currentKey()
 
         // Caller-supplied encoders may reenter this service; never invoke them under the key lock.
         let payload = try encoder.encode(object)
@@ -278,6 +288,14 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
         return try decoder.decode(T.self, from: decryptedData)
     }
 
+    /// An HKDF-SHA256 derivation of the current encryption key, so hashes made with it do not expose the key. It
+    /// changes when the key is rotated.
+    public func privacyHashKey() throws -> SymmetricKey? {
+        let (_, key) = try currentKey()
+        return HKDF<SHA256>.deriveKey(inputKeyMaterial: key, info: Data("Logr privacy hash".utf8),
+                                      outputByteCount: keySize)
+    }
+
     // MARK: - Rotation
 
     /// Serializes rotations within this service. Retained keys keep earlier entries readable.
@@ -298,6 +316,18 @@ public final class LoggerCryptoService: Sendable, LoggerCryptoServicing {
 // MARK: - Private Helpers
 
 private extension LoggerCryptoService {
+    func currentKey() throws -> (KeyVersion, SymmetricKey) {
+        try withKeychain {
+            try currentKeyVersion.withLock { version in
+                let current = try resolve(&version)
+                guard let key = try loadKey(version: current) else {
+                    throw LoggerCryptoError.keyNotFound(version: current.value)
+                }
+                return (current, key)
+            }
+        }
+    }
+
     func rotate(removeOldKeys: Bool) throws {
         let newVersion = try currentKeyVersion.withLock { version in
             let current = try resolve(&version)
