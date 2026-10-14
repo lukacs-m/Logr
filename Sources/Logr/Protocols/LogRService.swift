@@ -63,6 +63,7 @@ import Foundation
 ///
 /// ### Core Logging
 /// - ``log(level:message:category:file:function:line:metadata:)``
+/// - ``record(level:message:category:file:function:line:metadata:)``
 /// - ``debug(_:category:file:function:line:metadata:)``
 /// - ``info(_:category:file:function:line:metadata:)``
 /// - ``notice(_:category:file:function:line:metadata:)``
@@ -71,6 +72,7 @@ import Foundation
 /// - ``fault(_:category:file:function:line:metadata:)``
 ///
 /// ### Log Management
+/// - ``exportLogs(format:includingPrivateValues:)``
 /// - ``exportLogs(format:)``
 /// - ``clearLogs()``
 /// - ``flush()``
@@ -136,44 +138,62 @@ public protocol LogRService: Observable, Sendable {
     @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var analysisProgress: AnalysisProgress? { get }
 
-    /// Logs a message with the specified level, category, and source information.
+    /// Records a message with the specified level, category, and source information.
     ///
-    /// This is the core logging method that all convenience methods delegate to.
-    /// The message is logged to OSLog and optionally persisted to storage with encryption.
+    /// The requirement behind ``log(level:message:category:file:function:line:metadata:)`` and the level helpers,
+    /// which fill in the call site: call those, and implement this. It is not named `log` so that a conformer
+    /// written for Logr 1.x, whose `log` took a `String`, fails to compile instead of inheriting a default; delete
+    /// that old `log`. An implementation must not call `log` or the level helpers on `self`, which come back here.
     ///
     /// - Parameters:
     ///   - level: The severity level of the log message.
-    ///   - message: The message to log. Uses `@autoclosure` for lazy evaluation.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``. Uses `@autoclosure`
+    ///     for lazy evaluation.
     ///   - category: The category for organizing and filtering logs.
-    ///   - file: The source file (automatically captured).
-    ///   - function: The function name (automatically captured).
-    ///   - line: The line number (automatically captured).
+    ///   - file: The caller's source file, as `log` and the level helpers capture it.
+    ///   - function: The caller's function name.
+    ///   - line: The caller's line number.
     ///   - metadata: Optional structured key-value metadata for the log entry.
     ///
     /// - Note: The message is only evaluated if the log level is enabled in the configuration.
     /// - Note: `nonisolated` — callable from any isolation domain without `await`.
-    nonisolated func log(level: LogLevel,
-                         message: @autoclosure () -> String,
-                         category: LogCategory,
-                         file: String,
-                         function: String,
-                         line: Int,
-                         metadata: [String: LogMetadataValue]?)
+    nonisolated func record(level: LogLevel,
+                            message: @autoclosure () -> LogMessage,
+                            category: LogCategory,
+                            file: String,
+                            function: String,
+                            line: Int,
+                            metadata: [String: LogMetadataValue]?)
 
     /// Exports all recent logs in the specified format.
     ///
     /// Serialization runs off the main actor; an empty cache yields empty `Data` (not an error),
-    /// while a genuine encoding failure throws.
+    /// while a genuine encoding failure throws. CSV fields that a spreadsheet would run as a formula
+    /// (starting with `=`, `+`, `-`, `@`, a tab or a carriage return) are prefixed with `'`.
     ///
-    /// - Parameter format: The export format (`.json`, `.csv`, or `.txt`).
+    /// - Parameters:
+    ///   - format: The export format (`.json`, `.csv`, or `.txt`).
+    ///   - includingPrivateValues: Keep the private values entries hold in clear (see ``LogEntry/privateRanges``).
+    ///     When `false`, each reads `<private>`, and JSON leaves out the ranges.
     /// - Returns: The exported data (empty when there are no logs).
     /// - Throws: ``LogExportError`` if encoding fails.
     ///
     /// ## Example
     /// ```swift
-    /// let jsonData = try await logger.exportLogs(format: .json)
+    /// let jsonData = try await logger.exportLogs(format: .json, includingPrivateValues: false)
     /// try jsonData.write(to: fileURL)
     /// ```
+    func exportLogs(format: ExportFormat, includingPrivateValues: Bool) async throws -> Data
+
+    /// Exports all recent logs with `<private>` in place of private values.
+    ///
+    /// The default calls ``exportLogs(format:includingPrivateValues:)``, so an override of that method must not
+    /// call this one unless it overrides both. A requirement so that a conformer written for Logr 1.x, which
+    /// implemented only this method, is still called through `any LogRService`.
+    ///
+    /// - Parameter format: The export format (`.json`, `.csv`, or `.txt`).
+    /// - Returns: The exported data (empty when there are no logs).
+    /// - Throws: ``LogExportError`` if encoding fails.
     func exportLogs(format: ExportFormat) async throws -> Data
 
     /// Computes aggregate statistics over the recent-log cache.
@@ -275,15 +295,28 @@ public extension LogRService {
         .disabled
     }
 
+    /// Logs a message with the specified level, category, and the caller's source location.
+    ///
+    /// With ``LogR``, the message is mirrored to OSLog and, with storage, persisted encrypted, and it is only
+    /// evaluated if the level is enabled. `nonisolated`, so callable from any isolation domain without `await`.
+    ///
+    /// - Parameters:
+    ///   - level: The severity level of the log message.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
+    ///   - category: The category for organizing and filtering logs.
+    ///   - file: The source file (automatically captured).
+    ///   - function: The function name (automatically captured).
+    ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional structured key-value metadata for the log entry.
     nonisolated func log(level: LogLevel,
-                         message: @autoclosure () -> String,
+                         message: @autoclosure () -> LogMessage,
                          category: LogCategory,
                          file: String = #fileID,
                          function: String = #function,
                          line: Int = #line,
                          metadata: [String: LogMetadataValue]? = nil) {
-        log(level: level, message: message(), category: category, file: file, function: function, line: line,
-            metadata: metadata)
+        record(level: level, message: message(), category: category, file: file, function: function, line: line,
+               metadata: metadata)
     }
 
     /// Returns logged entries, optionally filtered. `recentLogs` is always current (the concrete
@@ -323,10 +356,16 @@ public extension LogRService {
         return Array(filteredLogs)
     }
 
+    /// Calls ``exportLogs(format:includingPrivateValues:)`` without private values.
     func exportLogs(format: ExportFormat = .json) async throws -> Data {
+        try await exportLogs(format: format, includingPrivateValues: false)
+    }
+
+    func exportLogs(format: ExportFormat, includingPrivateValues: Bool) async throws -> Data {
         // Snapshot on the main actor (where `recentLogs` is isolated), then serialize off it.
         let snapshot = await MainActor.run { Array(recentLogs) }
-        return try await LogExporter.serialize(snapshot, format: format)
+        return try await LogExporter.serialize(snapshot, format: format,
+                                               includingPrivateValues: includingPrivateValues)
     }
 
     func logStatistics() async -> LogStatistics {
@@ -351,8 +390,10 @@ public enum LogExportError: Error, Sendable {
 /// switch here, not by touching the logging facade.
 package enum LogExporter {
     @concurrent
-    package static func serialize(_ logs: [LogEntry], format: ExportFormat) async throws -> Data {
+    package static func serialize(_ logs: [LogEntry], format: ExportFormat,
+                                  includingPrivateValues: Bool) async throws -> Data {
         guard !logs.isEmpty else { return Data() }
+        let logs = includingPrivateValues ? logs : logs.map { $0.redactingPrivateValues() }
 
         switch format {
         case .json:
@@ -363,9 +404,13 @@ package enum LogExporter {
 
         case .csv:
             let formatter = ISO8601DateFormatter()
-            // RFC 4180: every text field is quoted, with any quote inside it doubled.
+            // RFC 4180: every text field is quoted, with any quote inside it doubled. Spreadsheets still run a
+            // quoted field as a formula when it starts with one of these, so it gets a leading `'`. Scalars, not
+            // characters: "\r\n" is a single Character.
+            let formulaStarts: Set<Unicode.Scalar> = ["=", "+", "-", "@", "\t", "\r"]
             func quoted(_ field: String) -> String {
-                "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
+                let field = field.unicodeScalars.first.map(formulaStarts.contains) == true ? "'" + field : field
+                return "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
             }
             var rows = ["Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata"]
             for log in logs {
@@ -466,7 +511,7 @@ public extension LogRService {
     /// useful for debugging. These are typically disabled in production builds.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.debug`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
@@ -478,7 +523,7 @@ public extension LogRService {
     /// logger.debug("Cache hit for key: \(key)", category: .cache)
     /// logger.debug("User profile loaded", category: .user, metadata: ["userId": .string("123")])
     /// ```
-    nonisolated func debug(_ message: @autoclosure () -> String,
+    nonisolated func debug(_ message: @autoclosure () -> LogMessage,
                            category: LogCategory = .debug,
                            file: String = #fileID,
                            function: String = #function,
@@ -494,7 +539,7 @@ public extension LogRService {
     /// They're useful for tracking normal app flow and significant events.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
@@ -506,7 +551,7 @@ public extension LogRService {
     /// logger.info("User logged in successfully", category: .authentication, metadata: ["method": "oauth"])
     /// logger.info("Data sync completed", category: .sync)
     /// ```
-    nonisolated func info(_ message: @autoclosure () -> String,
+    nonisolated func info(_ message: @autoclosure () -> LogMessage,
                           category: LogCategory = .system,
                           file: String = #fileID,
                           function: String = #function,
@@ -522,7 +567,7 @@ public extension LogRService {
     /// These are more important than info messages but don't indicate problems.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
@@ -534,7 +579,7 @@ public extension LogRService {
     /// logger.notice("Payment processed successfully", category: .payment, metadata: ["amount": .double(99.99)])
     /// logger.notice("Configuration updated", category: .configuration)
     /// ```
-    nonisolated func notice(_ message: @autoclosure () -> String,
+    nonisolated func notice(_ message: @autoclosure () -> LogMessage,
                             category: LogCategory = .system,
                             file: String = #fileID,
                             function: String = #function,
@@ -550,7 +595,7 @@ public extension LogRService {
     /// investigated. The app can continue to function normally.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
@@ -562,7 +607,7 @@ public extension LogRService {
     /// logger.warning("API response slow: 3.2s", category: .network, metadata: ["endpoint": "/api/users"])
     /// logger.warning("Low memory warning received", category: .memory)
     /// ```
-    nonisolated func warning(_ message: @autoclosure () -> String,
+    nonisolated func warning(_ message: @autoclosure () -> LogMessage,
                              category: LogCategory = .system,
                              file: String = #fileID,
                              function: String = #function,
@@ -578,7 +623,7 @@ public extension LogRService {
     /// from completing, but don't halt the entire app. These should be investigated.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
@@ -590,7 +635,7 @@ public extension LogRService {
     /// logger.error("Failed to load user data: \(error)", category: .database, metadata: ["errorCode": .int(500)])
     /// logger.error("Network request failed", category: .network)
     /// ```
-    nonisolated func error(_ message: @autoclosure () -> String,
+    nonisolated func error(_ message: @autoclosure () -> LogMessage,
                            category: LogCategory = .system,
                            file: String = #fileID,
                            function: String = #function,
@@ -606,7 +651,7 @@ public extension LogRService {
     /// These indicate serious problems that may cause the app to behave incorrectly or crash.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
@@ -618,7 +663,7 @@ public extension LogRService {
     /// logger.fault("Database connection lost", category: .database, metadata: ["retryCount": .int(3)])
     /// logger.fault("Invariant violation detected", category: .system)
     /// ```
-    nonisolated func fault(_ message: @autoclosure () -> String,
+    nonisolated func fault(_ message: @autoclosure () -> LogMessage,
                            category: LogCategory = .system,
                            file: String = #fileID,
                            function: String = #function,

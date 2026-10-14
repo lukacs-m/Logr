@@ -51,6 +51,7 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 /// - **categoryLevelOverrides**: `nil` (no per-category overrides)
 /// - **coalesceWindowMillis**: 100 ms notification coalescing
 /// - **mirrorToOSLog**: `true`
+/// - **storesPrivateValues**: `true` in `DEBUG` builds, `false` otherwise
 ///
 /// ## Example
 ///
@@ -74,7 +75,7 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 ///
 /// ### Creating Configuration
 /// -
-/// ``init(maxLogEntries:maxLogAge:enabledLevels:categoryLevelOverrides:subsystem:cleanupInterval:logVerbosity:coalesceWindowMillis:mirrorToOSLog:)``
+/// ``init(maxLogEntries:maxLogAge:enabledLevels:categoryLevelOverrides:subsystem:cleanupInterval:logVerbosity:coalesceWindowMillis:mirrorToOSLog:storesPrivateValues:)``
 /// - ``default``
 ///
 /// ### Properties
@@ -87,6 +88,7 @@ public enum LogVerbosity: Sendable, Equatable, Codable {
 /// - ``logVerbosity``
 /// - ``coalesceWindowMillis``
 /// - ``mirrorToOSLog``
+/// - ``storesPrivateValues``
 public struct LogrConfiguration: Sendable, Codable {
     /// Maximum number of log entries to keep in memory and storage.
     ///
@@ -184,6 +186,18 @@ public struct LogrConfiguration: Sendable, Codable {
     /// Default: `true`.
     public let mirrorToOSLog: Bool
 
+    /// Whether ``LogR`` stores private values in clear, so you can read them while developing.
+    ///
+    /// When `true`, ``LogPrivacy/private`` values (and ``LogPrivacy/auto`` ones that resolve to private) are
+    /// stored as logged, and ``LogEntry/privateRanges`` marks them; exports still replace them unless asked to
+    /// keep them. When `false`, they are stored as `<private>` or, with ``LogPrivacy/Mask/hash``,
+    /// `<private:3f9a1c2e>`. ``LogPrivacy/sensitive`` values are never stored, whatever this says. The OSLog
+    /// mirror always logs private values as private.
+    ///
+    /// Default: `true` when Logr is compiled with `DEBUG` defined (Xcode's Debug configuration), `false` in
+    /// release.
+    public let storesPrivateValues: Bool
+
     /// Creates a new LogR configuration.
     ///
     /// All parameters have sensible defaults. Only specify the values you want to customize.
@@ -198,6 +212,7 @@ public struct LogrConfiguration: Sendable, Codable {
     ///   - logVerbosity: Output verbosity. Default: `.verbose`
     ///   - coalesceWindowMillis: Min interval between `recentLogs` publications. Default: 100ms
     ///   - mirrorToOSLog: Mirror each log to OSLog. Default: `true`
+    ///   - storesPrivateValues: Store private values in clear. Default: `true` in `DEBUG` builds only
     public init(maxLogEntries: Int = LogrConfiguration.default.maxLogEntries,
                 maxLogAge: TimeInterval = LogrConfiguration.default.maxLogAge,
                 enabledLevels: Set<LogLevel> = LogrConfiguration.default.enabledLevels,
@@ -207,7 +222,8 @@ public struct LogrConfiguration: Sendable, Codable {
                 cleanupInterval: TimeInterval = LogrConfiguration.default.cleanupInterval,
                 logVerbosity: LogVerbosity = LogrConfiguration.default.logVerbosity,
                 coalesceWindowMillis: Int = LogrConfiguration.default.coalesceWindowMillis,
-                mirrorToOSLog: Bool = LogrConfiguration.default.mirrorToOSLog) {
+                mirrorToOSLog: Bool = LogrConfiguration.default.mirrorToOSLog,
+                storesPrivateValues: Bool = LogrConfiguration.default.storesPrivateValues) {
         self.maxLogEntries = maxLogEntries.clamped(to: Self.maxLogEntriesRange)
         self.maxLogAge = maxLogAge
         self.enabledLevels = enabledLevels
@@ -217,11 +233,12 @@ public struct LogrConfiguration: Sendable, Codable {
         self.logVerbosity = logVerbosity
         self.coalesceWindowMillis = coalesceWindowMillis
         self.mirrorToOSLog = mirrorToOSLog
+        self.storesPrivateValues = storesPrivateValues
     }
 
     private enum CodingKeys: String, CodingKey {
         case maxLogEntries, maxLogAge, enabledLevels, categoryLevelOverrides
-        case subsystem, cleanupInterval, logVerbosity, coalesceWindowMillis, mirrorToOSLog
+        case subsystem, cleanupInterval, logVerbosity, coalesceWindowMillis, mirrorToOSLog, storesPrivateValues
     }
 
     /// Forward-compatible decoding: any key absent from the payload falls back to its default
@@ -250,6 +267,8 @@ public struct LogrConfiguration: Sendable, Codable {
             ?? defaults.coalesceWindowMillis
         mirrorToOSLog = try container.decodeIfPresent(Bool.self, forKey: .mirrorToOSLog)
             ?? defaults.mirrorToOSLog
+        storesPrivateValues = try container.decodeIfPresent(Bool.self, forKey: .storesPrivateValues)
+            ?? defaults.storesPrivateValues
     }
 
     /// Default configuration with sensible values for most applications.
@@ -264,6 +283,7 @@ public struct LogrConfiguration: Sendable, Codable {
     /// - Verbose output with source locations
     /// - 100 ms notification coalescing
     /// - OSLog mirroring enabled
+    /// - Private values stored in clear in `DEBUG` builds only
     public static let `default` = LogrConfiguration(maxLogEntries: 10_000,
                                                     maxLogAge: 7 * 24 * 60 * 60,
                                                     enabledLevels: Set(LogLevel.allCases),
@@ -272,7 +292,14 @@ public struct LogrConfiguration: Sendable, Codable {
                                                     cleanupInterval: 60 * 60,
                                                     logVerbosity: .verbose,
                                                     coalesceWindowMillis: 100,
-                                                    mirrorToOSLog: true)
+                                                    mirrorToOSLog: true,
+                                                    storesPrivateValues: isDebugBuild)
+
+    #if DEBUG
+    private static let isDebugBuild = true
+    #else
+    private static let isDebugBuild = false
+    #endif
 }
 
 private extension LogrConfiguration {

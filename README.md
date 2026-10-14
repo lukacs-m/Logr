@@ -98,6 +98,29 @@ Through `any LogRService`, `recentLogs` and the other observable properties are 
 On the concrete `LogR` they are `nonisolated`, and a read right after a write sees the entry.
 SwiftUI change notifications are coalesced (`coalesceWindowMillis`, default 100 ms).
 
+## Privacy
+
+Each interpolated value carries a privacy level, as in OSLog. Strings and other values are private by
+default; integers, floating-point numbers and Booleans are public:
+
+```swift
+func signIn(email: String, attempts: Int, token: String, logger: any LogRService) {
+    logger.info("Signed in \(email) after \(attempts) tries", category: .authentication)
+    // Release builds store "Signed in <private> after 3 tries"
+    logger.info("Account \(email, privacy: .private(mask: .hash))", category: .user)
+    // "Account <private:3f9a1c2e>": equal values give equal hashes
+    logger.debug("Token \(token, privacy: .sensitive)", category: .authentication)
+    // "Token <sensitive>", even in DEBUG builds
+}
+```
+
+`LogR` keeps private values in clear in `DEBUG` builds so you can read them while developing, and stores
+`<private>` otherwise (`LogrConfiguration.storesPrivateValues`). Exports replace them with `<private>`
+unless you pass `exportLogs(format:includingPrivateValues: true)`. The OSLog mirror logs the redacted text
+as public and the private values after it as private, so Console shows them only while a debugger is
+attached or private data logging is enabled. A `String` you already hold needs a privacy of its own:
+`LogMessage(text, privacy: .public)`.
+
 ## Configuration
 
 ```swift
@@ -201,7 +224,7 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 |---|---|
 | `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (opens the storage in the background and holds entries while the key or storage cannot be read; encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
 | `Sources/Logr/Protocols/` | `LogRService` (public API plus `getLogs`, `exportLogs`, `logStatistics`), `LogRPersistence`, `LogAIAnalyzer` |
-| `Sources/Logr/Models/` | `LogEntry`, `LogEntries`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogStorage`, `PersistenceStatus`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
+| `Sources/Logr/Models/` | `LogEntry`, `LogEntries`, `LogMessage`, `LogPrivacy`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogStorage`, `PersistenceStatus`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
 | `Sources/Logr/Tools/` | `LoggerCryptoService`, `KeychainStore` and `SystemKeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |
 | `Sources/Logr/Utilities/` | `String` redaction helpers |
 | `Sources/Logr/AI/` | `AIAnalyzer`: FoundationModels, chunked and parallel, iOS 26+ |

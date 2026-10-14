@@ -51,13 +51,13 @@ final class DisabledLogR: LogRService {
 
     init() {}
 
-    nonisolated func log(level: LogLevel,
-                         message: @autoclosure () -> String,
-                         category: LogCategory,
-                         file: String,
-                         function: String,
-                         line: Int,
-                         metadata: [String: LogMetadataValue]?) {}
+    nonisolated func record(level: LogLevel,
+                            message: @autoclosure () -> LogMessage,
+                            category: LogCategory,
+                            file: String,
+                            function: String,
+                            line: Int,
+                            metadata: [String: LogMetadataValue]?) {}
 
     func clearLogs() async throws {}
 
