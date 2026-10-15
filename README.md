@@ -123,8 +123,7 @@ attached or private data logging is enabled. A `String` you already hold needs a
 
 ## Context
 
-With `LogR`, metadata set with `LogContext.with` reaches every entry logged inside the scope, including from
-child tasks:
+Metadata set with `LogContext.with` reaches every entry logged inside the scope, including from child tasks:
 
 ```swift
 func checkout(orderID: String, logger: any LogRService) async {

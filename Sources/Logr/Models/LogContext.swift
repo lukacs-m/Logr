@@ -8,9 +8,10 @@
 ///
 /// The metadata is task-local: it applies on the current task, to its child tasks (task groups, `async let`)
 /// and to tasks it starts with `Task { }`, and not to `Task.detached`. Nested scopes merge key by key (a value is
-/// replaced, never merged into), the inner value winning on a clash. ``LogR`` merges it under the metadata
-/// passed to the call, so the call site wins on a clash; custom ``LogRService`` implementations read
-/// ``metadata`` themselves. Like all metadata, it is stored as given, never redacted.
+/// replaced, never merged into), the inner value winning on a clash. Whatever the ``LogRService``,
+/// ``LogRService/log(level:message:category:file:function:line:metadata:)`` and the level helpers merge it
+/// under the metadata passed to the call, so the call site wins on a clash. Like all metadata, it is stored as
+/// given, never redacted.
 public enum LogContext {
     @TaskLocal private static var current: [String: LogMetadataValue] = [:]
 
@@ -50,6 +51,13 @@ public enum LogContext {
             return try await operation()
         }, isolation: isolation)
         #endif
+    }
+
+    /// `callSite` merged over the current context, the call site winning on a key clash.
+    static func metadata(mergedWith callSite: [String: LogMetadataValue]?) -> [String: LogMetadataValue]? {
+        let context = current
+        guard !context.isEmpty else { return callSite }
+        return callSite.map { context.merging($0) { _, callSite in callSite } } ?? context
     }
 
     private static func merged(_ inner: [String: LogMetadataValue]) -> [String: LogMetadataValue] {

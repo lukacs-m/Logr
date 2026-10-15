@@ -1,5 +1,6 @@
 import Logr
 import LogrTesting
+import LogrUI
 import Testing
 
 @Suite("LogContext scopes")
@@ -117,7 +118,7 @@ private actor ContextActor {
     }
 }
 
-@Suite("LogR merges the LogContext")
+@Suite("Logging merges the LogContext")
 struct LogContextLoggingTests {
     private let logger = LogR(cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()))
 
@@ -145,6 +146,14 @@ struct LogContextLoggingTests {
         #expect(logger.recentLogs.first?.metadata == metadata)
     }
 
+    @Test(arguments: [nil, [:]] as [[String: LogMetadataValue]?])
+    func withContextAndNoCallSiteMetadataTheEntryCarriesTheContext(metadata: [String: LogMetadataValue]?) {
+        LogContext.with(["request": "1"]) {
+            logger.info("call", category: .test, metadata: metadata)
+        }
+        #expect(logger.recentLogs.first?.metadata == ["request": "1"])
+    }
+
     @Test func childTasksLogWithTheContext() async {
         let logger = logger
         await LogContext.with(["request": "1"]) {
@@ -153,5 +162,30 @@ struct LogContextLoggingTests {
             }
         }
         #expect(logger.recentLogs.first?.metadata == ["request": "1"])
+    }
+
+    @Test func aFilteredEntryNeverEvaluatesItsMetadata() {
+        let logger = LogR(cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
+                          configuration: LogrConfiguration(enabledLevels: [.error]))
+        var evaluations = 0
+        for level in [LogLevel.debug, .error] {
+            logger.record(level: level, message: "call", category: .test, file: #fileID, function: #function,
+                          line: #line, metadata: { evaluations += 1; return nil }())
+        }
+        #expect(evaluations == 1)
+        #expect(logger.recentLogs.map(\.level) == [.error])
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func everyServiceGetsTheContext() async {
+        let mock = MockLogR(empty: true)
+        LogContext.with(["request": "1"]) {
+            mock.info("inside", category: .test, metadata: ["screen": "home"])
+        }
+        while mock.recentLogs.isEmpty {
+            await Task.yield()   // MockLogR inserts on a later main-actor task
+        }
+        #expect(mock.recentLogs.first?.metadata == ["request": "1", "screen": "home"])
     }
 }

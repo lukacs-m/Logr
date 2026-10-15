@@ -15,10 +15,9 @@ import UIKit
 ///
 /// ``LogRService/log(level:message:category:file:function:line:metadata:)`` runs synchronously on the caller's
 /// thread. It filters on ``LogrConfiguration/enabledLevels`` and
-/// ``LogrConfiguration/categoryLevelOverrides`` (the `@autoclosure` message is never evaluated for a
-/// filtered entry), renders the ``LogMessage`` with its private values in clear or redacted (see
-/// ``LogrConfiguration/storesPrivateValues``), adds the ``LogContext`` metadata under the call's own,
-/// mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set,
+/// ``LogrConfiguration/categoryLevelOverrides`` (the `@autoclosure` message and metadata are never evaluated
+/// for a filtered entry), renders the ``LogMessage`` with its private values in clear or redacted (see
+/// ``LogrConfiguration/storesPrivateValues``), mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set,
 /// prepends the entry to a lock-protected deque capped at ``LogrConfiguration/maxLogEntries``, and hands it to a
 /// private writer actor. The writer encrypts through ``LoggerCryptoServicing``, accumulates batches of
 /// 50, or submits a partial batch after one second. Storage failures get three attempts with linear
@@ -34,9 +33,10 @@ import UIKit
 ///
 /// ## Isolation
 ///
-/// `init`, `log()` and the level helpers are `nonisolated`. ``recentLogs`` is `nonisolated` on `LogR`
-/// itself and returns a snapshot taken under the lock, so a read right after a write sees the entry
-/// from any thread; through `any LogRService` it is `@MainActor`. The observation notification is
+/// `init`, ``LogRService/log(level:message:category:file:function:line:metadata:)`` and the level helpers are
+/// `nonisolated`. ``recentLogs`` is `nonisolated` on `LogR` itself and returns a snapshot taken under the
+/// lock, so a read right after a write sees the entry from any thread; through `any LogRService` it is
+/// `@MainActor`. The observation notification is
 /// dispatched to the main actor and coalesced to at most one per
 /// ``LogrConfiguration/coalesceWindowMillis``. ``droppedLogCount`` and the AI results are `@MainActor`.
 ///
@@ -221,14 +221,12 @@ public final class LogR: LogRService {
                                    file: String,
                                    function: String,
                                    line: Int,
-                                   metadata: [String: LogMetadataValue]?) {
+                                   metadata: @autoclosure () -> [String: LogMetadataValue]?) {
         guard shouldLog(level: level, category: category) else { return }
 
         let message = message()
         let hashKey = message.redactions.contains { $0.kind == .hashed } ? privacyHashKey() : nil
         let stored = message.rendered(keepingPrivateValues: configuration.storesPrivateValues, hashKey: hashKey)
-        let context = LogContext.metadata
-        let metadata = context.isEmpty ? metadata : context.merging(metadata ?? [:]) { _, callSite in callSite }
 
         let entry = LogEntry(level: level,
                              category: category,
@@ -237,7 +235,7 @@ public final class LogR: LogRService {
                              file: file,
                              function: function,
                              line: line,
-                             metadata: metadata,
+                             metadata: metadata(),
                              privateRanges: stored.privateRanges)
 
         if configuration.mirrorToOSLog {

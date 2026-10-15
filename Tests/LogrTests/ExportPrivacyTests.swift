@@ -131,7 +131,8 @@ private final class LegacyExportService: LogRService {
     }
 
     nonisolated func record(level: LogLevel, message: @autoclosure () -> LogMessage, category: LogCategory,
-                            file: String, function: String, line: Int, metadata: [String: LogMetadataValue]?) {}
+                            file: String, function: String, line: Int,
+                            metadata: @autoclosure () -> [String: LogMetadataValue]?) {}
 
     func exportLogs(format: ExportFormat) async throws -> Data {
         Data("custom".utf8)
