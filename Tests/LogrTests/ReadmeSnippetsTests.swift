@@ -70,6 +70,17 @@ func signIn(email: String, attempts: Int, token: String, logger: any LogRService
     // "Token <sensitive>", even in DEBUG builds
 }
 
+// MARK: - Context
+
+func checkout(orderID: String, logger: any LogRService) async {
+    await LogContext.with(["orderID": .string(orderID)]) {
+        logger.info("Checkout started", category: .payment)   // carries orderID
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { logger.info("Charging card", category: .payment) }   // so does a child task
+        }
+    }
+}
+
 // MARK: - Configuration, storage, encryption, AI (compile-only)
 
 private func configurationSnippet() {

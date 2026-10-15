@@ -246,7 +246,7 @@ private final class StubLogService: LogRService {
                             file: String,
                             function: String,
                             line: Int,
-                            metadata: [String: LogMetadataValue]?) {}
+                            metadata: @autoclosure () -> [String: LogMetadataValue]?) {}
 
     func exportLogs(format: ExportFormat, includingPrivateValues: Bool) async throws -> Data {
         let export = await MainActor.run {

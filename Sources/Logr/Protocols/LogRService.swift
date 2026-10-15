@@ -15,8 +15,8 @@ import Foundation
 /// ## Overview
 ///
 /// The service maintains an in-memory cache of recent logs and optionally persists them
-/// to storage with automatic encryption. Logging (`log(_:)` and the convenience methods)
-/// is `nonisolated`, so it can be called from any isolation domain without `await`. The
+/// to storage with automatic encryption. Logging (``log(level:message:category:file:function:line:metadata:)``
+/// and the level helpers) is `nonisolated`, so it can be called from any isolation domain without `await`. The
 /// observable state that drives SwiftUI (``recentLogs`` and friends) is `@MainActor`
 /// isolated, and the underlying cache is updated in a thread-safe way so synchronous reads
 /// remain consistent.
@@ -153,7 +153,9 @@ public protocol LogRService: Observable, Sendable {
     ///   - file: The caller's source file, as `log` and the level helpers capture it.
     ///   - function: The caller's function name.
     ///   - line: The caller's line number.
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: The entry's metadata: the call's merged over ``LogContext/metadata`` when it comes from `log`
+    ///     or a level helper. Evaluate it at most once and before `record` returns, since it reads the calling
+    ///     task's context; skipping it for a filtered entry saves the merge.
     ///
     /// - Note: The message is only evaluated if the log level is enabled in the configuration.
     /// - Note: `nonisolated` — callable from any isolation domain without `await`.
@@ -163,7 +165,7 @@ public protocol LogRService: Observable, Sendable {
                             file: String,
                             function: String,
                             line: Int,
-                            metadata: [String: LogMetadataValue]?)
+                            metadata: @autoclosure () -> [String: LogMetadataValue]?)
 
     /// Exports all recent logs in the specified format.
     ///
@@ -307,7 +309,7 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     nonisolated func log(level: LogLevel,
                          message: @autoclosure () -> LogMessage,
                          category: LogCategory,
@@ -316,7 +318,7 @@ public extension LogRService {
                          line: Int = #line,
                          metadata: [String: LogMetadataValue]? = nil) {
         record(level: level, message: message(), category: category, file: file, function: function, line: line,
-               metadata: metadata)
+               metadata: LogContext.metadata(mergedWith: metadata))
     }
 
     /// Returns logged entries, optionally filtered. `recentLogs` is always current (the concrete
@@ -516,7 +518,7 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
@@ -544,7 +546,7 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
@@ -572,7 +574,7 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
@@ -600,7 +602,7 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
@@ -628,7 +630,7 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
@@ -656,7 +658,7 @@ public extension LogRService {
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift

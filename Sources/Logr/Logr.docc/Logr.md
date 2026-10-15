@@ -30,6 +30,7 @@ The `LogrUI` module adds a SwiftUI viewer, statistics views and a mock service f
 - ``LogLevel``
 - ``LogCategory``
 - ``LogMetadataValue``
+- ``LogContext``
 
 ### Storage
 

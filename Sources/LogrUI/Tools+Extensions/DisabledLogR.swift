@@ -57,7 +57,7 @@ final class DisabledLogR: LogRService {
                             file: String,
                             function: String,
                             line: Int,
-                            metadata: [String: LogMetadataValue]?) {}
+                            metadata: @autoclosure () -> [String: LogMetadataValue]?) {}
 
     func clearLogs() async throws {}
 

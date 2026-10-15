@@ -165,7 +165,7 @@ public final class MockLogR: LogRService, Sendable {
                                    file: String,
                                    function: String,
                                    line: Int,
-                                   metadata: [String: LogMetadataValue]?) {
+                                   metadata: @autoclosure () -> [String: LogMetadataValue]?) {
         // Evaluate the message synchronously (preserving lazy semantics), then hop the insert to
         // the main actor where the observable cache lives.
         //
@@ -184,7 +184,7 @@ public final class MockLogR: LogRService, Sendable {
                              file: file,
                              function: function,
                              line: line,
-                             metadata: metadata,
+                             metadata: metadata(),
                              privateRanges: rendered.privateRanges)
         Task { @MainActor in append(entry) }
     }
