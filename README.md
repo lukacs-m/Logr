@@ -121,6 +121,25 @@ as public and the private values after it as private, so Console shows them only
 attached or private data logging is enabled. A `String` you already hold needs a privacy of its own:
 `LogMessage(text, privacy: .public)`.
 
+## Context
+
+With `LogR`, metadata set with `LogContext.with` reaches every entry logged inside the scope, including from
+child tasks:
+
+```swift
+func checkout(orderID: String, logger: any LogRService) async {
+    await LogContext.with(["orderID": .string(orderID)]) {
+        logger.info("Checkout started", category: .payment)   // carries orderID
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { logger.info("Charging card", category: .payment) }   // so does a child task
+        }
+    }
+}
+```
+
+Nested scopes merge, and metadata passed to the call wins on a key clash. `Task.detached` does not inherit the
+context.
+
 ## Configuration
 
 ```swift
@@ -224,7 +243,7 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 |---|---|
 | `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (opens the storage in the background and holds entries while the key or storage cannot be read; encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
 | `Sources/Logr/Protocols/` | `LogRService` (public API plus `getLogs`, `exportLogs`, `logStatistics`), `LogRPersistence`, `LogAIAnalyzer` |
-| `Sources/Logr/Models/` | `LogEntry`, `LogEntries`, `LogMessage`, `LogPrivacy`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogStorage`, `PersistenceStatus`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
+| `Sources/Logr/Models/` | `LogEntry`, `LogEntries`, `LogMessage`, `LogPrivacy`, `LogContext`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogStorage`, `PersistenceStatus`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
 | `Sources/Logr/Tools/` | `LoggerCryptoService`, `KeychainStore` and `SystemKeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |
 | `Sources/Logr/Utilities/` | `String` redaction helpers |
 | `Sources/Logr/AI/` | `AIAnalyzer`: FoundationModels, chunked and parallel, iOS 26+ |

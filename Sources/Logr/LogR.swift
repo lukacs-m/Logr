@@ -17,7 +17,8 @@ import UIKit
 /// thread. It filters on ``LogrConfiguration/enabledLevels`` and
 /// ``LogrConfiguration/categoryLevelOverrides`` (the `@autoclosure` message is never evaluated for a
 /// filtered entry), renders the ``LogMessage`` with its private values in clear or redacted (see
-/// ``LogrConfiguration/storesPrivateValues``), mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set,
+/// ``LogrConfiguration/storesPrivateValues``), adds the ``LogContext`` metadata under the call's own,
+/// mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set,
 /// prepends the entry to a lock-protected deque capped at ``LogrConfiguration/maxLogEntries``, and hands it to a
 /// private writer actor. The writer encrypts through ``LoggerCryptoServicing``, accumulates batches of
 /// 50, or submits a partial batch after one second. Storage failures get three attempts with linear
@@ -226,6 +227,8 @@ public final class LogR: LogRService {
         let message = message()
         let hashKey = message.redactions.contains { $0.kind == .hashed } ? privacyHashKey() : nil
         let stored = message.rendered(keepingPrivateValues: configuration.storesPrivateValues, hashKey: hashKey)
+        let context = LogContext.metadata
+        let metadata = context.isEmpty ? metadata : context.merging(metadata ?? [:]) { _, callSite in callSite }
 
         let entry = LogEntry(level: level,
                              category: category,
