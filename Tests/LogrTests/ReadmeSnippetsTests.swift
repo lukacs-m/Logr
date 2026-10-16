@@ -8,7 +8,9 @@
 //  touch the Keychain or disk are compile-only: private functions that are never called.
 //
 
+import Logging
 import Logr
+import LogrSwiftLog
 import LogrTesting
 import LogrUI
 import SwiftUI
@@ -79,6 +81,13 @@ func checkout(orderID: String, logger: any LogRService) async {
             group.addTask { logger.info("Charging card", category: .payment) }   // so does a child task
         }
     }
+}
+
+// MARK: - swift-log (compile-only: bootstrapping is once per process)
+
+private func swiftLogSnippet() {
+    let logger = LogR(storage: .sqlite())
+    LoggingSystem.bootstrap { label in LogrLogHandler(label: label, logger: logger) }
 }
 
 // MARK: - Configuration, storage, encryption, AI (compile-only)

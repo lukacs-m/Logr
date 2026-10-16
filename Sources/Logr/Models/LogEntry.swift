@@ -212,7 +212,7 @@ extension LogEntry {
         var cursor = 0
         for range in merged {
             output += source[cursor..<range.lowerBound]
-            output += "<private>".utf8
+            output += LogPrivacy.privatePlaceholder.utf8
             cursor = range.upperBound
         }
         output += source[cursor...]

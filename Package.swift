@@ -23,12 +23,15 @@ let package = Package(
         .library(name: "LogrUI",
                  targets: ["LogrUI"]),
         .library(name: "LogrTesting",
-                 targets: ["LogrTesting"])
+                 targets: ["LogrTesting"]),
+        .library(name: "LogrSwiftLog",
+                 targets: ["LogrSwiftLog"])
     ],
     dependencies: [
            .package(url: "https://github.com/nicklockwood/SwiftFormat", from: "0.61.0"),
            .package(url: "https://github.com/apple/swift-collections.git", .upToNextMajor(from: "1.5.1")),
-           .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0")
+           .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0"),
+           .package(url: "https://github.com/apple/swift-log", from: "1.16.0")
     ],
     targets: [
         .target(
@@ -62,9 +65,22 @@ let package = Package(
               .enableUpcomingFeature("ExistentialAny")
             ]
         ),
+        .target(
+            name: "LogrSwiftLog",
+            dependencies: [
+                "Logr",
+                .product(name: "Logging", package: "swift-log")
+            ],
+            swiftSettings: [
+              .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+              .enableUpcomingFeature("InferIsolatedConformances"),
+              .enableUpcomingFeature("ExistentialAny")
+            ]
+        ),
         .testTarget(
             name: "LogrTests",
-            dependencies: ["Logr", "LogrUI", "LogrTesting"],
+            dependencies: ["Logr", "LogrUI", "LogrTesting", "LogrSwiftLog",
+                           .product(name: "Logging", package: "swift-log")],
             resources: [.copy("Fixtures")],
             swiftSettings: [systemModel]
         ),

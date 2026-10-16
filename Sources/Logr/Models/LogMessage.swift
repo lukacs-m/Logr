@@ -194,8 +194,8 @@ extension LogMessage {
         }
     }
 
-    private static let privatePlaceholder = Array("<private>".utf8)
-    private static let sensitivePlaceholder = Array("<sensitive>".utf8)
+    private static let privatePlaceholder = Array(LogPrivacy.privatePlaceholder.utf8)
+    private static let sensitivePlaceholder = Array(LogPrivacy.sensitivePlaceholder.utf8)
     /// `<private:` and `>` around 8 hex digits; the longest placeholder.
     private static let hashedPlaceholderLength = 18
     private static let hexDigits = Array("0123456789abcdef".utf8)

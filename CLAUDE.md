@@ -16,15 +16,16 @@ swift test --filter ReadmeSnippets       # Compile every README snippet and chec
 swift package generate-documentation --target Logr --warnings-as-errors     # DocC, exactly as CI runs it
 swift package generate-documentation --target LogrUI --warnings-as-errors
 swift package generate-documentation --target LogrTesting --warnings-as-errors
+swift package generate-documentation --target LogrSwiftLog --warnings-as-errors
 ```
 
-CI (`.github/workflows/swift.yml`) runs on `macos-26` with the latest Xcode: SwiftFormat lint (a pinned, checksummed 0.63.1 release), `swift test --parallel`, then DocC for all three library targets with warnings as errors. A `platforms` job builds the `Logr-Package` scheme (every library) for the iOS, tvOS and watchOS simulators with `xcodebuild` (not `swift build --triple`, which forces Logr's deployment target onto dependencies and breaks swift-perception). `.github/workflows/docs.yml` builds the combined DocC archive (`Logr`, `LogrUI`, `LogrTesting`) on every push to `develop` and deploys it to GitHub Pages (https://lukacs-m.github.io/Logr/).
+CI (`.github/workflows/swift.yml`) runs on `macos-26` with the latest Xcode: SwiftFormat lint (a pinned, checksummed 0.63.1 release), `swift test --parallel`, then DocC for all four library targets with warnings as errors. A `platforms` job builds the `Logr-Package` scheme (every library) for the iOS, tvOS and watchOS simulators with `xcodebuild` (not `swift build --triple`, which forces Logr's deployment target onto dependencies and breaks swift-perception). `.github/workflows/docs.yml` builds the combined DocC archive (`Logr`, `LogrUI`, `LogrTesting`, `LogrSwiftLog`) on every push to `develop` and deploys it to GitHub Pages (https://lukacs-m.github.io/Logr/).
 
 ## Documentation
 
 There is no hand-written documentation folder. Three places describe the library, each with one job:
 
-- **Doc comments** on public symbols are the API reference (DocC). Signatures, defaults, isolation, availability and behaviour are documented there and nowhere else. `Sources/Logr/Logr.docc` and `Sources/LogrUI/LogrUI.docc` hold only the module landing pages (Overview + Topics), no articles and no code.
+- **Doc comments** on public symbols are the API reference (DocC). Signatures, defaults, isolation, availability and behaviour are documented there and nowhere else. `Sources/Logr/Logr.docc`, `Sources/LogrUI/LogrUI.docc` and `Sources/LogrSwiftLog/LogrSwiftLog.docc` hold only the module landing pages (Overview + Topics), no articles and no code.
 - **README.md** is a short entry point (~200 lines): pitch, install, quick start, code map, links. Every ```swift block in it is reproduced verbatim in `Tests/LogrTests/ReadmeSnippetsTests.swift`, which compiles them; `readmeSnippetsAreVerbatim` checks the pairing (blank lines, comments, imports and `@main` are ignored; a block starting with `// Package.swift` is exempt).
 - **This file** records what cannot be derived from the code: commands, architecture facts, and the rules below.
 
@@ -50,6 +51,7 @@ Lint with the `swiftformat` CLI, 0.63.1 or newer (`--minversion` in `.swiftforma
 - **Logr** (`Sources/Logr/`): Core logging library — models, protocols, storage, encryption, AI analysis
 - **LogrUI** (`Sources/LogrUI/`): SwiftUI views for log browsing, statistics, and AI analysis results
 - **LogrTesting** (`Sources/LogrTesting/`): test doubles for consumers' test targets (`InMemoryKeychainStore`)
+- **LogrSwiftLog** (`Sources/LogrSwiftLog/`): `LogrLogHandler`, a swift-log `LogHandler` that calls `LogRService.record` (handler < provider < event metadata, then `LogContext` under it; `LogrSensitivity` metadata attributes redact values in every build, since Logr metadata has no private ranges). The only target that depends on swift-log
 
 ### Core Design
 
@@ -81,7 +83,7 @@ Logging calls (nonisolated, any domain) → `LogR` (lock-protected in-memory cac
 - Only the `@Observable` state read by SwiftUI is `@MainActor` (`recentLogs`, `droppedLogCount`, `canAnalyseLogs`, the AI results + analysis methods); the change notification is coalesced and emitted on the main actor
 - Background storage writes happen on dedicated `LogWriterActor`
 - `LogrUI` target uses `@defaultIsolation(MainActor.self)`
-- All three targets enable the `NonisolatedNonsendingByDefault` and `InferIsolatedConformances` upcoming features; `Logr` and `LogrTesting` also enable `ExistentialAny`, and `Logr` enables `ImmutableWeakCaptures`
+- All four library targets enable the `NonisolatedNonsendingByDefault` and `InferIsolatedConformances` upcoming features; `Logr`, `LogrTesting` and `LogrSwiftLog` also enable `ExistentialAny`, and `Logr` enables `ImmutableWeakCaptures`
 - Logging methods use `@autoclosure` for lazy message evaluation
 
 ### Models
@@ -95,10 +97,11 @@ Logging calls (nonisolated, any domain) → `LogR` (lock-protected in-memory cac
 
 ### Testing
 
-Tests use Swift Testing framework (`@Suite`, `@Test` attributes). The test target depends on `Logr`, `LogrUI` and `LogrTesting`. Real `LogR` tests back `LoggerCryptoService` with `InMemoryKeychainStore`, so no Keychain is touched; `LockableKeychainStore` (in `LoggerCryptoServiceTests.swift`) throws `errSecInteractionNotAllowed` until unlocked, and the internal `LogR(storage:cryptoService:configuration:analyser:retrySignals:)` / `LogWriterActor(retrySignals:)` let a test stand in for the protected-data notification. Tests that need disk hold a per-test `TemporaryDirectory` (removed on release); nothing writes to Documents or Application Support. `StorageConformanceTests` is the shared `LogRPersistence` contract, parameterized over both backends; the per-backend suites hold only backend-specific behaviour. `Tests/LogrTests/Fixtures/` holds files written by Logr 1.3 (key in `keychain.json`), read by `LegacyFixtureTests`: never regenerate them. Tests await events (`FlakyStorage.stores`, `Observations`), never the clock; `LogWriterActor(partialBatchDeadline:)` shortens the one-second deadline in tests. `MockLogR` in `Sources/LogrUI/Mock+Previews/` provides a full `LogRService` implementation for SwiftUI previews and unit tests with in-memory storage and sample data; its `log()` defers the insert to the main actor, so tests must hop to the main actor before reading `recentLogs`.
+Tests use Swift Testing framework (`@Suite`, `@Test` attributes). The test target depends on `Logr`, `LogrUI`, `LogrTesting`, `LogrSwiftLog` and `Logging`. Real `LogR` tests back `LoggerCryptoService` with `InMemoryKeychainStore`, so no Keychain is touched; `LockableKeychainStore` (in `LoggerCryptoServiceTests.swift`) throws `errSecInteractionNotAllowed` until unlocked, and the internal `LogR(storage:cryptoService:configuration:analyser:retrySignals:)` / `LogWriterActor(retrySignals:)` let a test stand in for the protected-data notification. Tests that need disk hold a per-test `TemporaryDirectory` (removed on release); nothing writes to Documents or Application Support. `StorageConformanceTests` is the shared `LogRPersistence` contract, parameterized over both backends; the per-backend suites hold only backend-specific behaviour. `Tests/LogrTests/Fixtures/` holds files written by Logr 1.3 (key in `keychain.json`), read by `LegacyFixtureTests`: never regenerate them. Tests await events (`FlakyStorage.stores`, `Observations`), never the clock; `LogWriterActor(partialBatchDeadline:)` shortens the one-second deadline in tests. `MockLogR` in `Sources/LogrUI/Mock+Previews/` provides a full `LogRService` implementation for SwiftUI previews and unit tests with in-memory storage and sample data; its `log()` defers the insert to the main actor, so tests must hop to the main actor before reading `recentLogs`.
 
 ### Dependencies
 
 - **swift-collections** (1.5.1+): Deque for log cache, the only dependency of the `Logr` target (SQLite and the Keychain come from the OS)
+- **swift-log** (1.16.0+): `Logging`, for `LogrSwiftLog` only. Apps that use only `Logr` still resolve and fetch it (it is in their `Package.resolved` and its version range takes part in resolution) but never compile it
 - **SwiftFormat** (0.61.0+): declared dependency, not a build plugin and not used for linting (that is the 0.63.1 CLI, see Code Formatting)
 - **swift-docc-plugin** (1.5.0+): `swift package generate-documentation`

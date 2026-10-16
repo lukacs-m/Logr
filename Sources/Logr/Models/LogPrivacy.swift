@@ -65,6 +65,9 @@ public struct LogPrivacy: Sendable {
     /// Never stored in clear, even when ``LogrConfiguration/storesPrivateValues`` is `true`: shown as
     /// `<sensitive>`. The OSLog mirror logs it as private.
     public static let sensitive = LogPrivacy(option: .sensitive)
+
+    package static let privatePlaceholder = "<private>"
+    package static let sensitivePlaceholder = "<sensitive>"
 }
 
 extension LogPrivacy {
