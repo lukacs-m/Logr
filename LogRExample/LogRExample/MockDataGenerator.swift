@@ -8,8 +8,10 @@
 import Foundation
 import Logr
 
-/// Helper to log with level and category using convenience methods
-private func logMessage(logger: LogRService, level: LogLevel, message: String, category: LogCategory) {
+/// Helper to log with level and category using convenience methods. Public, so the privacy scanner demo can
+/// find the fake personal data in release builds too.
+private func logMessage(logger: any LogRService, level: LogLevel, message: String, category: LogCategory) {
+    let message = LogMessage(message, privacy: .public)
     switch level {
     case .debug: logger.debug(message, category: category)
     case .info: logger.info(message, category: category)
@@ -84,7 +86,7 @@ actor MockDataGenerator {
 
     // MARK: - Main Generation Methods
 
-    static func generateComprehensiveLogs(logger: LogRService,
+    static func generateComprehensiveLogs(logger: any LogRService,
                                           count: Int = 2_000,
                                           privacyIssues: Int = 25,
                                           errorPatterns: Int = 50) async {
@@ -101,7 +103,7 @@ actor MockDataGenerator {
     // MARK: - Normal Operation Logs
 
     @concurrent
-    private static func generateNormalOperationLogs(logger: LogRService, count: Int) async {
+    private static func generateNormalOperationLogs(logger: any LogRService, count: Int) async {
         let levels: [(LogLevel, Int)] = [
             (.debug, 40),
             (.info, 35),
@@ -222,7 +224,7 @@ actor MockDataGenerator {
 
     // MARK: - Privacy Issue Logs (For AI Analysis Demo)
 
-    private static func generatePrivacyIssueLogs(logger: LogRService, count: Int) async {
+    private static func generatePrivacyIssueLogs(logger: any LogRService, count: Int) async {
         for i in 0..<count {
             let (message, category) = generatePrivacyIssueContent(index: i)
             let level: LogLevel = [.debug, .info, .warning].randomElement()!
@@ -262,7 +264,7 @@ actor MockDataGenerator {
 
     // MARK: - Error Pattern Logs (For Issue Summary Demo)
 
-    private static func generateErrorPatternLogs(logger: LogRService, count: Int) async {
+    private static func generateErrorPatternLogs(logger: any LogRService, count: Int) async {
         for i in 0..<count {
             if i % 3 == 0 {
                 let (message, category) = recurringErrors.randomElement()!
@@ -274,7 +276,7 @@ actor MockDataGenerator {
         }
     }
 
-    private static func generateRandomError(logger: LogRService, index: Int) async {
+    private static func generateRandomError(logger: any LogRService, index: Int) async {
         let errorMsg = errorMessages.randomElement()!
         let endpoint = networkEndpoints.randomElement()!
 
@@ -293,7 +295,7 @@ actor MockDataGenerator {
 
     // MARK: - App Lifecycle Logs
 
-    private static func generateAppLifecycleLogs(logger: LogRService) async {
+    private static func generateAppLifecycleLogs(logger: any LogRService) async {
         let lifecycleEvents = [
             ("Application launched", LogLevel.info, LogCategory.lifecycle),
             ("Scene entered foreground", LogLevel.debug, LogCategory.lifecycle),
@@ -328,21 +330,21 @@ actor MockDataGenerator {
 
     // MARK: - Quick Generation Methods
 
-    static func generateSmallDataset(logger: LogRService) async {
+    static func generateSmallDataset(logger: any LogRService) async {
         await generateComprehensiveLogs(logger: logger,
                                         count: 500,
                                         privacyIssues: 10,
                                         errorPatterns: 20)
     }
 
-    static func generateMediumDataset(logger: LogRService) async {
+    static func generateMediumDataset(logger: any LogRService) async {
         await generateComprehensiveLogs(logger: logger,
                                         count: 2_000,
                                         privacyIssues: 25,
                                         errorPatterns: 50)
     }
 
-    static func generateLargeDataset(logger: LogRService) async {
+    static func generateLargeDataset(logger: any LogRService) async {
         await generateComprehensiveLogs(logger: logger,
                                         count: 5_000,
                                         privacyIssues: 50,

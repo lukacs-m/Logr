@@ -8,7 +8,7 @@
 import Logr
 import SwiftUI
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 struct AnalyzeProcessingView: View {
     @Environment(\.logService) private var logr
 

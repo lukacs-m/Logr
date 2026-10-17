@@ -5,7 +5,6 @@
 //  Created by Martin Lukacs on 16/11/2025.
 //
 
-import Collections
 import DequeModule
 import Foundation
 import Logr
@@ -36,8 +35,8 @@ public struct GenerationConfig {
                 categories: [LogCategory] = [
                     .system, .network, .ui, .authentication,
                     .database, .performance,
-                    .custom("business-logic"),
-                    .custom("analytics")
+                    "business-logic",
+                    "analytics"
                 ],
                 subsystems: [String] = [
                     "com.logr.main",
@@ -56,7 +55,7 @@ public struct GenerationConfig {
 
 @Observable
 public final class MockLogR: LogRService, Sendable {
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public var privacyAnalysisResult: PrivacyAnalysisResult? {
         PrivacyAnalysisResult(warnings: [
             PrivacyWarning(file: "LoginViewController.swift",
@@ -79,7 +78,7 @@ public final class MockLogR: LogRService, Sendable {
         highCount: 1)
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public var logIssueSummary: LogIssueSummary? {
         LogIssueSummary(executiveSummary: "Analyzed 45 errors, 23 warnings, and 3 faults. Found 12 distinct issues: 2 critical, 4 high severity. Immediate action required on critical issues.",
                         issues: [
@@ -123,7 +122,7 @@ public final class MockLogR: LogRService, Sendable {
                         ])
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public var analysisProgress: AnalysisProgress? {
         nil
     }
@@ -132,7 +131,11 @@ public final class MockLogR: LogRService, Sendable {
 
     @MainActor public var droppedLogCount = 0
 
-    @MainActor public private(set) var recentLogs = Deque<LogEntry>()
+    @MainActor public var recentLogs: LogEntries {
+        LogEntries(cachedLogs)
+    }
+
+    @MainActor private var cachedLogs = Deque<LogEntry>()
     @MainActor public private(set) var isCleanupRunning = false
 
     @MainActor private var mockLogs = Deque<LogEntry>()
@@ -156,13 +159,13 @@ public final class MockLogR: LogRService, Sendable {
 
     // MARK: - LogRService Implementation
 
-    public nonisolated func log(level: LogLevel,
-                                message: @autoclosure () -> String,
-                                category: LogCategory,
-                                file: String = #file,
-                                function: String = #function,
-                                line: Int = #line,
-                                metadata: [String: LogMetadataValue]? = nil) {
+    public nonisolated func record(level: LogLevel,
+                                   message: @autoclosure () -> LogMessage,
+                                   category: LogCategory,
+                                   file: String,
+                                   function: String,
+                                   line: Int,
+                                   metadata: @autoclosure () -> [String: LogMetadataValue]?) {
         // Evaluate the message synchronously (preserving lazy semantics), then hop the insert to
         // the main actor where the observable cache lives.
         //
@@ -172,40 +175,43 @@ public final class MockLogR: LogRService, Sendable {
         // of order. That is fine for the previews/sample data this mock exists for; a test that
         // asserts on `recentLogs` right after `log()` must first hop to the main actor (e.g.
         // `await Task { @MainActor in }.value`) to observe the entry.
+        let rendered = message().rendered(keepingPrivateValues: LogrConfiguration.default.storesPrivateValues,
+                                          hashKey: nil)
         let entry = LogEntry(level: level,
                              category: category,
                              subsystem: "com.logr.mock",
-                             message: message(),
+                             message: rendered.text,
                              file: file,
                              function: function,
                              line: line,
-                             metadata: metadata)
+                             metadata: metadata(),
+                             privateRanges: rendered.privateRanges)
         Task { @MainActor in append(entry) }
     }
 
     @MainActor
     private func append(_ entry: LogEntry) {
         mockLogs.insert(entry, at: 0)
-        recentLogs.insert(entry, at: 0)
+        cachedLogs.insert(entry, at: 0)
 
         // Keep only the most recent 100 entries for demo
         if mockLogs.count > 100 {
             mockLogs.removeLast()
         }
-        if recentLogs.count > 100 {
-            recentLogs.removeLast()
+        if cachedLogs.count > 100 {
+            cachedLogs.removeLast()
         }
     }
 
     @MainActor
     public func clearLogs() async throws {
         mockLogs.removeAll()
-        recentLogs.removeAll()
+        cachedLogs.removeAll()
     }
 
     public func flush() async {}
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
         PrivacyAnalysisResult(warnings: [
             PrivacyWarning(file: "LoginViewController.swift",
@@ -228,7 +234,7 @@ public final class MockLogR: LogRService, Sendable {
         highCount: 1)
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public func summarizeIssues() async throws -> LogIssueSummary {
         LogIssueSummary(executiveSummary: "Analyzed 45 errors, 23 warnings, and 3 faults. Found 12 distinct issues: 2 critical, 4 high severity. Immediate action required on critical issues.",
                         issues: [
@@ -302,7 +308,7 @@ public final class MockLogR: LogRService, Sendable {
 
         // Batch update for better Observable performance
         mockLogs = entries
-        recentLogs = entries
+        cachedLogs = entries
     }
 
     // MARK: - Streaming Generation
@@ -339,7 +345,7 @@ public final class MockLogR: LogRService, Sendable {
 
             // Update on main actor in batches
             mockLogs.append(contentsOf: entries)
-            recentLogs.append(contentsOf: entries)
+            cachedLogs.append(contentsOf: entries)
 
             if chunk < chunks - 1 {
                 try? await Task.sleep(for: .seconds(delay))

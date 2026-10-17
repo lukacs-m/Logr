@@ -14,25 +14,17 @@ struct LogRExampleApp: App {
     @State private var logger: LogR
 
     init() {
-        do {
-            let storage = try SQLiteStorage()
-            let config = LogrConfiguration(maxLogEntries: 10_000,
-                                           maxLogAge: 7 * 24 * 60 * 60,
-                                           enabledLevels: Set(LogLevel.allCases),
-                                           subsystem: "me.martin.example.LogRExample",
-                                           cleanupInterval: 60 * 60,
-                                           logVerbosity: .verbose)
-            if #available(macOS 26.0, *) {
-                let logr = try LogR(storage: storage,
-                                    logAnalyser: AIAnalyzer(),
-                                    configuration: config)
-                _logger = State(initialValue: logr)
-            } else {
-                let logr = try LogR(storage: storage, configuration: config)
-                _logger = State(initialValue: logr)
-            }
-        } catch {
-            fatalError("Could not initialize LogR: \(error)")
+        let config = LogrConfiguration(maxLogEntries: 10_000,
+                                       maxLogAge: 7 * 24 * 60 * 60,
+                                       enabledLevels: Set(LogLevel.allCases),
+                                       subsystem: "me.martin.example.LogRExample",
+                                       cleanupInterval: 60 * 60,
+                                       logVerbosity: .verbose)
+        if #available(macOS 26.0, *) {
+            _logger = State(initialValue: LogR(storage: .sqlite(), logAnalyser: AIAnalyzer(),
+                                               configuration: config))
+        } else {
+            _logger = State(initialValue: LogR(storage: .sqlite(), configuration: config))
         }
     }
 
@@ -84,5 +76,5 @@ struct MainTabView: View {
 
 #Preview {
     MainTabView()
-        .environment(\.logService, try! LogR())
+        .environment(\.logService, LogR())
 }

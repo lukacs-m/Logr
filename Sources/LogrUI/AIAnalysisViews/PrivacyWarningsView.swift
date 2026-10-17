@@ -1,7 +1,7 @@
 import Logr
 import SwiftUI
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public struct PrivacyWarningsView: View {
     @Environment(\.logService) var logr
     @State private var loading = false
@@ -54,7 +54,7 @@ public struct PrivacyWarningsView: View {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension PrivacyWarningsView {
     var mainContent: some View {
         List {
@@ -119,7 +119,7 @@ private extension PrivacyWarningsView {
 
 // MARK: - Overlay
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension PrivacyWarningsView {
     @ViewBuilder
     var overlayContent: some View {
@@ -153,7 +153,7 @@ private extension PrivacyWarningsView {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension PrivacyWarningsView {
     var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
@@ -168,7 +168,7 @@ private extension PrivacyWarningsView {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private struct PrivacyWarningRow: View {
     let warning: PrivacyWarning
 
@@ -229,7 +229,7 @@ struct PrivacyDetailRow: View {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 #Preview {
     @Previewable @State var mock = MockLogR()
     NavigationStack {

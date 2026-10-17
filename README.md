@@ -10,10 +10,10 @@ encrypted at rest with Keychain-backed keys, can be browsed in a drop-in SwiftUI
 iOS 26+ can be analysed on-device by Apple Intelligence.
 
 - **Log from anywhere**: logging is `nonisolated`, no `await`, safe from any actor or thread; persistence runs on a background actor
-- **Three modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock) and `LogrTesting` (test doubles)
-- **Storage**: SQLite (recommended), an append-only NDJSON file, or your own `LogRPersistence`
+- **Four modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock), `LogrSwiftLog` (swift-log handler) and `LogrTesting` (test doubles)
+- **Storage**: SQLite, an append-only NDJSON file, or your own `LogRPersistence`
 - **Encryption**: AES-256-GCM or ChaCha20-Poly1305, versioned keys with rotation
-- **Structure**: six levels, 49 predefined categories plus `.custom`, typed metadata on every entry
+- **Structure**: six levels, 49 predefined categories plus your own (`static let checkout: LogCategory = "checkout"`), typed metadata on every entry
 
 ## Installation
 
@@ -29,8 +29,8 @@ dependencies: [
 ]
 ```
 
-Add `Logr` to your target, `LogrUI` if you want the SwiftUI views, and `LogrTesting` to your test
-target. In Xcode: File → Add Package Dependencies → `https://github.com/lukacs-m/logr`.
+Add `Logr` to your target, `LogrUI` if you want the SwiftUI views, `LogrSwiftLog` to bridge swift-log,
+and `LogrTesting` to your test target. In Xcode: File → Add Package Dependencies → `https://github.com/lukacs-m/logr`.
 
 ## Quick start
 
@@ -43,15 +43,7 @@ import SwiftUI
 
 @main
 struct MyApp: App {
-    @State private var logger: LogR
-
-    init() {
-        do {
-            _logger = State(initialValue: try LogR(storage: SQLiteStorage()))
-        } catch {
-            fatalError("Could not initialize LogR: \(error)")
-        }
-    }
+    @State private var logger = LogR(storage: .sqlite())
 
     var body: some Scene {
         WindowGroup {
@@ -106,6 +98,61 @@ Through `any LogRService`, `recentLogs` and the other observable properties are 
 On the concrete `LogR` they are `nonisolated`, and a read right after a write sees the entry.
 SwiftUI change notifications are coalesced (`coalesceWindowMillis`, default 100 ms).
 
+## Privacy
+
+Each interpolated value carries a privacy level, as in OSLog. Strings and other values are private by
+default; integers, floating-point numbers and Booleans are public:
+
+```swift
+func signIn(email: String, attempts: Int, token: String, logger: any LogRService) {
+    logger.info("Signed in \(email) after \(attempts) tries", category: .authentication)
+    // Release builds store "Signed in <private> after 3 tries"
+    logger.info("Account \(email, privacy: .private(mask: .hash))", category: .user)
+    // "Account <private:3f9a1c2e>": equal values give equal hashes
+    logger.debug("Token \(token, privacy: .sensitive)", category: .authentication)
+    // "Token <sensitive>", even in DEBUG builds
+}
+```
+
+`LogR` keeps private values in clear in `DEBUG` builds so you can read them while developing, and stores
+`<private>` otherwise (`LogrConfiguration.storesPrivateValues`). Exports replace them with `<private>`
+unless you pass `exportLogs(format:includingPrivateValues: true)`. The OSLog mirror logs the redacted text
+as public and the private values after it as private, so Console shows them only while a debugger is
+attached or private data logging is enabled. A `String` you already hold needs a privacy of its own:
+`LogMessage(text, privacy: .public)`.
+
+## Context
+
+Metadata set with `LogContext.with` reaches every entry logged inside the scope, including from child tasks:
+
+```swift
+func checkout(orderID: String, logger: any LogRService) async {
+    await LogContext.with(["orderID": .string(orderID)]) {
+        logger.info("Checkout started", category: .payment)   // carries orderID
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { logger.info("Charging card", category: .payment) }   // so does a child task
+        }
+    }
+}
+```
+
+Nested scopes merge, and metadata passed to the call wins on a key clash. `Task.detached` does not inherit the
+context.
+
+## swift-log
+
+The `LogrSwiftLog` product records swift-log events, your dependencies' included, in a `LogR`:
+
+```swift
+let logger = LogR(storage: .sqlite())
+LoggingSystem.bootstrap { label in LogrLogHandler(label: label, logger: logger) }
+```
+
+The logger's label becomes the category, `trace` maps to `.debug` and `critical` to `.fault`; like swift-log's
+own handlers, `LogrLogHandler` drops levels below `info` unless a `Logger` lowers its `logLevel`. swift-log messages
+have no per-value privacy, so they are stored as public, with the event's `error` appended as a private value; a
+metadata value tagged `.attributed(email, attributes: [LogrSensitivity.private])` is stored as `<private>`.
+
 ## Configuration
 
 ```swift
@@ -117,7 +164,7 @@ let config = LogrConfiguration(
     logVerbosity: .normal,
     mirrorToOSLog: false
 )
-let logger = try LogR(configuration: config)
+let logger = LogR(configuration: config)
 ```
 
 Every option and its default is documented on `LogrConfiguration`.
@@ -129,20 +176,28 @@ Partial batches are submitted after one second; call `await logger.flush()` befo
 transition when you need pending writes processed immediately:
 
 ```swift
-let sqlite = try LogR(storage: SQLiteStorage())      // Application Support/<bundle id>/logs.sqlite
-let file = try LogR(storage: FileSystemStorage())    // Application Support/<bundle id>/Logr/logr_entries.ndjson
+let sqlite = LogR(storage: .sqlite())    // Application Support/<bundle id>/logs.sqlite
+let file = LogR(storage: .file())        // Application Support/<bundle id>/Logr/logr_entries.ndjson
 ```
 
-Both default locations are excluded from backups: entries are encrypted with a key that never leaves
-the device. The file storage writes one JSON entry per line; a file Logr 1.3 or earlier left in
-`Documents` is moved there on first open.
+Pass a file URL to either to choose the location, or `.custom(_:)` with your own `LogRPersistence`.
+Storage opens in the background, so creating a logger never throws. Until the key and the storage can be
+read (before the device's first unlock after a restart, during a background launch), entries wait in
+memory, `persistenceStatus` is `.waitingForProtectedData`, and they are written once both can be read.
 
-Entries are encrypted before they reach storage. Pick the cipher or rotate the key through
-`LoggerCryptoService`:
+Both keep the same window: the newest `maxLogEntries` entries younger than `maxLogAge`. They differ in
+cleanup: SQLite deletes expired rows in place, while the file storage, which writes one JSON entry per
+line, rewrites the whole file. Both default locations are excluded from backups: entries are encrypted
+with a key that never leaves the device. A file Logr 1.3 or earlier left in `Documents` is moved to
+Application Support on first open.
+
+Entries are encrypted before they reach storage, with keys kept in the Keychain by `SystemKeychainStore`
+(on macOS: the data-protection keychain when the app has a provisioning profile, the login keychain
+otherwise). Pick the cipher or rotate the key through `LoggerCryptoService`:
 
 ```swift
-let crypto = try LoggerCryptoService(encryptionAlgo: .chacha)   // default is .aes256gcm
-let logger = try LogR(storage: SQLiteStorage(), cryptoService: crypto)
+let crypto = LoggerCryptoService(encryptionAlgo: .chacha)   // default is .aes256gcm
+let logger = LogR(storage: .sqlite(), cryptoService: crypto)
 try crypto.rotateKey()   // earlier entries stay readable unless removeOldKeys: true
 ```
 
@@ -154,11 +209,15 @@ Both protocol docs carry a worked example. Opt-in `String` helpers such as `reda
 
 ```swift
 if #available(iOS 26.0, macOS 26.0, *) {
-    let logger = try LogR(logAnalyser: AIAnalyzer())
+    let logger = LogR(logAnalyser: AIAnalyzer())
     Task { @MainActor in
-        let privacy = try await logger.scanForPrivacyIssues()
-        let issues = try await logger.summarizeIssues()
-        print(privacy.summary, issues.executiveSummary)
+        do {
+            let privacy = try await logger.scanForPrivacyIssues()
+            let issues = try await logger.summarizeIssues()
+            print(privacy.summary, issues.executiveSummary)
+        } catch {
+            print("Analysis failed: \(error)")
+        }
     }
 }
 ```
@@ -179,9 +238,9 @@ import Logr
 import LogrTesting
 import Testing
 
-@Test func logsAreCachedSynchronously() throws {
-    let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
-    let logr = LogR(cryptoService: crypto)   // no storage: nothing is persisted, and this init does not throw
+@Test func logsAreCachedSynchronously() {
+    let crypto = LoggerCryptoService(store: InMemoryKeychainStore())
+    let logr = LogR(cryptoService: crypto)   // no storage: nothing is persisted
 
     logr.info("hello", category: .test)
 
@@ -195,10 +254,10 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 
 | Path | What lives there |
 |---|---|
-| `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
+| `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (opens the storage in the background and holds entries while the key or storage cannot be read; encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
 | `Sources/Logr/Protocols/` | `LogRService` (public API plus `getLogs`, `exportLogs`, `logStatistics`), `LogRPersistence`, `LogAIAnalyzer` |
-| `Sources/Logr/Models/` | `LogEntry`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
-| `Sources/Logr/Tools/` | `LoggerCryptoService` and `KeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |
+| `Sources/Logr/Models/` | `LogEntry`, `LogEntries`, `LogMessage`, `LogPrivacy`, `LogContext`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogStorage`, `PersistenceStatus`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
+| `Sources/Logr/Tools/` | `LoggerCryptoService`, `KeychainStore` and `SystemKeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |
 | `Sources/Logr/Utilities/` | `String` redaction helpers |
 | `Sources/Logr/AI/` | `AIAnalyzer`: FoundationModels, chunked and parallel, iOS 26+ |
 | `Sources/LogrUI/LogViews/` | `LogViewer`, its filter and export sheets, the entry row |
@@ -206,6 +265,7 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 | `Sources/LogrUI/AIAnalysisViews/` | Privacy warnings, issue summary and progress views |
 | `Sources/LogrUI/Mock+Previews/` | `MockLogR` |
 | `Sources/LogrUI/Tools+Extensions/` | The `\.logService` environment key, `.logRService(_:)`, the no-op default logger, level and severity colours |
+| `Sources/LogrSwiftLog/` | `LogrLogHandler` (swift-log `LogHandler`), `LogrSensitivity` |
 | `Sources/LogrTesting/` | `InMemoryKeychainStore` |
 | `Tests/LogrTests/` | Swift Testing suites; `ReadmeSnippetsTests.swift` compiles every snippet in this file |
 | `LogRExample/` | Xcode sample app exercising every feature |

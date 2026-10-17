@@ -1,7 +1,7 @@
 import Logr
 import SwiftUI
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public struct AIAnalysisView: View {
     @Environment(\.logService) private var logr
     @State private var analysisState: AnalysisState = .idle
@@ -199,7 +199,7 @@ public struct AIAnalysisView: View {
 
 // MARK: - Preview
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 #Preview("Analyzing State") {
     @Previewable @State var mock = MockLogR()
     NavigationStack {

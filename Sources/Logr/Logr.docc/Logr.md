@@ -6,11 +6,12 @@ Persistent, encrypted logging for Apple platforms, built on OSLog.
 
 Create one ``LogR`` at the app root and log through ``LogRService``. Logging is `nonisolated`:
 call it from any actor or thread with no `await`. Every entry goes to an in-memory cache and to
-OSLog; when a ``LogRPersistence`` is supplied, entries are also encrypted through
+OSLog; when a ``LogStorage`` is supplied, entries are also encrypted through
 ``LoggerCryptoServicing`` and persisted on a background actor. ``LogR`` documents the pipeline,
 the isolation model and the lifecycle. Compiled usage examples live in the package README.
 
-The `LogrUI` module adds a SwiftUI viewer, statistics views and a mock service for previews.
+The `LogrUI` module adds a SwiftUI viewer, statistics views and a mock service for previews, and
+`LogrSwiftLog` records swift-log events in a Logr service.
 
 ## Topics
 
@@ -24,12 +25,18 @@ The `LogrUI` module adds a SwiftUI viewer, statistics views and a mock service f
 ### Entries
 
 - ``LogEntry``
+- ``LogEntries``
+- ``LogMessage``
+- ``LogPrivacy``
 - ``LogLevel``
 - ``LogCategory``
 - ``LogMetadataValue``
+- ``LogContext``
 
 ### Storage
 
+- ``LogStorage``
+- ``PersistenceStatus``
 - ``LogRPersistence``
 - ``SQLiteStorage``
 - ``FileSystemStorage``
@@ -40,7 +47,8 @@ The `LogrUI` module adds a SwiftUI viewer, statistics views and a mock service f
 - ``LoggerCryptoServicing``
 - ``LoggerCryptoService``
 - ``KeychainStore``
-- ``KeychainAccessStore``
+- ``SystemKeychainStore``
+- ``KeychainError``
 - ``KeyVersion``
 - ``LoggerCryptoError``
 

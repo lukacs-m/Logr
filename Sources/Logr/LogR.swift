@@ -1,40 +1,59 @@
-import Collections
 import Combine
+import CryptoKit
 import DequeModule
 import Foundation
 import Observation
 import OSLog
+#if canImport(UIKit) && !os(watchOS)
+import UIKit
+#endif
 
 /// The default ``LogRService``: an in-memory log cache that mirrors to OSLog and, when given a
 /// storage, persists every entry encrypted.
 ///
 /// ## Pipeline
 ///
-/// ``log(level:message:category:file:function:line:metadata:)`` runs synchronously on the caller's
+/// ``LogRService/log(level:message:category:file:function:line:metadata:)`` runs synchronously on the caller's
 /// thread. It filters on ``LogrConfiguration/enabledLevels`` and
-/// ``LogrConfiguration/categoryLevelOverrides`` (the `@autoclosure` message is never evaluated for a
-/// filtered entry), mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set, prepends the
-/// entry to a lock-protected deque capped at ``LogrConfiguration/maxLogEntries``, and hands it to a
+/// ``LogrConfiguration/categoryLevelOverrides`` (the `@autoclosure` message and metadata are never evaluated
+/// for a filtered entry), renders the ``LogMessage`` with its private values in clear or redacted (see
+/// ``LogrConfiguration/storesPrivateValues``), mirrors to OSLog when ``LogrConfiguration/mirrorToOSLog`` is set,
+/// prepends the entry to a lock-protected deque capped at ``LogrConfiguration/maxLogEntries``, and hands it to a
 /// private writer actor. The writer encrypts through ``LoggerCryptoServicing``, accumulates batches of
 /// 50, or submits a partial batch after one second. Storage failures get three attempts with linear
 /// backoff before the batch is dropped. Once 100,000 entries are waiting on storage the newest are shed. Every
 /// dropped entry, whatever the reason, is counted in ``droppedLogCount``.
 ///
+/// ## OSLog mirror
+///
+/// The mirror logs the message with every value that is not public redacted, as public text, then those values
+/// as one private argument: Console shows them only while a debugger is attached or private data logging is
+/// enabled. Xcode's "jump to source" for a mirrored message points into Logr, as for any wrapper around OSLog;
+/// ``LogVerbosity/verbose`` appends the call site, `(File.swift:42 function())`, to find it.
+///
 /// ## Isolation
 ///
-/// `init`, `log()` and the level helpers are `nonisolated`. ``recentLogs`` is `nonisolated` on `LogR`
-/// itself and returns a snapshot taken under the lock, so a read right after a write sees the entry
-/// from any thread; through `any LogRService` it is `@MainActor`. The observation notification is
+/// `init`, ``LogRService/log(level:message:category:file:function:line:metadata:)`` and the level helpers are
+/// `nonisolated`. ``recentLogs`` is `nonisolated` on `LogR` itself and returns a snapshot taken under the
+/// lock, so a read right after a write sees the entry from any thread; through `any LogRService` it is
+/// `@MainActor`. The observation notification is
 /// dispatched to the main actor and coalesced to at most one per
 /// ``LogrConfiguration/coalesceWindowMillis``. ``droppedLogCount`` and the AI results are `@MainActor`.
 ///
 /// ## Lifecycle
 ///
-/// On init, up to `maxLogEntries` persisted entries are decrypted and merged behind any entries logged
-/// during launch. A main-run-loop timer fires every ``LogrConfiguration/cleanupInterval``, trims
+/// Initializers never throw. The writer opens the storage and reads the key in the background, and
+/// ``persistenceStatus`` is ``PersistenceStatus/opening`` until that first attempt ends. Until both can be read,
+/// for example before the device's first unlock after a restart, entries wait in memory (within the
+/// 100,000-entry cap) and ``persistenceStatus`` says why. Opening is retried every 30 seconds and, where UIKit
+/// exists, when protected data becomes available. Once storage opens, up to `maxLogEntries` persisted entries
+/// are decrypted and merged behind any entries logged since launch. A main-run-loop timer fires every
+/// ``LogrConfiguration/cleanupInterval``, trims
 /// entries older than ``LogrConfiguration/maxLogAge`` from memory and storage, and enforces the count
-/// cap on storage. ``flush()`` waits for earlier entries to finish their persistence attempts. ``clearLogs()``
-/// wipes memory synchronously and clears storage in order with in-flight writes. `deinit` finishes the
+/// cap on storage; a tick that finds the previous storage pass unfinished leaves storage alone. ``flush()``
+/// waits for earlier entries to finish their persistence attempts. ``clearLogs()``
+/// wipes memory synchronously and clears storage in order with in-flight writes (a storage that has not opened
+/// yet is cleared as soon as it opens). `deinit` finishes the
 /// writer stream so buffered entries drain on a best-effort basis.
 @Observable
 public final class LogR: LogRService {
@@ -50,11 +69,9 @@ public final class LogR: LogRService {
         /// True while a coalescing window is open; guards against scheduling more than one
         /// notification task per window. Flipped under the same lock as `entries`.
         var notificationScheduled = false
-        /// Bumped by ``clearLogs()``. The one-shot startup ``loadRecentLogs()`` merges persisted
-        /// history only while this is still `0` (no clear has happened), so it can't resurrect
-        /// entries a clear has wiped — regardless of how its fetch interleaves with the clear.
-        /// Replaces the implicit main-actor ordering the previously `@MainActor`-isolated load
-        /// relied on.
+        /// Bumped by ``clearLogs()``. ``mergeHistory(_:)`` merges the persisted history only while this
+        /// is still `0` (no clear has happened), so history read before a clear cannot resurrect
+        /// entries the clear wiped, however late it arrives.
         var generation = 0
     }
 
@@ -63,30 +80,30 @@ public final class LogR: LogRService {
 
     /// Thread-safe and `nonisolated`: callable from any domain. The getter records the observation
     /// dependency (`access`) and returns an O(1) copy-on-write snapshot taken under the lock.
-    public nonisolated var recentLogs: Deque<LogEntry> {
+    public nonisolated var recentLogs: LogEntries {
         access(keyPath: \.recentLogs)
-        return cache.withLock { $0.entries }
+        return LogEntries(cache.withLock { $0.entries })
     }
 
     public let configuration: LogrConfiguration
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor public var privacyAnalysisResult: PrivacyAnalysisResult? {
         _privacyAnalysisResult as? PrivacyAnalysisResult
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor public var logIssueSummary: LogIssueSummary? {
         _logIssueSummary as? LogIssueSummary
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor public var analysisProgress: AnalysisProgress? {
         _analysisProgress as? AnalysisProgress
     }
 
     @MainActor public var canAnalyseLogs: Bool {
-        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *), let analyser else {
+        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *), let analyser else {
             return false
         }
         return analyser.isAvailable
@@ -94,8 +111,15 @@ public final class LogR: LogRService {
 
     @MainActor public private(set) var droppedLogCount: Int = 0
 
-    private let storage: (any LogRPersistence)?
-    private let cryptoService: any LoggerCryptoServicing
+    @MainActor public private(set) var persistenceStatus: PersistenceStatus
+    /// The writer's latest status. Each change hops to the main actor in its own task, and tasks may run out of
+    /// order, so every hop publishes this value rather than the one it was created with.
+    @ObservationIgnored
+    private let reportedStatus = SafeMutex(PersistenceStatus.opening)
+    /// Drops the writer reported that are not in ``droppedLogCount`` yet. The writer may report every shed entry
+    /// on its own, so only the report that finds this at 0 hops to the main actor, and that hop takes them all.
+    @ObservationIgnored
+    private let unpublishedDrops = SafeMutex(0)
 
     /// Loggers for the common categories, precomputed once at init. Immutable, so the nonisolated
     /// logging hot path can read it without a lock; uncommon/custom categories fall back to
@@ -104,11 +128,12 @@ public final class LogR: LogRService {
     private let commonLoggers: [LogCategory: Logger]
     @ObservationIgnored
     private nonisolated(unsafe) var cleanupTimer: AnyCancellable?
-    @ObservationIgnored
-    @MainActor private var cleanupTask: Task<Void, Never>?
 
     @ObservationIgnored
     private let writer: LogWriterActor?
+    /// Hashes ``LogPrivacy/Mask/hash`` values for every logger without storage in this process: they have
+    /// no writer to derive a key from the crypto service, and their entries never outlive the process.
+    private static let processHashKey = SymmetricKey(size: .bits256)
 
     // Type-erased so these stored properties carry no `@available` requirement (a stored property
     // cannot be annotated `@available`, and the analyzer types are iOS 26+). The mutable result
@@ -120,58 +145,65 @@ public final class LogR: LogRService {
     @MainActor private var _privacyAnalysisResult: Any?
     @MainActor private var _analysisProgress: Any?
     private let _analyser: (any Sendable)?
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     private var analyser: (any LogAIAnalyzer)? {
         _analyser as? (any LogAIAnalyzer)
     }
 
     /// Designated initializer. `nonisolated`, so a `LogR` can be created from any isolation
     /// domain. `analyser` is type-erased to `any Sendable` because the concrete `LogAIAnalyzer`
-    /// types are iOS 26+ and a stored property cannot be `@available`-gated.
-    private init(storage: (any LogRPersistence)?,
-                 cryptoService: any LoggerCryptoServicing,
-                 configuration: LogrConfiguration,
-                 analyser: (any Sendable)?) {
-        self.storage = storage
+    /// types are iOS 26+ and a stored property cannot be `@available`-gated. `retrySignals` lets tests
+    /// stand in for the protected-data notification; `nil` observes it, and only when there is storage.
+    init(storage: LogStorage,
+         cryptoService: any LoggerCryptoServicing,
+         configuration: LogrConfiguration,
+         analyser: (any Sendable)?,
+         retrySignals: AsyncStream<Void>?) {
         self.configuration = configuration
-        self.cryptoService = cryptoService
         _analyser = analyser
         commonLoggers = Self.makeCommonLoggers(subsystem: configuration.subsystem)
-        writer = if let storage {
-            LogWriterActor(storage: storage, cryptoService: cryptoService, configuration: configuration)
+        if case .memoryOnly = storage {
+            writer = nil
+            _persistenceStatus = .disabled
         } else {
-            nil
+            writer = LogWriterActor(storage: storage, cryptoService: cryptoService, configuration: configuration,
+                                    retrySignals: retrySignals ?? LogWriterActor.protectedDataAvailableSignals())
+            _persistenceStatus = .opening
         }
         setup()
     }
 
-    public convenience init(storage: (any LogRPersistence)? = nil,
-                            cryptoService: any LoggerCryptoServicing,
+    /// Creates a logger. Never throws: storage opens in the background, see ``persistenceStatus``.
+    ///
+    /// - Parameters:
+    ///   - storage: Where entries persist. Defaults to ``LogStorage/memoryOnly``.
+    ///   - cryptoService: Encrypts entries before they reach storage. Defaults to a ``LoggerCryptoService``
+    ///     with its key in the Keychain.
+    ///   - configuration: Retention, levels, verbosity and OSLog mirroring.
+    public convenience init(storage: LogStorage = .memoryOnly,
+                            cryptoService: any LoggerCryptoServicing = LoggerCryptoService(),
                             configuration: LogrConfiguration = .default) {
-        self.init(storage: storage, cryptoService: cryptoService, configuration: configuration, analyser: nil)
+        self.init(storage: storage, cryptoService: cryptoService, configuration: configuration, analyser: nil,
+                  retrySignals: nil)
     }
 
-    public convenience init(storage: (any LogRPersistence)? = nil,
-                            configuration: LogrConfiguration = .default) throws {
-        let crypto = try LoggerCryptoService()
-        self.init(storage: storage, cryptoService: crypto, configuration: configuration, analyser: nil)
-    }
-
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    public convenience init(storage: (any LogRPersistence)? = nil,
+    /// Creates a logger that can analyse its entries. Never throws: storage opens in the background, see
+    /// ``persistenceStatus``.
+    ///
+    /// - Parameters:
+    ///   - storage: Where entries persist. Defaults to ``LogStorage/memoryOnly``.
+    ///   - logAnalyser: Runs ``scanForPrivacyIssues()`` and ``summarizeIssues()``. Defaults to the on-device
+    ///     ``AIAnalyzer``.
+    ///   - cryptoService: Encrypts entries before they reach storage. Defaults to a ``LoggerCryptoService``
+    ///     with its key in the Keychain.
+    ///   - configuration: Retention, levels, verbosity and OSLog mirroring.
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+    public convenience init(storage: LogStorage = .memoryOnly,
                             logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
-                            cryptoService: any LoggerCryptoServicing,
+                            cryptoService: any LoggerCryptoServicing = LoggerCryptoService(),
                             configuration: LogrConfiguration = .default) {
         self.init(storage: storage, cryptoService: cryptoService, configuration: configuration,
-                  analyser: logAnalyser)
-    }
-
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
-    public convenience init(storage: (any LogRPersistence)? = nil,
-                            logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
-                            configuration: LogrConfiguration = .default) throws {
-        let crypto = try LoggerCryptoService()
-        self.init(storage: storage, cryptoService: crypto, configuration: configuration, analyser: logAnalyser)
+                  analyser: logAnalyser, retrySignals: nil)
     }
 
     deinit {
@@ -183,36 +215,35 @@ public final class LogR: LogRService {
         writer?.shutdown()
     }
 
-    public nonisolated func log(level: LogLevel,
-                                message: @autoclosure () -> String,
-                                category: LogCategory,
-                                file: String = #file,
-                                function: String = #function,
-                                line: Int = #line,
-                                metadata: [String: LogMetadataValue]? = nil) {
+    public nonisolated func record(level: LogLevel,
+                                   message: @autoclosure () -> LogMessage,
+                                   category: LogCategory,
+                                   file: String,
+                                   function: String,
+                                   line: Int,
+                                   metadata: @autoclosure () -> [String: LogMetadataValue]?) {
         guard shouldLog(level: level, category: category) else { return }
 
         let message = message()
+        let hashKey = message.redactions.contains { $0.kind == .hashed } ? privacyHashKey() : nil
+        let stored = message.rendered(keepingPrivateValues: configuration.storesPrivateValues, hashKey: hashKey)
 
         let entry = LogEntry(level: level,
                              category: category,
                              subsystem: configuration.subsystem,
-                             message: message,
+                             message: stored.text,
                              file: file,
                              function: function,
                              line: line,
-                             metadata: metadata)
+                             metadata: metadata(),
+                             privateRanges: stored.privateRanges)
 
         if configuration.mirrorToOSLog {
-            let categoryLogger = logger(for: category)
-            if configuration.logVerbosity == .verbose {
-                let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
-                // Source locations are not sensitive, so they are public; the message stays private.
-                categoryLogger.log(level: level.osLogType,
-                                   "\(message) (\(fileName, privacy: .public):\(line) \(function, privacy: .public))")
-            } else {
-                categoryLogger.log(level: level.osLogType, "\(message)")
-            }
+            let redacted = configuration.storesPrivateValues
+                ? message.rendered(keepingPrivateValues: false, hashKey: hashKey).text
+                : stored.text
+            mirror(message, redacted: redacted, level: level, category: category, file: file, function: function,
+                   line: line)
         }
 
         // Append synchronously under the lock so every reader — including reads made through the
@@ -306,7 +337,7 @@ public extension LogR {
 
 // MARK: - Logs analyzer
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public extension LogR {
     @MainActor
     func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
@@ -314,7 +345,7 @@ public extension LogR {
             throw AIAnalyzerError.missingAnalyzer
         }
 
-        // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/toArray below.
+        // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/Array below.
         let snapshot = recentLogs
 
         // Reset progress at start; clear it however the analysis ends, including when it throws.
@@ -324,7 +355,7 @@ public extension LogR {
         let result: PrivacyAnalysisResult = if snapshot.isEmpty {
             PrivacyAnalysisResult.empty
         } else {
-            try await analyser.scanForPrivacyIssues(logs: snapshot.toArray) { [weak self] progress in
+            try await analyser.scanForPrivacyIssues(logs: Array(snapshot)) { [weak self] progress in
                 self?._analysisProgress = progress
             }
         }
@@ -339,7 +370,7 @@ public extension LogR {
             throw AIAnalyzerError.missingAnalyzer
         }
 
-        // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/toArray below.
+        // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/Array below.
         let snapshot = recentLogs
 
         // Reset progress at start; clear it however the analysis ends, including when it throws.
@@ -349,7 +380,7 @@ public extension LogR {
         let result: LogIssueSummary = if snapshot.isEmpty {
             LogIssueSummary.empty
         } else {
-            try await analyser.summarizeIssues(logs: snapshot.toArray) { [weak self] progress in
+            try await analyser.summarizeIssues(logs: Array(snapshot)) { [weak self] progress in
                 self?._analysisProgress = progress
             }
         }
@@ -362,6 +393,16 @@ public extension LogR {
 // MARK: - Cleanup helpers
 
 extension LogR {
+    /// One cleanup pass, as the timer runs it: trims expired entries from memory and asks the writer to delete
+    /// expired entries and those beyond `maxLogEntries` from storage.
+    @MainActor
+    func performCleanup() {
+        let cutoffDate = Date().addingTimeInterval(-configuration.maxLogAge)
+        cache.withLock { Self.trimExpiredEntries(&$0.entries, olderThan: cutoffDate) }
+        notifyObservers()
+        writer?.cleanup(olderThan: cutoffDate, keepingLatest: configuration.maxLogEntries)
+    }
+
     /// Removes entries older than `cutoff` from a newest-first deque.
     ///
     /// The cache is maintained newest-first, so expired entries always form a
@@ -399,16 +440,41 @@ private extension LogR {
         cache.withLock { $0.entries.reserveCapacity(configuration.maxLogEntries) }
 
         startCleanupTimer()
-        if let writer {
-            Task { [weak self] in
-                await writer.setOnDrop { [weak self] count in
-                    Task { @MainActor in self?.droppedLogCount += count }
+        guard let writer else { return }
+        Task { [weak self] in
+            await writer.setOnDrop { [weak self] count in
+                guard let self else { return }
+                let isFirst = unpublishedDrops.withLock { unpublished -> Bool in
+                    defer { unpublished += count }
+                    return unpublished == 0
                 }
+                guard isFirst else { return }
+                Task { @MainActor [weak self] in self?.publishDrops() }
+            }
+            await writer.setOnStatus { [weak self] status in
+                self?.reportedStatus.withLock { $0 = status }
+                Task { @MainActor in self?.publishReportedStatus() }
             }
         }
-        Task {
-            await loadRecentLogs()
+        Task { [weak self] in
+            let history = await writer.persistedHistory()
+            await self?.mergeHistory(history)
         }
+    }
+
+    @MainActor
+    func publishDrops() {
+        droppedLogCount += unpublishedDrops.withLock { unpublished -> Int in
+            defer { unpublished = 0 }
+            return unpublished
+        }
+    }
+
+    @MainActor
+    func publishReportedStatus() {
+        let status = reportedStatus.value
+        guard status != persistenceStatus else { return }
+        persistenceStatus = status
     }
 
     /// Builds the immutable logger map for the common categories once, off the hot path.
@@ -432,32 +498,47 @@ private extension LogR {
             }
     }
 
+    /// The hash key from the crypto service once the writer could read it; until then `nil`, so hashed values
+    /// render as `<private>`.
+    nonisolated func privacyHashKey() -> SymmetricKey? {
+        guard let writer else { return Self.processHashKey }
+        return writer.privacyHashKey.value
+    }
+
+    /// `OSLogMessage` cannot be built at run time and takes its privacy statically, so the message goes
+    /// out through fixed templates: the redacted text as public, the values that are not public after it as
+    /// private, so they show when private data is enabled or a debugger is attached.
+    nonisolated func mirror(_ message: LogMessage, redacted: String, level: LogLevel, category: LogCategory,
+                            file: String, function: String, line: Int) {
+        let osLogger = logger(for: category)
+        let type = level.osLogType
+        let privateValues = message.joinedPrivateValues
+        guard configuration.logVerbosity == .verbose else {
+            if privateValues.isEmpty {
+                osLogger.log(level: type, "\(redacted, privacy: .public)")
+            } else {
+                osLogger.log(level: type, "\(redacted, privacy: .public) \(privateValues, privacy: .private)")
+            }
+            return
+        }
+        let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
+        if privateValues.isEmpty {
+            osLogger.log(level: type, """
+            \(redacted, privacy: .public) (\(fileName, privacy: .public):\(line) \(function, privacy: .public))
+            """)
+        } else {
+            osLogger.log(level: type, """
+            \(redacted, privacy: .public) \(privateValues, privacy: .private) \
+            (\(fileName, privacy: .public):\(line) \(function, privacy: .public))
+            """)
+        }
+    }
+
     /// Returns the cached logger for a common category, or creates one on demand for uncommon /
     /// custom categories. `nonisolated` and lock-free: `commonLoggers` is immutable and `Logger`
     /// is a cheap, `Sendable` handle.
     nonisolated func logger(for category: LogCategory) -> Logger {
         commonLoggers[category] ?? Logger(subsystem: configuration.subsystem, category: category.rawValue)
-    }
-
-    @MainActor
-    func performCleanup() {
-        let cutoffDate = Date().addingTimeInterval(-configuration.maxLogAge)
-        cache.withLock { Self.trimExpiredEntries(&$0.entries, olderThan: cutoffDate) }
-        notifyObservers()
-        guard cleanupTask == nil else { return }
-        cleanupTask = Task {
-            defer { cleanupTask = nil }
-            do {
-                try await storage?.deleteEntries(olderThan: cutoffDate)
-
-                let currentCount = try await storage?.count() ?? 0
-                if currentCount > configuration.maxLogEntries {
-                    try await storage?.deleteEntries(keepingLatest: configuration.maxLogEntries)
-                }
-            } catch {
-                logger(for: .system).error("Cleanup failed: \(error.localizedDescription)")
-            }
-        }
     }
 
     nonisolated func stopTimer() {
@@ -478,116 +559,152 @@ private extension LogR {
 // MARK: - Local storage
 
 private extension LogR {
-    private func loadRecentLogs() async {
-        do {
-            // Load at most as many entries as the in-memory cache holds, rather than the
-            // entire persisted history.
-            guard let encryptedLogs = try await storage?.fetchEntries(limit: configuration.maxLogEntries)
-            else { return }
-            var logs: [LogEntry] = []
-            var decryptionFailures = 0
-            for encrypted in encryptedLogs {
-                do {
-                    let entry: LogEntry = try cryptoService.symmetricDecrypt(encryptedData: encrypted.data)
-                    logs.append(entry)
-                } catch {
-                    decryptionFailures += 1
-                }
-            }
-            if decryptionFailures > 0 {
-                logger(for: .encryption)
-                    .warning("Failed to decrypt \(decryptionFailures) of \(encryptedLogs.count) log entries")
-            }
-            let loaded = logs
-            let didMerge = cache.withLock { state -> Bool in
-                // Merge persisted history only if no `clearLogs()` has run since init. `generation`
-                // starts at 0 and is bumped only by `clearLogs()`; checking it here (under the same
-                // lock as the wipe) closes the race where the load sampled generation *after* a clear
-                // bumped it but *before* the clear wiped storage — which resurrected cleared entries.
-                guard state.generation == 0 else { return false }
-                Self.mergeLoaded(loaded, into: &state.entries, cap: configuration.maxLogEntries)
-                return true
-            }
-            if didMerge {
-                await MainActor.run { notifyObservers() }
-            }
-        } catch {
-            logger(for: .system).error("Failed to load recent logs: \(error.localizedDescription)")
+    /// Merges the history the writer read when storage opened, which may be long after launch.
+    func mergeHistory(_ history: [LogEntry]) async {
+        guard !history.isEmpty else { return }
+        let didMerge = cache.withLock { state -> Bool in
+            // Merge persisted history only if no `clearLogs()` has run since init. `generation`
+            // starts at 0 and is bumped only by `clearLogs()`; checking it here (under the same
+            // lock as the wipe) keeps a load that finishes after a clear from resurrecting entries.
+            guard state.generation == 0 else { return false }
+            Self.mergeLoaded(history, into: &state.entries, cap: configuration.maxLogEntries)
+            return true
+        }
+        if didMerge {
+            await MainActor.run { notifyObservers() }
         }
     }
 }
 
 // MARK: - Background Writer Actor
 
-/// Background actor that encrypts and persists log entries.
+/// Background actor that opens the storage, then encrypts and persists log entries.
 ///
-/// Plaintext entries are handed in synchronously via ``ingest(_:)`` and delivered to a
-/// single consumer over an `AsyncStream`. The consumer encrypts each entry off the main
-/// actor, accumulates a batch, and writes it to storage with retry-on-failure. Using one
-/// ordered consumer means the caller never spawns a per-log task, nothing accumulates on
-/// the main actor, and entries are persisted in the order they were logged.
+/// Plaintext entries are handed in synchronously via ``ingest(_:)`` and delivered to a single consumer over an
+/// `AsyncStream`, so callers never spawn a per-log task and entries are persisted in the order they were logged.
+/// The consumer first opens the storage, reads the persisted history and checks that the encryption key can be
+/// read. Until all three succeed, entries wait as plaintext in `pending`; a failed attempt is retried every
+/// `retryInterval` and whenever `retrySignals` fires (protected data becoming available).
 ///
 /// ## Backpressure
 ///
-/// The number of entries buffered between ``ingest(_:)`` and the consumer is capped at
-/// `maxPendingWrites`. If storage falls behind under a sustained burst, the *newest* entries
-/// are shed (the oldest — likely the cause being diagnosed — are kept) and counted, rather
-/// than letting the buffer grow without bound. Shed counts are reported through the same
-/// `onDrop` callback as encryption/retry failures. The cap is applied only to entries:
-/// `flush`/`shutdown` control signals are never dropped, so `flush()` can never hang.
+/// Entries accepted by ``ingest(_:)`` and not yet encrypted, whether still in the stream or waiting in `pending`,
+/// are capped at `maxPendingWrites`. Past it the *newest* entries are shed (the oldest, likely the cause being
+/// diagnosed, are kept) and counted. Shed counts are reported through the same `onDrop` callback as
+/// encryption/retry failures. Only entries count: control signals are never dropped, so `flush()` cannot hang.
 actor LogWriterActor {
     /// Events delivered to the single consumer.
     private enum Event {
         case entry(LogEntry)
         case deadline(UUID)
+        case retry
         case flush(CheckedContinuation<Void, Never>)
         /// Discards any not-yet-persisted entries buffered ahead of this signal and clears storage.
         /// Routed through the same stream as `entry`, so it is ordered *after* every entry ingested
         /// before the `clear()` call (those are dropped) and *before* any ingested after it.
         case clear(CheckedContinuation<Void, any Error>)
+        case history(CheckedContinuation<[LogEntry], Never>)
+        case cleanup(olderThan: Date, keepingLatest: Int)
+        /// Entries were shed; while nothing is written, no entry reaches the consumer to report them.
+        case reportDrops
     }
 
     /// Mutex-guarded backpressure state, shared between the nonisolated `ingest` producer and the
-    /// actor-isolated consumer. `inFlight` counts entries yielded but not yet consumed; `pendingDrops`
-    /// accumulates shed entries until the consumer can report them via `onDrop`.
+    /// actor-isolated consumer. `inFlight` counts entries accepted but not yet encrypted, dropped or cleared;
+    /// `pendingDrops` accumulates shed entries until the consumer can report them via `onDrop`.
+    /// `reportQueued` keeps at most one ``Event/reportDrops`` in the stream, so shedding never grows it.
     private struct Backlog {
         var inFlight = 0
         var pendingDrops = 0
+        var reportQueued = false
     }
 
-    private let storage: any LogRPersistence
+    private let storageOption: LogStorage
     private let cryptoService: any LoggerCryptoServicing
     private let logger: Logger
+    private let historyLimit: Int
     private let batchSize: Int
     private let maxRetries: Int
     private let maxPendingWrites: Int
     private let partialBatchDeadline: Duration
+    private let retryInterval: Duration
     private let continuation: AsyncStream<Event>.Continuation
     /// `let` of a `Sendable` type, so the nonisolated producer can touch it without hopping actors.
     private let backlog: SafeMutex<Backlog> = .init(Backlog())
+    /// A cleanup pass is waiting or running; later requests are skipped until it ends, so passes slower than the
+    /// cleanup timer cannot pile up ahead of writes.
+    private let cleanupQueued = SafeMutex(false)
+    private let retrySignalForwarding: Task<Void, Never>
+    /// Read by ``LogR`` on its logging path; set once the key can be read.
+    let privacyHashKey = SafeMutex<SymmetricKey?>(nil)
+    /// The crypto service answered: with a key, or with `nil` or an error other than the locked Keychain.
+    private var isPrivacyHashKeyResolved = false
+
+    private var storage: (any LogRPersistence)?
+    /// The persisted entries, read once when storage opens and kept until ``persistedHistory()`` takes them.
+    private var history: [LogEntry]?
+    private var historyWaiters: [CheckedContinuation<[LogEntry], Never>] = []
+    /// A clear that arrived before storage could be opened; done as soon as it is.
+    private var clearOnOpen = false
+    /// Storage is open, history read, and the key could be read at the last attempt.
+    private var isWriting = false
+    /// Entries not encrypted yet, oldest first.
+    private var pending = Deque<LogEntry>()
+    private var batch: [EncryptedLogEntry] = []
+    private var status = PersistenceStatus.opening
+    private var onStatus: (@Sendable (PersistenceStatus) -> Void)?
     private var onDrop: (@Sendable (Int) -> Void)?
     /// Drops counted while no `onDrop` handler was registered yet; delivered by ``setOnDrop(_:)``.
     private var undeliveredDrops = 0
     private var flushTask: Task<Void, Never>?
     private var flushDeadline: UUID?
+    private var retryTask: Task<Void, Never>?
 
-    init(storage: any LogRPersistence,
+    init(storage: LogStorage,
          cryptoService: any LoggerCryptoServicing,
          configuration: LogrConfiguration,
          batchSize: Int = 50,
          maxRetries: Int = 3,
          maxPendingWrites: Int = 100_000,
-         partialBatchDeadline: Duration = .seconds(1)) {
-        self.storage = storage
+         partialBatchDeadline: Duration = .seconds(1),
+         retryInterval: Duration = .seconds(30),
+         retrySignals: AsyncStream<Void> = LogWriterActor.protectedDataAvailableSignals()) {
+        storageOption = storage
         self.cryptoService = cryptoService
+        historyLimit = configuration.maxLogEntries
         self.batchSize = batchSize
         self.maxRetries = maxRetries
         self.maxPendingWrites = max(1, maxPendingWrites)
         self.partialBatchDeadline = partialBatchDeadline
+        self.retryInterval = retryInterval
         logger = Logger(subsystem: configuration.subsystem, category: LogCategory.persistence.rawValue)
         let (stream, continuation) = AsyncStream<Event>.makeStream()
         self.continuation = continuation
+        retrySignalForwarding = Task {
+            for await _ in retrySignals {
+                continuation.yield(.retry)
+            }
+        }
         Task { await self.consume(stream) }
+    }
+
+    /// `UIApplication.protectedDataDidBecomeAvailableNotification` where UIKit has it. watchOS and macOS have no
+    /// such notification and rely on the retry timer alone.
+    static func protectedDataAvailableSignals() -> AsyncStream<Void> {
+        #if canImport(UIKit) && !os(watchOS)
+        AsyncStream { continuation in
+            // Only the notification name: `UIApplication.shared` is unavailable in app extensions.
+            let name = UIApplication.protectedDataDidBecomeAvailableNotification
+            let task = Task {
+                for await _ in NotificationCenter.default.notifications(named: name) {
+                    continuation.yield()
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+        #else
+        AsyncStream { $0.finish() }
+        #endif
     }
 
     /// Registers a callback invoked with the number of entries dropped (encryption failures, a
@@ -598,24 +715,33 @@ actor LogWriterActor {
         reportBackpressureDrops(consumedInFlight: 0)
     }
 
+    /// Registers a callback for persistence status changes; it is called at once with the current status.
+    func setOnStatus(_ handler: @escaping @Sendable (PersistenceStatus) -> Void) {
+        onStatus = handler
+        handler(status)
+    }
+
     /// Hands a plaintext entry to the writer. Synchronous and non-isolated so the main
     /// actor's logging hot path neither awaits nor spawns a task. Sheds the entry (and counts
     /// it) when the pending buffer is already at `maxPendingWrites`, so memory stays bounded.
     nonisolated func ingest(_ entry: LogEntry) {
         let cap = maxPendingWrites
-        let accepted = backlog.withLock { state -> Bool in
+        let event = backlog.withLock { state -> Event? in
             guard state.inFlight < cap else {
                 state.pendingDrops += 1
-                return false
+                guard !state.reportQueued else { return nil }
+                state.reportQueued = true
+                return .reportDrops
             }
             state.inFlight += 1
-            return true
+            return .entry(entry)
         }
-        guard accepted else { return }
-        continuation.yield(.entry(entry))
+        guard let event else { return }
+        continuation.yield(event)
     }
 
-    /// Suspends until every entry enqueued before this call has been persisted.
+    /// Suspends until every entry enqueued before this call has been persisted, or is waiting in memory because
+    /// the storage or the key cannot be read yet.
     nonisolated func flush() async {
         await withCheckedContinuation { awaiter in
             // If the stream has already finished (post-`shutdown()`), `yield` returns `.terminated`
@@ -629,7 +755,8 @@ actor LogWriterActor {
 
     /// Discards any buffered-but-unpersisted entries enqueued before this call and clears storage,
     /// then suspends until that completes. Ordered through the stream so it never races with the
-    /// consumer's in-flight writes. Throws if the underlying `storage.clear()` fails.
+    /// consumer's in-flight writes. Throws if the underlying `storage.clear()` fails. When storage is not open
+    /// yet, returns at once and clears it as soon as it opens.
     nonisolated func clearPending() async throws {
         try await withCheckedThrowingContinuation { (awaiter: CheckedContinuation<Void, Error>) in
             // Stream already finished (post-`shutdown()`): nothing left to persist or clear.
@@ -639,53 +766,264 @@ actor LogWriterActor {
         }
     }
 
-    /// Ends the stream so the consumer drains its buffer and exits. Best-effort.
+    /// The entries storage held when it opened (at most `maxLogEntries`, oldest first), once the writer has read
+    /// them; empty when the writer shuts down first or after a clear. Meant to be called once.
+    nonisolated func persistedHistory() async -> [LogEntry] {
+        await withCheckedContinuation { awaiter in
+            if case .terminated = continuation.yield(.history(awaiter)) {
+                awaiter.resume(returning: [])
+            }
+        }
+    }
+
+    /// Deletes stored entries older than `cutoff`, then the oldest beyond `count`. Skipped while storage is not
+    /// open, and while an earlier pass has not ended.
+    nonisolated func cleanup(olderThan cutoff: Date, keepingLatest count: Int) {
+        let isQueued = cleanupQueued.withLock { queued -> Bool in
+            defer { queued = true }
+            return queued
+        }
+        guard !isQueued else { return }
+        continuation.yield(.cleanup(olderThan: cutoff, keepingLatest: count))
+    }
+
+    /// Ends the stream so the consumer drains its buffer and exits. Best-effort: entries still waiting for
+    /// the storage or the key are lost.
     nonisolated func shutdown() {
+        retrySignalForwarding.cancel()
         continuation.finish()
     }
 }
 
 private extension LogWriterActor {
     private func consume(_ stream: AsyncStream<Event>) async {
-        defer { cancelDeadline() }
-        var batch: [EncryptedLogEntry] = []
-        batch.reserveCapacity(batchSize)
+        await open()
         for await event in stream {
             switch event {
             case let .entry(entry):
-                reportBackpressureDrops(consumedInFlight: 1)
-                if let encrypted = encrypt(entry) {
-                    batch.append(encrypted)
-                    if batch.count >= batchSize {
-                        await store(&batch)
-                    } else if flushTask == nil {
-                        scheduleDeadline()
-                    }
-                }
+                pending.append(entry)
+                await drain()
             case let .deadline(id):
                 guard flushDeadline == id else { continue }
-                await store(&batch)
+                await store()
+            case .retry:
+                retryTask?.cancel()
+                retryTask = nil
+                guard !isWriting else { continue }
+                await open()
             case let .flush(awaiter):
                 reportBackpressureDrops(consumedInFlight: 0)
-                await store(&batch)
+                await store()
                 awaiter.resume()
             case let .clear(awaiter):
-                cancelDeadline()
+                await clear(awaiter)
+            case let .history(awaiter):
+                historyWaiters.append(awaiter)
+                deliverHistory()
+            case let .cleanup(cutoff, count):
+                await deleteExpiredEntries(olderThan: cutoff, keepingLatest: count)
+                cleanupQueued.withLock { $0 = false }
+            case .reportDrops:
+                backlog.withLock { $0.reportQueued = false }
                 reportBackpressureDrops(consumedInFlight: 0)
-                // Drop entries logged before the clear that haven't been persisted yet, then wipe
-                // storage. Entries delivered *after* this event survive (they were ingested after
-                // the caller asked to clear).
-                batch.removeAll(keepingCapacity: true)
-                do {
-                    try await storage.clear()
-                    awaiter.resume()
-                } catch {
-                    awaiter.resume(throwing: error)
-                }
             }
         }
         // Stream finished (shutdown): persist whatever is still buffered.
-        await store(&batch)
+        await store()
+        history = history ?? []
+        deliverHistory()
+        cancelDeadline()
+        retryTask?.cancel()
+    }
+
+    /// Opens the storage and applies a pending clear, which need no key; then checks the key, reads the history
+    /// once, and encrypts what waits in `pending`. On failure, reports why and tries again later.
+    func open() async {
+        resolvePrivacyHashKey()
+        do {
+            guard let storage = try openStorage() else { return }
+            if clearOnOpen {
+                try await storage.clear()
+                clearOnOpen = false
+            }
+            try checkKey()
+            // The Keychain may have unlocked since the attempt above.
+            resolvePrivacyHashKey()
+            if history == nil {
+                history = try await readHistory(from: storage)
+                deliverHistory()
+            }
+            isWriting = true
+            setStatus(.active)
+            await drain()
+        } catch LoggerCryptoError.keyTemporarilyUnavailable {
+            waitForRetry(.waitingForProtectedData)
+        } catch {
+            logger.error("Could not open log storage: \(String(describing: error))")
+            waitForRetry(.failed(String(describing: error)))
+        }
+    }
+
+    /// Opens the storage the first time. When that fails while the key is locked too, the lock is what says
+    /// why: before the first unlock, protected files cannot be opened either.
+    func openStorage() throws -> (any LogRPersistence)? {
+        if let storage {
+            return storage
+        }
+        do {
+            storage = try storageOption.open()
+            return storage
+        } catch {
+            try checkKey()
+            throw error
+        }
+    }
+
+    /// Hands the history, once read, to everyone waiting for it, then lets it go.
+    func deliverHistory() {
+        guard let history, !historyWaiters.isEmpty else { return }
+        for waiter in historyWaiters {
+            waiter.resume(returning: history)
+        }
+        historyWaiters.removeAll()
+        self.history = []
+    }
+
+    /// Independent of storage, so hashing starts once the key can be read even while storage cannot open. A
+    /// service without a hash key, or whose key fails for another reason, leaves hashed values as `<private>`.
+    func resolvePrivacyHashKey() {
+        guard !isPrivacyHashKeyResolved else { return }
+        let key: SymmetricKey?
+        do {
+            key = try cryptoService.privacyHashKey()
+        } catch LoggerCryptoError.keyTemporarilyUnavailable {
+            return
+        } catch {
+            key = nil
+        }
+        isPrivacyHashKeyResolved = true
+        privacyHashKey.withLock { $0 = key }
+    }
+
+    /// Throws only ``LoggerCryptoError/keyTemporarilyUnavailable``: other encryption failures surface per entry,
+    /// which drops it and reports the status.
+    func checkKey() throws {
+        do {
+            _ = try cryptoService.symmetricEncrypt(object: true)
+        } catch LoggerCryptoError.keyTemporarilyUnavailable {
+            throw LoggerCryptoError.keyTemporarilyUnavailable
+        } catch {}
+    }
+
+    /// Throws only ``LoggerCryptoError/keyTemporarilyUnavailable``. A storage that cannot be read back still
+    /// gets written to, with no history, as in Logr 1.x.
+    func readHistory(from storage: any LogRPersistence) async throws -> [LogEntry] {
+        let encrypted: [EncryptedLogEntry]
+        do {
+            encrypted = try await storage.fetchEntries(limit: historyLimit)
+        } catch {
+            logger.error("Could not read stored log entries: \(String(describing: error))")
+            return []
+        }
+        var entries: [LogEntry] = []
+        var decryptionFailures = 0
+        for item in encrypted {
+            do {
+                try entries.append(cryptoService.symmetricDecrypt(encryptedData: item.data))
+            } catch LoggerCryptoError.keyTemporarilyUnavailable {
+                throw LoggerCryptoError.keyTemporarilyUnavailable
+            } catch {
+                decryptionFailures += 1
+            }
+        }
+        if decryptionFailures > 0 {
+            logger.warning("Failed to decrypt \(decryptionFailures) of \(encrypted.count) log entries")
+        }
+        return entries
+    }
+
+    /// Encrypts waiting entries into the batch, storing each full batch. Stops when the key cannot be read.
+    func drain() async {
+        guard isWriting else { return }
+        while let entry = pending.first {
+            let data: Data
+            do {
+                data = try cryptoService.symmetricEncrypt(object: entry)
+            } catch LoggerCryptoError.keyTemporarilyUnavailable {
+                waitForRetry(.waitingForProtectedData)
+                return
+            } catch {
+                pending.removeFirst()
+                reportBackpressureDrops(consumedInFlight: 1)
+                logger.error("Failed to encrypt log entry: \(error.localizedDescription)")
+                setStatus(.failed(String(describing: error)))
+                reportDrops(1)
+                continue
+            }
+            pending.removeFirst()
+            reportBackpressureDrops(consumedInFlight: 1)
+            batch.append(EncryptedLogEntry(id: entry.id, timestamp: entry.timestamp, data: data))
+            if batch.count >= batchSize {
+                await store()
+            } else if flushTask == nil {
+                scheduleDeadline()
+            }
+        }
+    }
+
+    func waitForRetry(_ reason: PersistenceStatus) {
+        isWriting = false
+        setStatus(reason)
+        guard retryTask == nil else { return }
+        let continuation = continuation
+        let interval = retryInterval
+        retryTask = Task { @concurrent in
+            do { try await Task.sleep(for: interval) } catch { return }
+            continuation.yield(.retry)
+        }
+    }
+
+    func setStatus(_ newStatus: PersistenceStatus) {
+        guard newStatus != status else { return }
+        status = newStatus
+        logger.log("Persistence status: \(String(describing: newStatus))")
+        onStatus?(newStatus)
+    }
+
+    func clear(_ awaiter: CheckedContinuation<Void, any Error>) async {
+        cancelDeadline()
+        reportBackpressureDrops(consumedInFlight: pending.count)
+        // Drop entries logged before the clear that haven't been persisted yet, then wipe
+        // storage. Entries delivered *after* this event survive (they were ingested after
+        // the caller asked to clear).
+        pending.removeAll()
+        batch.removeAll(keepingCapacity: true)
+        if history != nil {
+            history = []
+        }
+        guard let storage else {
+            clearOnOpen = true
+            awaiter.resume()
+            return
+        }
+        do {
+            try await storage.clear()
+            awaiter.resume()
+        } catch {
+            awaiter.resume(throwing: error)
+        }
+    }
+
+    func deleteExpiredEntries(olderThan cutoff: Date, keepingLatest count: Int) async {
+        guard let storage else { return }
+        do {
+            try await storage.deleteEntries(olderThan: cutoff)
+            if try await storage.count() > count {
+                try await storage.deleteEntries(keepingLatest: count)
+            }
+        } catch {
+            logger.error("Cleanup failed: \(error.localizedDescription)")
+        }
     }
 
     func scheduleDeadline() {
@@ -706,7 +1044,7 @@ private extension LogWriterActor {
         flushDeadline = nil
     }
 
-    /// Decrements the in-flight count for the entry just consumed and forwards any entries shed
+    /// Decrements the in-flight count for entries that left the plaintext stage and forwards any entries shed
     /// under backpressure since the last report to `onDrop`, so callers can surface the loss.
     func reportBackpressureDrops(consumedInFlight: Int) {
         let dropped = backlog.withLock { state -> Int in
@@ -729,29 +1067,22 @@ private extension LogWriterActor {
         undeliveredDrops = 0
     }
 
-    func encrypt(_ entry: LogEntry) -> EncryptedLogEntry? {
-        do {
-            let data = try cryptoService.symmetricEncrypt(object: entry)
-            return EncryptedLogEntry(id: entry.id, timestamp: entry.timestamp, data: data)
-        } catch {
-            logger.error("Failed to encrypt log entry: \(error.localizedDescription)")
-            reportDrops(1)
-            return nil
-        }
-    }
-
-    /// Stores `batch`, retrying with linear backoff. Entries are cleared only after a
+    /// Stores the batch, retrying with linear backoff. Entries are cleared only after a
     /// successful write, so a transient failure never loses data. After `maxRetries`
     /// failures the batch is dropped (and reported via `onDrop`) so the loop can't stall.
-    func store(_ batch: inout [EncryptedLogEntry]) async {
+    func store() async {
         cancelDeadline()
-        guard !batch.isEmpty else { return }
+        guard !batch.isEmpty, let storage else { return }
         let toStore = batch
         var attempt = 0
         while true {
             do {
                 try await storage.store(toStore)
                 batch.removeAll(keepingCapacity: true)
+                // Entries encrypted before the key became unreadable are written while later ones still wait.
+                if isWriting {
+                    setStatus(.active)
+                }
                 return
             } catch {
                 attempt += 1
@@ -760,6 +1091,7 @@ private extension LogWriterActor {
                     Dropping \(toStore.count) log entries after \(attempt) failed store \
                     attempts: \(error.localizedDescription)
                     """)
+                    setStatus(.failed(String(describing: error)))
                     reportDrops(toStore.count)
                     batch.removeAll(keepingCapacity: true)
                     return
@@ -767,11 +1099,5 @@ private extension LogWriterActor {
                 try? await Task.sleep(for: .milliseconds(50 * attempt))
             }
         }
-    }
-}
-
-private extension Collections.Deque {
-    var toArray: [Element] {
-        Array(self)
     }
 }

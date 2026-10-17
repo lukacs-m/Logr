@@ -24,15 +24,15 @@ enum LegacyFixtures {
                                                  maxLogAge: 3 * 24 * 60 * 60,
                                                  enabledLevels: [.info, .warning, .error, .fault],
                                                  categoryLevelOverrides: [.network: .warning,
-                                                                          .custom("Checkout"): .debug],
+                                                                          LogCategory(rawValue: "Checkout"): .debug],
                                                  subsystem: "com.logr.fixtures",
                                                  cleanupInterval: 600,
                                                  logVerbosity: .normal,
                                                  coalesceWindowMillis: 250,
                                                  mirrorToOSLog: false)
 
-    private static let categories: [LogCategory] = [.system, .network, .custom("Checkout"), .database,
-                                                    .custom("Feature Flags"), .ui, .authentication]
+    private static let categories: [LogCategory] = [.system, .network, LogCategory(rawValue: "Checkout"), .database,
+                                                    LogCategory(rawValue: "Feature Flags"), .ui, .authentication]
 
     private static let metadata: [[String: LogMetadataValue]?] = [
         nil,
@@ -65,7 +65,8 @@ struct LegacyFixtureTests {
         let store = try LegacyFixtures.keychain()
         let items = store.items
 
-        let crypto = try LoggerCryptoService(store: store)
+        let crypto = LoggerCryptoService(store: store)
+        _ = try crypto.symmetricEncrypt(object: "resolves the version")
 
         #expect(crypto.currentKeyVersion.value == KeyVersion(1))
         #expect(store.items == items)
@@ -91,7 +92,7 @@ struct LegacyFixtureTests {
     func arrayFixtureLoadsNewestFirstIntoRecentLogs() async throws {
         _ = try copyFixture("legacy-array-newest-first.json")
         let storage = try FileSystemStorage(directory: directory.url, fileName: "legacy-array-newest-first.json")
-        let logger = try LogR(storage: storage, cryptoService: LoggerCryptoService(store: LegacyFixtures.keychain()),
+        let logger = try LogR(storage: .custom(storage), cryptoService: LoggerCryptoService(store: LegacyFixtures.keychain()),
                               configuration: LogrConfiguration(mirrorToOSLog: false))
 
         let loaded = await Observations { logger.recentLogs }.first { $0.count == LegacyFixtures.entries.count }
