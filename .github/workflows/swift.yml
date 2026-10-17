@@ -49,6 +49,7 @@ jobs:
           swift package generate-documentation --target Logr --warnings-as-errors
           swift package generate-documentation --target LogrUI --warnings-as-errors
           swift package generate-documentation --target LogrTesting --warnings-as-errors
+          swift package generate-documentation --target LogrSwiftLog --warnings-as-errors
 
   platforms:
     name: Build (${{ matrix.platform }})

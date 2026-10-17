@@ -54,7 +54,7 @@ public enum LogContext {
     }
 
     /// `callSite` merged over the current context, the call site winning on a key clash.
-    static func metadata(mergedWith callSite: [String: LogMetadataValue]?) -> [String: LogMetadataValue]? {
+    package static func metadata(mergedWith callSite: [String: LogMetadataValue]?) -> [String: LogMetadataValue]? {
         let context = current
         guard !context.isEmpty else { return callSite }
         return callSite.map { context.merging($0) { _, callSite in callSite } } ?? context

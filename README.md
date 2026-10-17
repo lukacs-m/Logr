@@ -10,7 +10,7 @@ encrypted at rest with Keychain-backed keys, can be browsed in a drop-in SwiftUI
 iOS 26+ can be analysed on-device by Apple Intelligence.
 
 - **Log from anywhere**: logging is `nonisolated`, no `await`, safe from any actor or thread; persistence runs on a background actor
-- **Three modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock) and `LogrTesting` (test doubles)
+- **Four modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock), `LogrSwiftLog` (swift-log handler) and `LogrTesting` (test doubles)
 - **Storage**: SQLite, an append-only NDJSON file, or your own `LogRPersistence`
 - **Encryption**: AES-256-GCM or ChaCha20-Poly1305, versioned keys with rotation
 - **Structure**: six levels, 49 predefined categories plus your own (`static let checkout: LogCategory = "checkout"`), typed metadata on every entry
@@ -29,8 +29,8 @@ dependencies: [
 ]
 ```
 
-Add `Logr` to your target, `LogrUI` if you want the SwiftUI views, and `LogrTesting` to your test
-target. In Xcode: File → Add Package Dependencies → `https://github.com/lukacs-m/logr`.
+Add `Logr` to your target, `LogrUI` if you want the SwiftUI views, `LogrSwiftLog` to bridge swift-log,
+and `LogrTesting` to your test target. In Xcode: File → Add Package Dependencies → `https://github.com/lukacs-m/logr`.
 
 ## Quick start
 
@@ -138,6 +138,20 @@ func checkout(orderID: String, logger: any LogRService) async {
 
 Nested scopes merge, and metadata passed to the call wins on a key clash. `Task.detached` does not inherit the
 context.
+
+## swift-log
+
+The `LogrSwiftLog` product records swift-log events, your dependencies' included, in a `LogR`:
+
+```swift
+let logger = LogR(storage: .sqlite())
+LoggingSystem.bootstrap { label in LogrLogHandler(label: label, logger: logger) }
+```
+
+The logger's label becomes the category, `trace` maps to `.debug` and `critical` to `.fault`; like swift-log's
+own handlers, `LogrLogHandler` drops levels below `info` unless a `Logger` lowers its `logLevel`. swift-log messages
+have no per-value privacy, so they are stored as public, with the event's `error` appended as a private value; a
+metadata value tagged `.attributed(email, attributes: [LogrSensitivity.private])` is stored as `<private>`.
 
 ## Configuration
 
@@ -251,6 +265,7 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 | `Sources/LogrUI/AIAnalysisViews/` | Privacy warnings, issue summary and progress views |
 | `Sources/LogrUI/Mock+Previews/` | `MockLogR` |
 | `Sources/LogrUI/Tools+Extensions/` | The `\.logService` environment key, `.logRService(_:)`, the no-op default logger, level and severity colours |
+| `Sources/LogrSwiftLog/` | `LogrLogHandler` (swift-log `LogHandler`), `LogrSensitivity` |
 | `Sources/LogrTesting/` | `InMemoryKeychainStore` |
 | `Tests/LogrTests/` | Swift Testing suites; `ReadmeSnippetsTests.swift` compiles every snippet in this file |
 | `LogRExample/` | Xcode sample app exercising every feature |
