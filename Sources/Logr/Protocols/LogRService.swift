@@ -5,8 +5,6 @@
 //  Created by Martin Lukacs on 16/11/2025.
 //
 
-import Collections
-import DequeModule
 import Foundation
 
 /// The main logging service protocol that defines all logging operations.
@@ -17,8 +15,8 @@ import Foundation
 /// ## Overview
 ///
 /// The service maintains an in-memory cache of recent logs and optionally persists them
-/// to storage with automatic encryption. Logging (`log(_:)` and the convenience methods)
-/// is `nonisolated`, so it can be called from any isolation domain without `await`. The
+/// to storage with automatic encryption. Logging (``log(level:message:category:file:function:line:metadata:)``
+/// and the level helpers) is `nonisolated`, so it can be called from any isolation domain without `await`. The
 /// observable state that drives SwiftUI (``recentLogs`` and friends) is `@MainActor`
 /// isolated, and the underlying cache is updated in a thread-safe way so synchronous reads
 /// remain consistent.
@@ -32,8 +30,7 @@ import Foundation
 ///
 /// @main
 /// struct MyApp: App {
-///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
-///     let logger = try! LogR()
+///     let logger = LogR(storage: .sqlite())
 ///
 ///     var body: some Scene {
 ///         WindowGroup {
@@ -60,11 +57,13 @@ import Foundation
 /// - ``recentLogs``
 /// - ``canAnalyseLogs``
 /// - ``droppedLogCount``
+/// - ``persistenceStatus``
 /// - ``privacyAnalysisResult``
 /// - ``logIssueSummary``
 ///
 /// ### Core Logging
 /// - ``log(level:message:category:file:function:line:metadata:)``
+/// - ``record(level:message:category:file:function:line:metadata:)``
 /// - ``debug(_:category:file:function:line:metadata:)``
 /// - ``info(_:category:file:function:line:metadata:)``
 /// - ``notice(_:category:file:function:line:metadata:)``
@@ -73,6 +72,7 @@ import Foundation
 /// - ``fault(_:category:file:function:line:metadata:)``
 ///
 /// ### Log Management
+/// - ``exportLogs(format:includingPrivateValues:)``
 /// - ``exportLogs(format:)``
 /// - ``clearLogs()``
 /// - ``flush()``
@@ -83,11 +83,11 @@ import Foundation
 public protocol LogRService: Observable, Sendable {
     /// Recent logs maintained in memory for quick access.
     ///
-    /// This deque holds the most recent log entries (newest first), up to the configured `maxLogEntries` limit.
+    /// The most recent log entries (newest first), up to the configured `maxLogEntries` limit.
     /// The logs are automatically updated as new entries are added and old entries are cleaned up.
     ///
     /// - Note: This is an in-memory cache. For persistent storage, configure a storage backend.
-    @MainActor var recentLogs: Deque<LogEntry> { get }
+    @MainActor var recentLogs: LogEntries { get }
 
     /// Indicates whether AI analysis features are available.
     ///
@@ -103,13 +103,21 @@ public protocol LogRService: Observable, Sendable {
     /// silent log loss in diagnostics UI.
     @MainActor var droppedLogCount: Int { get }
 
+    /// Whether entries reach persistent storage, for diagnostics UI.
+    ///
+    /// ``LogR`` reports ``PersistenceStatus/opening`` until its first attempt to open storage and read the key
+    /// ends, ``PersistenceStatus/waitingForProtectedData`` while its encryption key cannot be read before the
+    /// device's first unlock, and ``PersistenceStatus/failed(_:)`` when storage cannot be opened or written, or
+    /// entries cannot be encrypted. ``PersistenceStatus/disabled`` when no storage is configured.
+    @MainActor var persistenceStatus: PersistenceStatus { get }
+
     /// The most recent privacy analysis result (iOS 26+).
     ///
     /// Contains warnings about potential privacy issues detected in logs, along with
     /// a summary and critical/high counts.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? { get }
 
     /// The most recent AI-generated issue summary (iOS 26+).
@@ -117,8 +125,8 @@ public protocol LogRService: Observable, Sendable {
     /// Provides an intelligent summary of critical issues found in logs, including
     /// an executive summary, individual issues, patterns and priority actions.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var logIssueSummary: LogIssueSummary? { get }
 
     /// The current progress of an ongoing AI analysis operation (iOS 26+).
@@ -126,48 +134,68 @@ public protocol LogRService: Observable, Sendable {
     /// This property is updated in real-time during analysis operations and can be
     /// observed in SwiftUI views to display progress indicators.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var analysisProgress: AnalysisProgress? { get }
 
-    /// Logs a message with the specified level, category, and source information.
+    /// Records a message with the specified level, category, and source information.
     ///
-    /// This is the core logging method that all convenience methods delegate to.
-    /// The message is logged to OSLog and optionally persisted to storage with encryption.
+    /// The requirement behind ``log(level:message:category:file:function:line:metadata:)`` and the level helpers,
+    /// which fill in the call site: call those, and implement this. It is not named `log` so that a conformer
+    /// written for Logr 1.x, whose `log` took a `String`, fails to compile instead of inheriting a default; delete
+    /// that old `log`. An implementation must not call `log` or the level helpers on `self`, which come back here.
     ///
     /// - Parameters:
     ///   - level: The severity level of the log message.
-    ///   - message: The message to log. Uses `@autoclosure` for lazy evaluation.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``. Uses `@autoclosure`
+    ///     for lazy evaluation.
     ///   - category: The category for organizing and filtering logs.
-    ///   - file: The source file (automatically captured).
-    ///   - function: The function name (automatically captured).
-    ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - file: The caller's source file, as `log` and the level helpers capture it.
+    ///   - function: The caller's function name.
+    ///   - line: The caller's line number.
+    ///   - metadata: The entry's metadata: the call's merged over ``LogContext/metadata`` when it comes from `log`
+    ///     or a level helper. Evaluate it at most once and before `record` returns, since it reads the calling
+    ///     task's context; skipping it for a filtered entry saves the merge.
     ///
     /// - Note: The message is only evaluated if the log level is enabled in the configuration.
     /// - Note: `nonisolated` — callable from any isolation domain without `await`.
-    nonisolated func log(level: LogLevel,
-                         message: @autoclosure () -> String,
-                         category: LogCategory,
-                         file: String,
-                         function: String,
-                         line: Int,
-                         metadata: [String: LogMetadataValue]?)
+    nonisolated func record(level: LogLevel,
+                            message: @autoclosure () -> LogMessage,
+                            category: LogCategory,
+                            file: String,
+                            function: String,
+                            line: Int,
+                            metadata: @autoclosure () -> [String: LogMetadataValue]?)
 
     /// Exports all recent logs in the specified format.
     ///
     /// Serialization runs off the main actor; an empty cache yields empty `Data` (not an error),
-    /// while a genuine encoding failure throws.
+    /// while a genuine encoding failure throws. CSV fields that a spreadsheet would run as a formula
+    /// (starting with `=`, `+`, `-`, `@`, a tab or a carriage return) are prefixed with `'`.
     ///
-    /// - Parameter format: The export format (`.json`, `.csv`, or `.txt`).
+    /// - Parameters:
+    ///   - format: The export format (`.json`, `.csv`, or `.txt`).
+    ///   - includingPrivateValues: Keep the private values entries hold in clear (see ``LogEntry/privateRanges``).
+    ///     When `false`, each reads `<private>`, and JSON leaves out the ranges.
     /// - Returns: The exported data (empty when there are no logs).
     /// - Throws: ``LogExportError`` if encoding fails.
     ///
     /// ## Example
     /// ```swift
-    /// let jsonData = try await logger.exportLogs(format: .json)
+    /// let jsonData = try await logger.exportLogs(format: .json, includingPrivateValues: false)
     /// try jsonData.write(to: fileURL)
     /// ```
+    func exportLogs(format: ExportFormat, includingPrivateValues: Bool) async throws -> Data
+
+    /// Exports all recent logs with `<private>` in place of private values.
+    ///
+    /// The default calls ``exportLogs(format:includingPrivateValues:)``, so an override of that method must not
+    /// call this one unless it overrides both. A requirement so that a conformer written for Logr 1.x, which
+    /// implemented only this method, is still called through `any LogRService`.
+    ///
+    /// - Parameter format: The export format (`.json`, `.csv`, or `.txt`).
+    /// - Returns: The exported data (empty when there are no logs).
+    /// - Throws: ``LogExportError`` if encoding fails.
     func exportLogs(format: ExportFormat) async throws -> Data
 
     /// Computes aggregate statistics over the recent-log cache.
@@ -177,6 +205,10 @@ public protocol LogRService: Observable, Sendable {
     func logStatistics() async -> LogStatistics
 
     /// Clears all logs from both memory and persistent storage.
+    ///
+    /// ``LogR`` clears memory at once, and storage even while the encryption key cannot be read. When the storage
+    /// itself cannot be opened yet (see ``persistenceStatus``), it returns and clears the storage as soon as it
+    /// opens; entries logged before the call are never written.
     ///
     /// - Throws: Storage-related errors if the operation fails.
     ///
@@ -193,6 +225,8 @@ public protocol LogRService: Observable, Sendable {
     /// Waits for entries queued before this call to complete their persistence attempts,
     /// without waiting for the one-second partial-batch deadline. Exhausted retries and
     /// encryption failures are reported through ``droppedLogCount``; this method does not throw.
+    /// While the storage or the key cannot be read yet (see ``persistenceStatus``), it returns once those
+    /// entries are held in memory.
     ///
     /// Call before a lifecycle transition to drain pending writes.
     func flush() async
@@ -205,7 +239,7 @@ public protocol LogRService: Observable, Sendable {
     /// - Returns: A `PrivacyAnalysisResult` containing warnings, a summary and critical/high counts.
     /// - Throws: `AIAnalyzerError` if AI analysis is unavailable or fails.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
     ///
     /// ## Example
     /// ```swift
@@ -219,7 +253,7 @@ public protocol LogRService: Observable, Sendable {
     ///     }
     /// }
     /// ```
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor @discardableResult func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult
 
     /// Generates an AI-powered summary of critical issues in logs (iOS 26+).
@@ -230,7 +264,7 @@ public protocol LogRService: Observable, Sendable {
     /// - Returns: A `LogIssueSummary` with an executive summary, issues, patterns and priority actions.
     /// - Throws: `AIAnalyzerError` if AI analysis is unavailable or fails.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 12.0
+    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
     ///
     /// ## Example
     /// ```swift
@@ -244,7 +278,7 @@ public protocol LogRService: Observable, Sendable {
     ///     }
     /// }
     /// ```
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor @discardableResult func summarizeIssues() async throws -> LogIssueSummary
 }
 
@@ -258,15 +292,33 @@ public extension LogRService {
         0
     }
 
+    /// Default: ``PersistenceStatus/disabled``, for services that do not persist.
+    @MainActor var persistenceStatus: PersistenceStatus {
+        .disabled
+    }
+
+    /// Logs a message with the specified level, category, and the caller's source location.
+    ///
+    /// With ``LogR``, the message is mirrored to OSLog and, with storage, persisted encrypted, and it is only
+    /// evaluated if the level is enabled. `nonisolated`, so callable from any isolation domain without `await`.
+    ///
+    /// - Parameters:
+    ///   - level: The severity level of the log message.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
+    ///   - category: The category for organizing and filtering logs.
+    ///   - file: The source file (automatically captured).
+    ///   - function: The function name (automatically captured).
+    ///   - line: The line number (automatically captured).
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     nonisolated func log(level: LogLevel,
-                         message: @autoclosure () -> String,
+                         message: @autoclosure () -> LogMessage,
                          category: LogCategory,
-                         file: String = #file,
+                         file: String = #fileID,
                          function: String = #function,
                          line: Int = #line,
                          metadata: [String: LogMetadataValue]? = nil) {
-        log(level: level, message: message(), category: category, file: file, function: function, line: line,
-            metadata: metadata)
+        record(level: level, message: message(), category: category, file: file, function: function, line: line,
+               metadata: LogContext.metadata(mergedWith: metadata))
     }
 
     /// Returns logged entries, optionally filtered. `recentLogs` is always current (the concrete
@@ -306,10 +358,16 @@ public extension LogRService {
         return Array(filteredLogs)
     }
 
+    /// Calls ``exportLogs(format:includingPrivateValues:)`` without private values.
     func exportLogs(format: ExportFormat = .json) async throws -> Data {
+        try await exportLogs(format: format, includingPrivateValues: false)
+    }
+
+    func exportLogs(format: ExportFormat, includingPrivateValues: Bool) async throws -> Data {
         // Snapshot on the main actor (where `recentLogs` is isolated), then serialize off it.
         let snapshot = await MainActor.run { Array(recentLogs) }
-        return try await LogExporter.serialize(snapshot, format: format)
+        return try await LogExporter.serialize(snapshot, format: format,
+                                               includingPrivateValues: includingPrivateValues)
     }
 
     func logStatistics() async -> LogStatistics {
@@ -334,8 +392,10 @@ public enum LogExportError: Error, Sendable {
 /// switch here, not by touching the logging facade.
 package enum LogExporter {
     @concurrent
-    package static func serialize(_ logs: [LogEntry], format: ExportFormat) async throws -> Data {
+    package static func serialize(_ logs: [LogEntry], format: ExportFormat,
+                                  includingPrivateValues: Bool) async throws -> Data {
         guard !logs.isEmpty else { return Data() }
+        let logs = includingPrivateValues ? logs : logs.map { $0.redactingPrivateValues() }
 
         switch format {
         case .json:
@@ -346,9 +406,13 @@ package enum LogExporter {
 
         case .csv:
             let formatter = ISO8601DateFormatter()
-            // RFC 4180: every text field is quoted, with any quote inside it doubled.
+            // RFC 4180: every text field is quoted, with any quote inside it doubled. Spreadsheets still run a
+            // quoted field as a formula when it starts with one of these, so it gets a leading `'`. Scalars, not
+            // characters: "\r\n" is a single Character.
+            let formulaStarts: Set<Unicode.Scalar> = ["=", "+", "-", "@", "\t", "\r"]
             func quoted(_ field: String) -> String {
-                "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
+                let field = field.unicodeScalars.first.map(formulaStarts.contains) == true ? "'" + field : field
+                return "\"\(field.replacingOccurrences(of: "\"", with: "\"\""))\""
             }
             var rows = ["Timestamp,Level,Category,Subsystem,Message,File,Function,Line,Metadata"]
             for log in logs {
@@ -449,21 +513,21 @@ public extension LogRService {
     /// useful for debugging. These are typically disabled in production builds.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.debug`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
     /// logger.debug("Cache hit for key: \(key)", category: .cache)
     /// logger.debug("User profile loaded", category: .user, metadata: ["userId": .string("123")])
     /// ```
-    nonisolated func debug(_ message: @autoclosure () -> String,
+    nonisolated func debug(_ message: @autoclosure () -> LogMessage,
                            category: LogCategory = .debug,
-                           file: String = #file,
+                           file: String = #fileID,
                            function: String = #function,
                            line: Int = #line,
                            metadata: [String: LogMetadataValue]? = nil) {
@@ -477,21 +541,21 @@ public extension LogRService {
     /// They're useful for tracking normal app flow and significant events.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
     /// logger.info("User logged in successfully", category: .authentication, metadata: ["method": "oauth"])
     /// logger.info("Data sync completed", category: .sync)
     /// ```
-    nonisolated func info(_ message: @autoclosure () -> String,
+    nonisolated func info(_ message: @autoclosure () -> LogMessage,
                           category: LogCategory = .system,
-                          file: String = #file,
+                          file: String = #fileID,
                           function: String = #function,
                           line: Int = #line,
                           metadata: [String: LogMetadataValue]? = nil) {
@@ -505,21 +569,21 @@ public extension LogRService {
     /// These are more important than info messages but don't indicate problems.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
     /// logger.notice("Payment processed successfully", category: .payment, metadata: ["amount": .double(99.99)])
     /// logger.notice("Configuration updated", category: .configuration)
     /// ```
-    nonisolated func notice(_ message: @autoclosure () -> String,
+    nonisolated func notice(_ message: @autoclosure () -> LogMessage,
                             category: LogCategory = .system,
-                            file: String = #file,
+                            file: String = #fileID,
                             function: String = #function,
                             line: Int = #line,
                             metadata: [String: LogMetadataValue]? = nil) {
@@ -533,21 +597,21 @@ public extension LogRService {
     /// investigated. The app can continue to function normally.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
     /// logger.warning("API response slow: 3.2s", category: .network, metadata: ["endpoint": "/api/users"])
     /// logger.warning("Low memory warning received", category: .memory)
     /// ```
-    nonisolated func warning(_ message: @autoclosure () -> String,
+    nonisolated func warning(_ message: @autoclosure () -> LogMessage,
                              category: LogCategory = .system,
-                             file: String = #file,
+                             file: String = #fileID,
                              function: String = #function,
                              line: Int = #line,
                              metadata: [String: LogMetadataValue]? = nil) {
@@ -561,21 +625,21 @@ public extension LogRService {
     /// from completing, but don't halt the entire app. These should be investigated.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
     /// logger.error("Failed to load user data: \(error)", category: .database, metadata: ["errorCode": .int(500)])
     /// logger.error("Network request failed", category: .network)
     /// ```
-    nonisolated func error(_ message: @autoclosure () -> String,
+    nonisolated func error(_ message: @autoclosure () -> LogMessage,
                            category: LogCategory = .system,
-                           file: String = #file,
+                           file: String = #fileID,
                            function: String = #function,
                            line: Int = #line,
                            metadata: [String: LogMetadataValue]? = nil) {
@@ -589,21 +653,21 @@ public extension LogRService {
     /// These indicate serious problems that may cause the app to behave incorrectly or crash.
     ///
     /// - Parameters:
-    ///   - message: The message to log.
+    ///   - message: The message to log; each interpolated value carries a ``LogPrivacy``.
     ///   - category: The log category. Defaults to `.system`.
     ///   - file: The source file (automatically captured).
     ///   - function: The function name (automatically captured).
     ///   - line: The line number (automatically captured).
-    ///   - metadata: Optional structured key-value metadata for the log entry.
+    ///   - metadata: Optional metadata for the entry, added over ``LogContext/metadata`` (wins on a key clash).
     ///
     /// ## Example
     /// ```swift
     /// logger.fault("Database connection lost", category: .database, metadata: ["retryCount": .int(3)])
     /// logger.fault("Invariant violation detected", category: .system)
     /// ```
-    nonisolated func fault(_ message: @autoclosure () -> String,
+    nonisolated func fault(_ message: @autoclosure () -> LogMessage,
                            category: LogCategory = .system,
-                           file: String = #file,
+                           file: String = #fileID,
                            function: String = #function,
                            line: Int = #line,
                            metadata: [String: LogMetadataValue]? = nil) {

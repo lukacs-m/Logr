@@ -3,45 +3,66 @@ import Testing
 import LogrTesting
 import Foundation
 import CryptoKit
+import os
 
 @Suite("LoggerCryptoService Tests")
 struct LoggerCryptoServiceTests {
     // MARK: - Initialization Tests
 
-    @Test("Test crypto service initialization")
-    func testCryptoServiceInitialization() async throws {
-        let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+    @Test("Creating a service reads nothing; the first encryption creates key version 1")
+    func testCryptoServiceInitialization() throws {
+        let store = InMemoryKeychainStore()
+        let cryptoService = LoggerCryptoService(store: store)
+        #expect(store.items.isEmpty)
+        #expect(cryptoService.currentKeyVersion.value == nil)
 
-        #expect(cryptoService.currentKeyVersion.value.value == 1)
+        _ = try cryptoService.symmetricEncrypt(object: "first")
+
+        #expect(cryptoService.currentKeyVersion.value == KeyVersion(1))
+        #expect(Set(store.items.keys) == ["logger_current_key_version", "logger_sym_key_v1"])
     }
 
-    @Test("Test crypto service initialization with existing key")
-    func testCryptoServiceInitializationWithExistingKey() async throws {
-        let mockStore = InMemoryKeychainStore()
+    @Test("A second service on the same store adopts the stored key")
+    func testCryptoServiceInitializationWithExistingKey() throws {
+        let store = InMemoryKeychainStore()
+        let encrypted = try LoggerCryptoService(store: store).symmetricEncrypt(object: "shared")
+        let items = store.items
 
-        // First initialization
-        _ = try LoggerCryptoService(store: mockStore)
+        let second = LoggerCryptoService(store: store)
+        let decrypted: String = try second.symmetricDecrypt(encryptedData: try second.symmetricEncrypt(object: "shared"))
 
-        // Second initialization should load existing key
-        let cryptoService2 = try LoggerCryptoService(store: mockStore)
-
-        #expect(cryptoService2.currentKeyVersion.value.value == 1)
+        #expect(decrypted == "shared")
+        #expect(try second.symmetricDecrypt(encryptedData: encrypted) as String == "shared")
+        #expect(store.items == items)
     }
 
-    @Test("Test keychain read error during init throws instead of overwriting the existing key")
-    func testInitThrowsOnKeychainReadError() async throws {
-        let mockStore = InMemoryKeychainStore()
-        _ = try LoggerCryptoService(store: mockStore)
-        let provisioned = mockStore.items
+    /// A custom store may report the lock with Logr's own error, or as an `NSError` like stores ported from 1.x.
+    @Test("A locked Keychain throws keyTemporarilyUnavailable, never replaces the key, and works once unlocked",
+          arguments: [KeychainError.status(errSecInteractionNotAllowed), LoggerCryptoError.keyTemporarilyUnavailable,
+                      NSError(domain: NSOSStatusErrorDomain, code: Int(errSecInteractionNotAllowed))] as [any Error])
+    func testLockedKeychainIsTemporary(lockError: any Error) throws {
+        let base = InMemoryKeychainStore()
+        let earlier = try LoggerCryptoService(store: base).symmetricEncrypt(object: "before reboot")
+        let provisioned = base.items
+        let store = LockableKeychainStore(base: base, isLocked: true, lockError: lockError)
+        let cryptoService = LoggerCryptoService(store: store)
 
-        // Simulates a locked keychain (errSecInteractionNotAllowed) on a background launch.
-        #expect(throws: LoggerCryptoError.self) {
-            _ = try LoggerCryptoService(store: UnreadableKeychainStore(base: mockStore))
+        #expect(throws: LoggerCryptoError.keyTemporarilyUnavailable) {
+            _ = try cryptoService.symmetricEncrypt(object: "while locked")
         }
-        // Treating the error as "first run" would regenerate the v1 key over this data,
-        // permanently orphaning every previously persisted log.
-        #expect(mockStore.items == provisioned)
+        #expect(throws: LoggerCryptoError.keyTemporarilyUnavailable) {
+            let _: String = try cryptoService.symmetricDecrypt(encryptedData: earlier)
+        }
+        #expect(throws: LoggerCryptoError.keyTemporarilyUnavailable) { try cryptoService.rotateKey() }
+        // Treating the error as "first run" would create a key over this one and orphan every stored log.
+        #expect(base.items == provisioned)
+
+        store.unlock()
+
+        #expect(try cryptoService.symmetricDecrypt(encryptedData: earlier) as String == "before reboot")
+        let after = try cryptoService.symmetricEncrypt(object: "after unlock")
+        #expect(try LoggerCryptoService(store: base).symmetricDecrypt(encryptedData: after) as String == "after unlock")
+        #expect(base.items == provisioned)
     }
 
     // MARK: - Encryption Tests
@@ -49,7 +70,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test symmetric encryption")
     func testSymmetricEncryption() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let testData = "Hello, World!"
         let encryptedData = try cryptoService.symmetricEncrypt(object: testData)
@@ -62,7 +83,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt log entry")
     func testEncryptLogEntry() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let logEntry = LogEntry(
             level: .info,
@@ -79,7 +100,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt empty string")
     func testEncryptEmptyString() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let emptyString = ""
         let encryptedData = try cryptoService.symmetricEncrypt(object: emptyString)
@@ -90,7 +111,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt large data")
     func testEncryptLargeData() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let largeString = String(repeating: "A", count: 100000)
         let encryptedData = try cryptoService.symmetricEncrypt(object: largeString)
@@ -101,7 +122,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt unicode data")
     func testEncryptUnicodeData() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let unicodeString = "Hello 世界 🌍 مرحبا"
         let encryptedData = try cryptoService.symmetricEncrypt(object: unicodeString)
@@ -114,7 +135,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test symmetric decryption")
     func testSymmetricDecryption() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let originalText = "Hello, World!"
         let encryptedData = try cryptoService.symmetricEncrypt(object: originalText)
@@ -126,7 +147,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt log entry")
     func testDecryptLogEntry() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let originalEntry = LogEntry(
             level: .error,
@@ -147,7 +168,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt empty string")
     func testDecryptEmptyString() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let emptyString = ""
         let encryptedData = try cryptoService.symmetricEncrypt(object: emptyString)
@@ -159,7 +180,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt large data")
     func testDecryptLargeData() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let largeString = String(repeating: "B", count: 100000)
         let encryptedData = try cryptoService.symmetricEncrypt(object: largeString)
@@ -171,7 +192,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt unicode data")
     func testDecryptUnicodeData() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let unicodeString = "Hello 世界 🌍 مرحبا"
         let encryptedData = try cryptoService.symmetricEncrypt(object: unicodeString)
@@ -185,7 +206,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt-decrypt round trip")
     func testEncryptDecryptRoundTrip() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let testStrings = [
             "Simple text",
@@ -207,7 +228,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt-decrypt multiple log entries")
     func testEncryptDecryptMultipleLogEntries() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let entries = [
             LogEntry(level: .debug, category: .debug, subsystem: "test", message: "Debug message"),
@@ -231,18 +252,17 @@ struct LoggerCryptoServiceTests {
     @Test("Test key rotation")
     func testKeyRotation() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
-
-        #expect(cryptoService.currentKeyVersion.value.value == 1)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         // Encrypt with version 1
         let originalText = "Test message"
         let encryptedV1 = try cryptoService.symmetricEncrypt(object: originalText)
+        #expect(cryptoService.currentKeyVersion.value?.value == 1)
 
         // Rotate key
         try cryptoService.rotateKey(removeOldKeys: false)
 
-        #expect(cryptoService.currentKeyVersion.value.value == 2)
+        #expect(cryptoService.currentKeyVersion.value?.value == 2)
 
         // Should still be able to decrypt old data
         let decryptedText: String = try cryptoService.symmetricDecrypt(encryptedData: encryptedV1)
@@ -257,7 +277,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test key rotation with removal of old keys")
     func testKeyRotationWithRemoval() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         // Encrypt with version 1
         let originalText = "Test message"
@@ -266,7 +286,7 @@ struct LoggerCryptoServiceTests {
         // Rotate key and remove old key
         try cryptoService.rotateKey(removeOldKeys: true)
 
-        #expect(cryptoService.currentKeyVersion.value.value == 2)
+        #expect(cryptoService.currentKeyVersion.value?.value == 2)
 
         // New encryption should work
         let encryptedV2 = try cryptoService.symmetricEncrypt(object: originalText)
@@ -277,23 +297,23 @@ struct LoggerCryptoServiceTests {
     @Test("Test multiple key rotations")
     func testMultipleKeyRotations() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
-
-        #expect(cryptoService.currentKeyVersion.value.value == 1)
+        let cryptoService = LoggerCryptoService(store: mockStore)
+        // Unresolved until first use: the first rotation creates version 1, then moves to 2.
+        #expect(cryptoService.currentKeyVersion.value == nil)
 
         for i in 2...5 {
             try cryptoService.rotateKey(removeOldKeys: false)
-            #expect(cryptoService.currentKeyVersion.value.value == i)
+            #expect(cryptoService.currentKeyVersion.value?.value == i)
         }
 
         // Should be at version 5
-        #expect(cryptoService.currentKeyVersion.value.value == 5)
+        #expect(cryptoService.currentKeyVersion.value?.value == 5)
     }
 
     @Test("Rotation with removeOldKeys removes every older version, not only the previous one")
     func testRotationRemovesEveryOlderKey() throws {
         let store = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: store)
+        let cryptoService = LoggerCryptoService(store: store)
         try cryptoService.rotateKey()
         try cryptoService.rotateKey()
 
@@ -308,7 +328,7 @@ struct LoggerCryptoServiceTests {
     @Test("Rotation removes only stored keys, so a store that rejects unknown keys keeps working")
     func testRotationOnlyRemovesStoredKeys() throws {
         let base = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: StrictRemovalKeychainStore(base: base))
+        let cryptoService = LoggerCryptoService(store: StrictRemovalKeychainStore(base: base))
 
         try cryptoService.rotateKey(removeOldKeys: true)
         try cryptoService.rotateKey(removeOldKeys: true)
@@ -320,7 +340,7 @@ struct LoggerCryptoServiceTests {
     func testRotationStopsAtTheVersionCap() throws {
         let store = InMemoryKeychainStore(items: ["logger_current_key_version": Data(#"{"value":1000000}"#.utf8),
                                                   "logger_sym_key_v1000000": Data(repeating: 1, count: 32)])
-        let cryptoService = try LoggerCryptoService(store: store)
+        let cryptoService = LoggerCryptoService(store: store)
         let items = store.items
 
         #expect(throws: LoggerCryptoError.self) { try cryptoService.rotateKey() }
@@ -332,7 +352,7 @@ struct LoggerCryptoServiceTests {
     @Test("Rotation adopts a key already stored for the next version instead of replacing it")
     func testRotationNeverReplacesAnExistingKey() throws {
         let store = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: store)
+        let cryptoService = LoggerCryptoService(store: store)
         let existingV2 = Data(repeating: 7, count: 32)
         try store.set(existingV2, forKey: "logger_sym_key_v2")
 
@@ -341,7 +361,67 @@ struct LoggerCryptoServiceTests {
         #expect(store.items["logger_sym_key_v2"] == existingV2)
     }
 
+    @Test("Rotation removes old keys after releasing the key lock that encryption waits on")
+    func testRotationCleanupRunsOffTheKeyLock() throws {
+        let store = RemovalHookKeychainStore()
+        let cryptoService = LoggerCryptoService(store: store)
+        try cryptoService.rotateKey()
+        try cryptoService.rotateKey()
+        let lockWasFree = OSAllocatedUnfairLock<[Bool]>(initialState: [])
+        store.onRemove { _ in
+            let free = cryptoService.currentKeyVersion.withLockIfAvailable { _ in true } ?? false
+            lockWasFree.withLock { $0.append(free) }
+        }
+        defer { store.onRemove(nil) }
+
+        try cryptoService.rotateKey(removeOldKeys: true)
+
+        #expect(lockWasFree.withLock { $0 } == [true, true, true])
+    }
+
+    @Test("A key version being removed cannot be read back into the cache while the removal runs")
+    func testRemovedVersionsStayUnreadableDuringCleanup() throws {
+        let store = RemovalHookKeychainStore()
+        let cryptoService = LoggerCryptoService(store: store)
+        let oldEntry = try cryptoService.symmetricEncrypt(object: "v1")
+        let readableDuringCleanup = OSAllocatedUnfairLock<[Bool]>(initialState: [])
+        store.onRemove { _ in
+            let readable = (try? cryptoService.symmetricDecrypt(encryptedData: oldEntry) as String) != nil
+            readableDuringCleanup.withLock { $0.append(readable) }
+        }
+        defer { store.onRemove(nil) }
+
+        try cryptoService.rotateKey(removeOldKeys: true)
+
+        #expect(readableDuringCleanup.withLock { $0 } == [false])
+        #expect(throws: LoggerCryptoError.self) {
+            let _: String = try cryptoService.symmetricDecrypt(encryptedData: oldEntry)
+        }
+    }
+
     // MARK: - Key Provisioning (never overwrite)
+
+    @Test("A key another service adds between our read and our add is adopted, not replaced")
+    func testKeyAddedConcurrentlyIsAdopted() throws {
+        let theirs = Data(repeating: 9, count: 32)
+        let base = InMemoryKeychainStore(items: ["logger_sym_key_v1": theirs])
+
+        let cryptoService = LoggerCryptoService(store: FirstReadMissesKeychainStore(base: base))
+
+        #expect(base.items["logger_sym_key_v1"] == theirs)
+        let encrypted = try cryptoService.symmetricEncrypt(object: "shared")
+        let decrypted: String = try LoggerCryptoService(store: base).symmetricDecrypt(encryptedData: encrypted)
+        #expect(decrypted == "shared")
+    }
+
+    @Test("InMemoryKeychainStore.add keeps an item that is already stored")
+    func testInMemoryAddKeepsTheStoredItem() throws {
+        let store = InMemoryKeychainStore()
+
+        #expect(try store.add(Data([1]), forKey: "key"))
+        #expect(try !store.add(Data([2]), forKey: "key"))
+        #expect(store.items == ["key": Data([1])])
+    }
 
     @Test("A key without its version record is adopted, not regenerated")
     func testKeyWithoutVersionRecordIsAdopted() throws {
@@ -349,7 +429,8 @@ struct LoggerCryptoServiceTests {
         items["logger_current_key_version"] = nil
         let store = InMemoryKeychainStore(items: items)
 
-        let cryptoService = try LoggerCryptoService(store: store)
+        let cryptoService = LoggerCryptoService(store: store)
+        _ = try cryptoService.symmetricEncrypt(object: "resolves the version")
 
         #expect(store.items["logger_sym_key_v1"] == items["logger_sym_key_v1"])
         #expect(cryptoService.currentKeyVersion.value == KeyVersion(1))
@@ -358,23 +439,40 @@ struct LoggerCryptoServiceTests {
         #expect(entry == LegacyFixtures.entries[0])
     }
 
-    @Test("A damaged version record throws instead of regenerating the key",
+    @Test("A damaged version record throws corruptKeyVersion instead of regenerating the key",
           arguments: ["not a version", #"{"value":0}"#, #"{"value":-2}"#, #"{"value":1000001}"#])
     func testCorruptVersionRecordThrows(record: String) throws {
         var items = try LegacyFixtures.keychain().items
         items["logger_current_key_version"] = Data(record.utf8)
         let store = InMemoryKeychainStore(items: items)
+        let cryptoService = LoggerCryptoService(store: store)
 
-        let error = #expect(throws: LoggerCryptoError.self) {
-            _ = try LoggerCryptoService(store: store)
+        #expect(throws: LoggerCryptoError.corruptKeyVersion) {
+            _ = try cryptoService.symmetricEncrypt(object: "new entry")
         }
+        #expect(throws: LoggerCryptoError.corruptKeyVersion) { try cryptoService.rotateKey() }
 
-        guard case let .initializationFailed(underlying) = error else {
-            Issue.record("Expected initializationFailed, got \(String(describing: error))")
-            return
-        }
-        #expect(underlying is DecodingError)
+        // The stored keys still decrypt earlier entries.
+        let envelope = try Data(contentsOf: LegacyFixtures.url("legacy-envelope-chacha-no-algorithm.json"))
+        let entry: LogEntry = try cryptoService.symmetricDecrypt(encryptedData: envelope)
+        #expect(entry == LegacyFixtures.entries[0])
         #expect(store.items == items)
+    }
+
+    @Test("A damaged version record is read once, not on every encryption")
+    func testCorruptVersionRecordIsReadOnce() throws {
+        let store = ReadCountingKeychainStore(base: InMemoryKeychainStore(items: [
+            "logger_current_key_version": Data("not a version".utf8)
+        ]))
+        let cryptoService = LoggerCryptoService(store: store)
+
+        for _ in 1 ... 3 {
+            #expect(throws: LoggerCryptoError.corruptKeyVersion) {
+                _ = try cryptoService.symmetricEncrypt(object: "dropped")
+            }
+        }
+
+        #expect(store.reads == 1)
     }
 
     // MARK: - Error Handling Tests
@@ -382,7 +480,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt with invalid data")
     func testDecryptWithInvalidData() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let invalidData = Data([0x00, 0x01, 0x02, 0x03])
 
@@ -394,7 +492,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test decrypt with corrupted data")
     func testDecryptWithCorruptedData() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let originalText = "Test message"
         var encryptedData = try cryptoService.symmetricEncrypt(object: originalText)
@@ -412,7 +510,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test concurrent encryption")
     func testConcurrentEncryption() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         await withTaskGroup(of: Void.self) { group in
             for i in 0..<10 {
@@ -431,7 +529,7 @@ struct LoggerCryptoServiceTests {
     @Test("Test concurrent encryption and decryption")
     func testConcurrentEncryptionAndDecryption() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         // Pre-encrypt some data
         let originalMessages = (0..<10).map { "Message \($0)" }
@@ -472,13 +570,13 @@ struct LoggerCryptoServiceTests {
     @Test("Test encrypt decrypt complex log entry")
     func testEncryptDecryptComplexLogEntry() async throws {
         let mockStore = InMemoryKeychainStore()
-        let cryptoService = try LoggerCryptoService(store: mockStore)
+        let cryptoService = LoggerCryptoService(store: mockStore)
 
         let complexEntry = LogEntry(
             id: "test-id-123",
             timestamp: Date(),
             level: .error,
-            category: .custom("CustomCategory"),
+            category: LogCategory(rawValue: "CustomCategory"),
             subsystem: "com.complex.test.app",
             message: "Complex message with special chars: !@#$%^&*() and unicode 世界",
             file: "/path/to/file.swift",
@@ -518,16 +616,47 @@ struct LoggerCryptoServiceTests {
     }
 }
 
-/// Fails every read the way a locked Keychain does, while writes still land in `base`.
-private struct UnreadableKeychainStore: KeychainStore {
+/// Fails every call with `lockError` (by default `errSecInteractionNotAllowed`, as the Keychain does before the
+/// first unlock after a restart) until `unlock()`; then forwards to `base`.
+final class LockableKeychainStore: KeychainStore {
     let base: InMemoryKeychainStore
+    private let locked: OSAllocatedUnfairLock<Bool>
+    private let lockError: any Error
 
-    func data(forKey key: String) throws -> Data? {
-        throw LoggerCryptoError.keychainFailure("interaction not allowed")
+    init(base: InMemoryKeychainStore = InMemoryKeychainStore(), isLocked: Bool,
+         lockError: any Error = KeychainError.status(errSecInteractionNotAllowed)) {
+        self.base = base
+        locked = OSAllocatedUnfairLock(initialState: isLocked)
+        self.lockError = lockError
     }
 
-    func set(_ data: Data, forKey key: String) throws { try base.set(data, forKey: key) }
-    func remove(forKey key: String) throws { try base.remove(forKey: key) }
+    func unlock() {
+        locked.withLock { $0 = false }
+    }
+
+    func data(forKey key: String) throws -> Data? {
+        try checkUnlocked()
+        return try base.data(forKey: key)
+    }
+
+    func set(_ data: Data, forKey key: String) throws {
+        try checkUnlocked()
+        try base.set(data, forKey: key)
+    }
+
+    func add(_ data: Data, forKey key: String) throws -> Bool {
+        try checkUnlocked()
+        return try base.add(data, forKey: key)
+    }
+
+    func remove(forKey key: String) throws {
+        try checkUnlocked()
+        try base.remove(forKey: key)
+    }
+
+    private func checkUnlocked() throws {
+        guard !locked.withLock({ $0 }) else { throw lockError }
+    }
 }
 
 /// Throws when asked to remove a key it does not hold, as a strict custom store may.
@@ -538,9 +667,72 @@ private struct StrictRemovalKeychainStore: KeychainStore {
 
     func data(forKey key: String) throws -> Data? { try base.data(forKey: key) }
     func set(_ data: Data, forKey key: String) throws { try base.set(data, forKey: key) }
+    func add(_ data: Data, forKey key: String) throws -> Bool { try base.add(data, forKey: key) }
 
     func remove(forKey key: String) throws {
         guard try base.data(forKey: key) != nil else { throw MissingKey() }
         try base.remove(forKey: key)
     }
+}
+
+/// Misses the first read of each key, as if another service stored the key just after that read.
+private final class FirstReadMissesKeychainStore: KeychainStore {
+    let base: InMemoryKeychainStore
+    private let readKeys = OSAllocatedUnfairLock<Set<String>>(initialState: [])
+
+    init(base: InMemoryKeychainStore) {
+        self.base = base
+    }
+
+    func data(forKey key: String) throws -> Data? {
+        guard readKeys.withLock({ $0.insert(key).inserted }) else { return try base.data(forKey: key) }
+        return nil
+    }
+
+    func set(_ data: Data, forKey key: String) throws { try base.set(data, forKey: key) }
+    func add(_ data: Data, forKey key: String) throws -> Bool { try base.add(data, forKey: key) }
+    func remove(forKey key: String) throws { try base.remove(forKey: key) }
+}
+
+/// Calls the `onRemove` hook with each key just before removing it.
+private final class RemovalHookKeychainStore: KeychainStore {
+    private let base = InMemoryKeychainStore()
+    private let hook = OSAllocatedUnfairLock<(@Sendable (String) -> Void)?>(initialState: nil)
+
+    func onRemove(_ body: (@Sendable (String) -> Void)?) {
+        hook.withLock { $0 = body }
+    }
+
+    func data(forKey key: String) throws -> Data? { try base.data(forKey: key) }
+    func set(_ data: Data, forKey key: String) throws { try base.set(data, forKey: key) }
+    func add(_ data: Data, forKey key: String) throws -> Bool { try base.add(data, forKey: key) }
+
+    func remove(forKey key: String) throws {
+        hook.withLock { $0 }?(key)
+        try base.remove(forKey: key)
+    }
+}
+
+
+/// Counts reads, then forwards everything to `base`.
+private final class ReadCountingKeychainStore: KeychainStore {
+    let base: InMemoryKeychainStore
+    private let count = OSAllocatedUnfairLock(initialState: 0)
+
+    init(base: InMemoryKeychainStore) {
+        self.base = base
+    }
+
+    var reads: Int {
+        count.withLock { $0 }
+    }
+
+    func data(forKey key: String) throws -> Data? {
+        count.withLock { $0 += 1 }
+        return try base.data(forKey: key)
+    }
+
+    func set(_ data: Data, forKey key: String) throws { try base.set(data, forKey: key) }
+    func add(_ data: Data, forKey key: String) throws -> Bool { try base.add(data, forKey: key) }
+    func remove(forKey key: String) throws { try base.remove(forKey: key) }
 }

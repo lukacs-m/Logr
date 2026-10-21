@@ -322,5 +322,5 @@ private struct ShareSheet: View {
     NavigationStack {
         SettingsView()
     }
-    .environment(\.logService, try! LogR())
+    .environment(\.logService, LogR())
 }

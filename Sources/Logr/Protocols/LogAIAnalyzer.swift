@@ -37,7 +37,7 @@ import Foundation
 /// ```swift
 /// if #available(iOS 26.0, *) {
 ///     let analyzer = AIAnalyzer()
-///     let logger = try LogR(logAnalyser: analyzer)
+///     let logger = LogR(logAnalyser: analyzer)
 ///
 ///     // Check availability (`canAnalyseLogs` and the scans are @MainActor)
 ///     Task { @MainActor in
@@ -59,7 +59,7 @@ import Foundation
 /// You can provide your own AI analyzer using a different service:
 ///
 /// ```swift
-/// @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+/// @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 /// struct CustomAIAnalyzer: LogAIAnalyzer {   // Sendable — use a struct or an actor
 ///     var isAvailable: Bool { true }
 ///
@@ -97,7 +97,7 @@ import Foundation
 /// - ``summarizeIssues(logs:)``
 /// - ``scanForPrivacyIssues(logs:onProgress:)``
 /// - ``summarizeIssues(logs:onProgress:)``
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public protocol LogAIAnalyzer: Sendable {
     /// Indicates whether Apple Intelligence is available on the current device.
     ///
@@ -108,7 +108,7 @@ public protocol LogAIAnalyzer: Sendable {
     ///
     /// ```swift
     /// if #available(iOS 26.0, *) {
-    ///     let logger = try LogR(logAnalyser: AIAnalyzer())
+    ///     let logger = LogR(logAnalyser: AIAnalyzer())
     ///
     ///     if logger.canAnalyseLogs {
     ///         // AI features available

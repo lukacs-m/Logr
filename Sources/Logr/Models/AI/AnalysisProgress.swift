@@ -11,7 +11,7 @@ import Foundation
 ///
 /// This struct tracks the current state of log analysis, including
 /// how many logs have been processed and the overall completion percentage.
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public struct AnalysisProgress: Sendable, Equatable {
     /// The total number of logs being analyzed.
     public let totalLogs: Int

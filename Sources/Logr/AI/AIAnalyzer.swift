@@ -51,7 +51,7 @@ public struct AnalyzerConfiguration: Sendable {
 // MARK: - Enhanced Analyzer
 
 /// Apple Intelligence-powered log analyzer for privacy and issue detection
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public actor AIAnalyzer: LogAIAnalyzer {
     // MARK: - Properties
 
@@ -126,7 +126,7 @@ public actor AIAnalyzer: LogAIAnalyzer {
 
 // MARK: - Setup & Utils
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension AIAnalyzer {
     func ensureAvailable() throws {
         switch model.availability {
@@ -176,7 +176,7 @@ private extension AIAnalyzer {
 
 // MARK: - Generic Chunk Processing
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension AIAnalyzer {
     func processInChunks<T: Generable & Sendable>(logs: [LogEntry],
                                                   analysisType: AnalysisType,
@@ -314,7 +314,7 @@ private extension AIAnalyzer {
 
 // MARK: - Prompt Generation
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension AIAnalyzer {
     func promptForPrivacyCheck(logs: [LogEntry], logsText: String) -> String {
         """
@@ -384,7 +384,7 @@ private extension AIAnalyzer {
 
 // MARK: - Result Merging
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 extension AIAnalyzer {
     func mergeResults<T: Generable & Sendable>(_ results: [T],
                                                type: AnalysisType) -> T? {
@@ -451,7 +451,7 @@ extension AIAnalyzer {
 
 // MARK: - Helper Methods
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension AIAnalyzer {
     func mergeIssues(_ issues: [LogIssue]) -> [LogIssue] {
         var merged: [String: LogIssue] = [:]
@@ -502,7 +502,7 @@ private extension AIAnalyzer {
 
 // MARK: - Usefull extensions
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension LogIssue {
     func updateOccurrences(by count: Int) -> Self {
         .init(category: category,
@@ -538,7 +538,7 @@ private extension Array {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private extension SystemLanguageModel.Availability.UnavailableReason {
     var localizedReason: String {
         switch self {
@@ -557,7 +557,7 @@ private extension SystemLanguageModel.Availability.UnavailableReason {
 #else
 /// Reports native analysis as unavailable on platforms without the on-device system language model
 /// (tvOS, watchOS).
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public actor AIAnalyzer: LogAIAnalyzer {
     public let configuration: AnalyzerConfiguration
     public nonisolated var isAvailable: Bool {

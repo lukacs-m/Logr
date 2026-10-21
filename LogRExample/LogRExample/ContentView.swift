@@ -380,7 +380,7 @@ private struct FeatureRow: View {
     NavigationStack {
         ContentView()
     }
-    .environment(\.logService, try! LogR())
+    .environment(\.logService, LogR())
 }
 
 struct Settings: View {
