@@ -16,9 +16,12 @@
 /// | Privacy | Stored, `storesPrivateValues` on | Stored, off | OSLog mirror |
 /// |---|---|---|---|
 /// | ``public`` | in clear | in clear | public |
-/// | ``private`` | in clear | `<private>` | private |
-/// | ``private(mask:)`` | in clear | `<private:3f9a1c2e>` | private |
-/// | ``sensitive`` | `<sensitive>` | `<sensitive>` | private |
+/// | ``private`` | in clear | `<private>` | private, in place |
+/// | ``private(mask:)`` | in clear | `<private:3f9a1c2e>` | `<private:3f9a1c2e>`, public |
+/// | ``sensitive`` | `<sensitive>` | `<sensitive>` | `<sensitive>`, never sent |
+///
+/// Console shows a private value in place as `<private>`, and in clear while a debugger is attached or private
+/// data logging is enabled (see ``LogR``).
 ///
 /// Exports replace private values stored in clear with `<private>` unless asked to keep them
 /// (``LogRService/exportLogs(format:includingPrivateValues:)``). Literal text is always public.
@@ -55,7 +58,8 @@ public struct LogPrivacy: Sendable {
     /// builds), otherwise as `<private>`.
     public static let `private` = LogPrivacy(option: .private)
 
-    /// Like ``private``, but shown as `mask` when it is not stored in clear.
+    /// Like ``private``, but shown as `mask` when it is not stored in clear. The OSLog mirror only ever shows
+    /// `mask`, never the value.
     public static func `private`(mask: Mask) -> LogPrivacy {
         switch mask {
         case .hash: LogPrivacy(option: .hashed)
@@ -63,7 +67,7 @@ public struct LogPrivacy: Sendable {
     }
 
     /// Never stored in clear, even when ``LogrConfiguration/storesPrivateValues`` is `true`: shown as
-    /// `<sensitive>`. The OSLog mirror logs it as private.
+    /// `<sensitive>`. The OSLog mirror shows `<sensitive>` too and never sends the value, even to a debugger.
     public static let sensitive = LogPrivacy(option: .sensitive)
 
     package static let privatePlaceholder = "<private>"

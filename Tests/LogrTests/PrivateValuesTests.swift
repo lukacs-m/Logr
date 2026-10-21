@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 @testable import Logr
 import LogrTesting
+import OSLog
 import Testing
 
 @Suite("Private values in entries and configuration")
@@ -213,5 +214,91 @@ struct PrivateValuesLoggingTests {
         let crypto = LoggerCryptoService(store: keychain)
         let stored: [LogEntry] = try await storage.entries.map { try crypto.symmetricDecrypt(encryptedData: $0.data) }
         #expect(stored.map(\.privateRanges) == [[5..<9]])
+    }
+}
+
+@Suite("OSLog mirror")
+struct OSLogMirrorTests {
+    private let subsystem = "com.logr.tests.\(UUID().uuidString)"
+    private let start = Date()
+
+    private func makeLogger(verbosity: LogVerbosity, storesPrivateValues: Bool) -> LogR {
+        LogR(cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
+             configuration: LogrConfiguration(subsystem: subsystem, logVerbosity: verbosity,
+                                              storesPrivateValues: storesPrivateValues))
+    }
+
+    /// `format` pins which arguments are private. The text is checked against both forms: private arguments read in
+    /// clear under a debugger (Xcode attaches LLDB to tests) or with private data logging on.
+    private func expectMirrored(_ expected: [(format: String, redacted: String, clear: String)],
+                                sourceLocation: SourceLocation = #_sourceLocation) throws {
+        let store = try OSLogStore(scope: .currentProcessIdentifier)
+        let mirrored = try store.getEntries(at: store.position(date: start),
+                                            matching: NSPredicate(format: "subsystem == %@", subsystem))
+            .compactMap { $0 as? OSLogEntryLog }
+        try #require(mirrored.count == expected.count, sourceLocation: sourceLocation)
+        for (entry, forms) in zip(mirrored, expected) {
+            #expect(entry.formatString == forms.format, sourceLocation: sourceLocation)
+            let line = entry.composedMessage
+            let matches = line == forms.redacted || line == forms.clear
+            #expect(matches, "\(line)", sourceLocation: sourceLocation)
+        }
+    }
+
+    /// The format of `count` private values in place.
+    private func inPlace(_ count: Int) -> String {
+        "%{public}s" + String(repeating: "%{private}s%{public}s", count: count)
+    }
+
+    @Test func privateValuesAreMirroredInPlace() throws {
+        let logr = makeLogger(verbosity: .normal, storesPrivateValues: false)
+        let (a, b, c, d, e) = ("A1", "B2", "C3", "D4", "E5")
+        logr.info("Signed in \("zoe@example.com") after \(3) tries")
+        logr.info("\(a) and \(b)")
+        logr.info("x \(a)\(b)\(c)")
+        logr.info("\(a)-\(b)-\(c)-\(d)!")
+        logr.info("\(a) \(b) \(c) \(d) \(e)")
+        logr.info("user \("zoe", privacy: .private(mask: .hash)) token \("hunter2", privacy: .sensitive) ok \(a)")
+        logr.info("token \("hunter2", privacy: .sensitive)")
+        let hashed = try #require(logr.recentLogs.dropFirst().first?.message)
+        #expect(hashed.hasPrefix("user <private:"))
+
+        try expectMirrored([
+            (inPlace(1), "Signed in <private> after 3 tries", "Signed in zoe@example.com after 3 tries"),
+            (inPlace(2), "<private> and <private>", "A1 and B2"),
+            (inPlace(3), "x <private><private><private>", "x A1B2C3"),
+            (inPlace(4), "<private>-<private>-<private>-<private>!", "A1-B2-C3-D4!"),
+            // Five or more go after the text, joined.
+            ("%{public}s %{private}s", String(repeating: "<private> ", count: 5) + "<private>",
+             String(repeating: "<private> ", count: 5) + "A1, B2, C3, D4, E5"),
+            (inPlace(1), hashed, hashed.replacingOccurrences(of: "ok <private>", with: "ok A1")),
+            ("%{public}s", "token <sensitive>", "token <sensitive>")
+        ])
+    }
+
+    @Test func verboseModeAppendsTheCallSite() throws {
+        let logr = makeLogger(verbosity: .verbose, storesPrivateValues: true)
+        logr.info("Signed in \("zoe") after \(3) tries", file: "App/Checkout.swift", function: "pay()", line: 42)
+        logr.info("\("a") \("b") \("c") \("d") \("e")", file: "Checkout.swift", function: "pay()", line: 7)
+        logr.info("user \("zoe", privacy: .private(mask: .hash))", file: "Checkout.swift", function: "pay()", line: 9)
+        logr.info("\("zoe", privacy: .private(mask: .hash)) is \("zoe")", file: "Checkout.swift", function: "pay()",
+                  line: 11)
+        #expect(logr.recentLogs.first?.message == "zoe is zoe")
+
+        // Loggers without storage share one hash key.
+        let release = LogR(configuration: LogrConfiguration(mirrorToOSLog: false, storesPrivateValues: false))
+        release.info("\("zoe", privacy: .private(mask: .hash))")
+        let hash = try #require(release.recentLogs.first?.message)
+        #expect(hash.hasPrefix("<private:"))
+        try expectMirrored([
+            (inPlace(1), "Signed in <private> after 3 tries (Checkout.swift:42 pay())",
+             "Signed in zoe after 3 tries (Checkout.swift:42 pay())"),
+            ("%{public}s %{private}s%{public}s",
+             "<private> <private> <private> <private> <private> <private> (Checkout.swift:7 pay())",
+             "<private> <private> <private> <private> <private> a, b, c, d, e (Checkout.swift:7 pay())"),
+            ("%{public}s (%{public}s:%ld %{public}s)", "user \(hash) (Checkout.swift:9 pay())",
+             "user \(hash) (Checkout.swift:9 pay())"),
+            (inPlace(1), "\(hash) is <private> (Checkout.swift:11 pay())", "\(hash) is zoe (Checkout.swift:11 pay())")
+        ])
     }
 }

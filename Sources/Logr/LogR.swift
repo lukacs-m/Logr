@@ -26,9 +26,13 @@ import UIKit
 ///
 /// ## OSLog mirror
 ///
-/// The mirror logs the message with every value that is not public redacted, as public text, then those values
-/// as one private argument: Console shows them only while a debugger is attached or private data logging is
-/// enabled. Xcode's "jump to source" for a mirrored message points into Logr, as for any wrapper around OSLog;
+/// The mirror logs the text as public and each ``LogPrivacy/private`` value in place as a private argument, so
+/// Console shows Logr's redacted rendering, `Signed in <private> after 3 tries`, and the values only while a
+/// debugger is attached or private data logging is enabled. Up to four values go in place; with five or more the
+/// redacted text is followed by all of them as one private argument. Hashed values go out as their public
+/// `<private:3f9a1c2e>` (`<private>` until the key can be read) and ``LogPrivacy/sensitive`` ones as
+/// `<sensitive>`, so their values never reach OSLog.
+/// Xcode's "jump to source" for a mirrored message points into Logr, as for any wrapper around OSLog;
 /// ``LogVerbosity/verbose`` appends the call site, `(File.swift:42 function())`, to find it.
 ///
 /// ## Isolation
@@ -242,8 +246,8 @@ public final class LogR: LogRService {
             let redacted = configuration.storesPrivateValues
                 ? message.rendered(keepingPrivateValues: false, hashKey: hashKey).text
                 : stored.text
-            mirror(message, redacted: redacted, level: level, category: category, file: file, function: function,
-                   line: line)
+            mirror(message, redacted: redacted, hashKey: hashKey, level: level, category: category, file: file,
+                   function: function, line: line)
         }
 
         // Append synchronously under the lock so every reader — including reads made through the
@@ -506,30 +510,64 @@ private extension LogR {
     }
 
     /// `OSLogMessage` cannot be built at run time and takes its privacy statically, so the message goes
-    /// out through fixed templates: the redacted text as public, the values that are not public after it as
-    /// private, so they show when private data is enabled or a debugger is attached.
-    nonisolated func mirror(_ message: LogMessage, redacted: String, level: LogLevel, category: LogCategory,
-                            file: String, function: String, line: Int) {
+    /// out through fixed templates: the text as public, each ``LogPrivacy/private`` value in place as private (up
+    /// to four; more go after the text, joined), so Console matches Logr's redacted rendering and shows the
+    /// values when private data is enabled or a debugger is attached. Hashed and sensitive values only ever go out
+    /// as their placeholders.
+    nonisolated func mirror(_ message: LogMessage, redacted: String, hashKey: SymmetricKey?, level: LogLevel,
+                            category: LogCategory, file: String, function: String, line: Int) {
         let osLogger = logger(for: category)
         let type = level.osLogType
-        let privateValues = message.joinedPrivateValues
-        guard configuration.logVerbosity == .verbose else {
-            if privateValues.isEmpty {
-                osLogger.log(level: type, "\(redacted, privacy: .public)")
+        let isVerbose = configuration.logVerbosity == .verbose
+        guard message.redactions.contains(where: { $0.kind == .private }) else {
+            if isVerbose {
+                let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
+                osLogger.log(level: type, """
+                \(redacted, privacy: .public) (\(fileName, privacy: .public):\(line) \(function, privacy: .public))
+                """)
             } else {
-                osLogger.log(level: type, "\(redacted, privacy: .public) \(privateValues, privacy: .private)")
+                osLogger.log(level: type, "\(redacted, privacy: .public)")
             }
             return
         }
-        let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
-        if privateValues.isEmpty {
+        // Public text and private values alternate: p[0], p[2]... are text, p[1], p[3]... values.
+        var p = message.mirrorParts(redacted: redacted, hashKey: hashKey)
+        var callSite = ""
+        if isVerbose {
+            let fileName = file.lastIndex(of: "/").map { file[file.index(after: $0)...] } ?? file[...]
+            callSite = " (\(fileName):\(line) \(function))"
+        }
+        guard p.count <= 9 else {
+            let values = stride(from: 1, to: p.count, by: 2).map { p[$0] }.joined(separator: ", ")
+            if isVerbose {
+                osLogger.log(level: type, """
+                \(redacted, privacy: .public) \(values, privacy: .private)\(callSite, privacy: .public)
+                """)
+            } else {
+                osLogger.log(level: type, "\(redacted, privacy: .public) \(values, privacy: .private)")
+            }
+            return
+        }
+        p[p.count - 1] += callSite
+        switch p.count {
+        case 3:
+            osLogger.log(level: type,
+                         "\(p[0], privacy: .public)\(p[1], privacy: .private)\(p[2], privacy: .public)")
+        case 5:
             osLogger.log(level: type, """
-            \(redacted, privacy: .public) (\(fileName, privacy: .public):\(line) \(function, privacy: .public))
+            \(p[0], privacy: .public)\(p[1], privacy: .private)\(p[2], privacy: .public)\(p[3], privacy: .private)\
+            \(p[4], privacy: .public)
             """)
-        } else {
+        case 7:
             osLogger.log(level: type, """
-            \(redacted, privacy: .public) \(privateValues, privacy: .private) \
-            (\(fileName, privacy: .public):\(line) \(function, privacy: .public))
+            \(p[0], privacy: .public)\(p[1], privacy: .private)\(p[2], privacy: .public)\(p[3], privacy: .private)\
+            \(p[4], privacy: .public)\(p[5], privacy: .private)\(p[6], privacy: .public)
+            """)
+        default:
+            osLogger.log(level: type, """
+            \(p[0], privacy: .public)\(p[1], privacy: .private)\(p[2], privacy: .public)\(p[3], privacy: .private)\
+            \(p[4], privacy: .public)\(p[5], privacy: .private)\(p[6], privacy: .public)\(p[7], privacy: .private)\
+            \(p[8], privacy: .public)
             """)
         }
     }
