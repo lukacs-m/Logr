@@ -145,10 +145,19 @@ struct LogMessageRenderingTests {
         }
     }
 
-    @Test func joinedPrivateValuesListEveryValueThatIsNotPublic() {
-        let message: LogMessage = "\("a") \(1) \("b", privacy: .sensitive) \("c", privacy: .private(mask: .hash))"
-        #expect(message.joinedPrivateValues == "a, b, c")
-        #expect(LogMessage("only", privacy: .private).joinedPrivateValues == "only")
-        #expect(("literal" as LogMessage).joinedPrivateValues.isEmpty)
+    @Test(arguments: [true, false])
+    func mirrorPartsSplitAroundPrivateValuesOnly(hasKey: Bool) {
+        let key = hasKey ? SymmetricKey(size: .bits256) : nil
+        let message: LogMessage = """
+        \("a")é \(1) \("b", privacy: .sensitive) \("c", privacy: .private(mask: .hash)) \("ü")
+        """
+        let redacted = message.rendered(keepingPrivateValues: false, hashKey: key).text
+        let hashed = LogMessage("c", privacy: .private(mask: .hash)).rendered(keepingPrivateValues: false, hashKey: key)
+        #expect(hashed.text.hasPrefix(hasKey ? "<private:" : "<private>"))
+        #expect(message.mirrorParts(redacted: redacted, hashKey: key)
+            == ["", "a", "é 1 <sensitive> \(hashed.text) ", "ü", ""])
+        let only = LogMessage("only", privacy: .private)
+        #expect(only.mirrorParts(redacted: only.description, hashKey: nil) == ["", "only", ""])
+        #expect(("literal" as LogMessage).mirrorParts(redacted: "literal", hashKey: nil) == ["literal"])
     }
 }

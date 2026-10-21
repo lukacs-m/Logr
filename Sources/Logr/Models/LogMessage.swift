@@ -176,22 +176,40 @@ extension LogMessage {
         return (rendered, privateRanges)
     }
 
-    /// The values that are not public, in clear and in order, joined by `", "`.
-    package var joinedPrivateValues: String {
-        guard !redactions.isEmpty else { return "" }
+    /// The message split around its ``LogPrivacy/private`` values, for the OSLog mirror: public text and private
+    /// values alternate, starting and ending with public text (empty when a value is at either end). The public
+    /// text is cut from `redacted`, this message rendered without private values with the same `hashKey`, so
+    /// hashed and sensitive values keep their placeholders without being hashed again.
+    package func mirrorParts(redacted: String, hashKey: SymmetricKey?) -> [String] {
+        var parts: [String] = []
+        parts.reserveCapacity(redactions.count * 2 + 1)
         var text = text
-        return text.withUTF8 { source in
-            String(unsafeUninitializedCapacity: source.count + redactions.count * 2) { output in
-                var written = 0
-                for (index, redaction) in redactions.enumerated() {
-                    if index > 0 {
-                        written = output[written...].initialize(fromContentsOf: ", ".utf8)
+        var redacted = redacted
+        text.withUTF8 { source in
+            redacted.withUTF8 { output in
+                var pieceStart = 0
+                var position = 0
+                var cursor = 0
+                for redaction in redactions {
+                    position += redaction.range.lowerBound - cursor
+                    let placeholderLength = switch redaction.kind {
+                    case .private: Self.privatePlaceholder.count
+                    case .sensitive: Self.sensitivePlaceholder.count
+                    case .hashed: hashKey == nil ? Self.privatePlaceholder.count : Self.hashedPlaceholderLength
                     }
-                    written = output[written...].initialize(fromContentsOf: source[redaction.range])
+                    if redaction.kind == .private {
+                        parts.append(String(decoding: output[pieceStart..<position], as: UTF8.self))
+                        parts.append(String(decoding: source[redaction.range], as: UTF8.self))
+                        pieceStart = position + placeholderLength
+                    }
+                    position += placeholderLength
+                    cursor = redaction.range.upperBound
                 }
-                return written
+                assert(position + source.count - cursor == output.count, "redacted was rendered differently")
+                parts.append(String(decoding: output[pieceStart...], as: UTF8.self))
             }
         }
+        return parts
     }
 
     private static let privatePlaceholder = Array(LogPrivacy.privatePlaceholder.utf8)

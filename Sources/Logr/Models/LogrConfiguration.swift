@@ -192,7 +192,7 @@ public struct LogrConfiguration: Sendable, Codable {
     /// stored as logged, and ``LogEntry/privateRanges`` marks them; exports still replace them unless asked to
     /// keep them. When `false`, they are stored as `<private>` or, with ``LogPrivacy/Mask/hash``,
     /// `<private:3f9a1c2e>`. ``LogPrivacy/sensitive`` values are never stored, whatever this says. The OSLog
-    /// mirror always logs private values as private.
+    /// mirror does not depend on this setting (see ``LogPrivacy``).
     ///
     /// Default: `true` when Logr is compiled with `DEBUG` defined (Xcode's Debug configuration), `false` in
     /// release.

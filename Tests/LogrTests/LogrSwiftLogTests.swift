@@ -224,8 +224,10 @@ struct LogrLogHandlerTests {
                                             matching: NSPredicate(format: "subsystem == %@", subsystem))
             .compactMap { $0 as? OSLogEntryLog }
         #expect(mirrored.map(\.category) == ["com.example.http-client", "com.example.http-client"])
-        // The trailing private argument reads in clear under a debugger or with private data logging on.
-        #expect(mirrored.first?.composedMessage.hasPrefix("Payment failed <private> ") == true)
+        #expect(mirrored.first?.formatString == "%{public}s%{private}s%{public}s")
+        // The private argument reads in clear under a debugger or with private data logging on.
+        let first = mirrored.first?.composedMessage
+        #expect(first == "Payment failed <private>" || first == "Payment failed CancellationError()")
         #expect(mirrored.last?.composedMessage == "Payment failed again")
     }
 

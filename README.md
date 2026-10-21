@@ -116,10 +116,10 @@ func signIn(email: String, attempts: Int, token: String, logger: any LogRService
 
 `LogR` keeps private values in clear in `DEBUG` builds so you can read them while developing, and stores
 `<private>` otherwise (`LogrConfiguration.storesPrivateValues`). Exports replace them with `<private>`
-unless you pass `exportLogs(format:includingPrivateValues: true)`. The OSLog mirror logs the redacted text
-as public and the private values after it as private, so Console shows them only while a debugger is
-attached or private data logging is enabled. A `String` you already hold needs a privacy of its own:
-`LogMessage(text, privacy: .public)`.
+unless you pass `exportLogs(format:includingPrivateValues: true)`. The OSLog mirror shows the same
+redacted text in Console, with each private value in place readable only while a debugger is attached or
+private data logging is enabled; hashed and sensitive values never reach OSLog. A `String` you already hold
+needs a privacy of its own: `LogMessage(text, privacy: .public)`.
 
 ## Context
 
