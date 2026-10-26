@@ -5,7 +5,6 @@
 //  Created by Claude on 28/11/2025.
 //
 
-import Collections
 import Foundation
 
 /// Statistics and metrics computed from log entries.

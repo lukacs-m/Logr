@@ -30,7 +30,7 @@ public extension LogLevel {
 
 // MARK: - LogSeverity presentation (AI analysis, iOS 26+)
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *)
+@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public extension LogSeverity {
     /// The accent color for this severity — the one place severity colors are defined.
     var tint: Color {

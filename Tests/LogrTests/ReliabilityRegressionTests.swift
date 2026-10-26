@@ -10,8 +10,8 @@ struct ReliabilityRegressionTests {
     @Test func partialBatchPersistsWithoutExplicitFlush() async throws {
         let storage = FlakyStorage(failingFirst: 0)
         var persisted = storage.stores.makeAsyncIterator()
-        let writer = LogWriterActor(storage: storage,
-                                    cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
+        let writer = LogWriterActor(storage: .custom(storage),
+                                    cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
                                     configuration: .default,
                                     partialBatchDeadline: .milliseconds(10))
         defer { writer.shutdown() }
@@ -32,27 +32,30 @@ struct ReliabilityRegressionTests {
     }
 
     @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    @Test func startupFetchOverlappingLiveWritesDoesNotDuplicateThem() async throws {
-        let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
+    @Test func historyReadAfterLaunchMergesBehindLiveEntries() async throws {
+        let crypto = LoggerCryptoService(store: InMemoryKeychainStore())
         let historical = LogEntry(level: .info, category: .system, subsystem: "test", message: "history")
         let encrypted = EncryptedLogEntry(id: historical.id, timestamp: historical.timestamp,
                                           data: try crypto.symmetricEncrypt(object: historical))
         let storage = StartupOverlapStorage(history: encrypted)
-        let logger = LogR(storage: storage, cryptoService: crypto,
+        let logger = LogR(storage: .custom(storage), cryptoService: crypto,
                           configuration: LogrConfiguration(mirrorToOSLog: false))
+        // The writer is still reading history (the fetch is held), so this entry is logged before it lands.
         logger.info("live")
-        await logger.flush()
+
         await storage.releaseFetch()
         _ = await Observations { logger.recentLogs }.first { $0.contains { $0.id == historical.id } }
+        await logger.flush()
+
         #expect(logger.recentLogs.map(\.message) == ["live", "history"])
-        #expect(Set(logger.recentLogs.map(\.id)).count == logger.recentLogs.count)
+        #expect(await storage.storedIDs == [historical.id] + logger.recentLogs.prefix(1).map(\.id))
     }
 
     @Test func shutdownDrainsPartialBatchAndReleasesWriter() async throws {
         var storage: FlakyStorage? = FlakyStorage(failingFirst: 0)
         let stores = storage!.stores
-        var writer: LogWriterActor? = LogWriterActor(storage: storage!,
-            cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()), configuration: .default)
+        var writer: LogWriterActor? = LogWriterActor(storage: .custom(storage!),
+            cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()), configuration: .default)
         storage = nil
         writer?.ingest(LogEntry(level: .info, category: .system, subsystem: "test", message: "shutdown"))
         writer?.shutdown()
@@ -68,8 +71,8 @@ struct ReliabilityRegressionTests {
 
     @Test func timedFlushAfterClearOnlyPersistsNewEntries() async throws {
         let storage = FlakyStorage(failingFirst: 0)
-        let writer = LogWriterActor(storage: storage,
-                                    cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
+        let writer = LogWriterActor(storage: .custom(storage),
+                                    cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
                                     configuration: .default,
                                     partialBatchDeadline: .milliseconds(10))
         defer { writer.shutdown() }
@@ -86,8 +89,8 @@ struct ReliabilityRegressionTests {
     @Test func partialBatchRetriesOnDeadline() async throws {
         let storage = FlakyStorage(failingFirst: 1)
         var persisted = storage.stores.makeAsyncIterator()
-        let writer = LogWriterActor(storage: storage,
-                                    cryptoService: try LoggerCryptoService(store: InMemoryKeychainStore()),
+        let writer = LogWriterActor(storage: .custom(storage),
+                                    cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
                                     configuration: .default,
                                     partialBatchDeadline: .milliseconds(10))
         defer { writer.shutdown() }
@@ -101,14 +104,14 @@ struct ReliabilityRegressionTests {
 
     @Test(arguments: [LoggerCryptoService.CryptoAlgo.aes256gcm, .chacha])
     func rotationDuringEncodingPreservesDecryptability(algorithm: LoggerCryptoService.CryptoAlgo) throws {
-        let crypto = try LoggerCryptoService(store: InMemoryKeychainStore(), encryptionAlgo: algorithm)
+        let crypto = LoggerCryptoService(store: InMemoryKeychainStore(), encryptionAlgo: algorithm)
         let data = try crypto.symmetricEncrypt(object: RotatingPayload(crypto: crypto))
         let decoded: String = try crypto.symmetricDecrypt(encryptedData: data)
         #expect(decoded == "payload")
     }
 
     @Test func concurrentRotationsKeepDistinctVersions() async throws {
-        let crypto = try LoggerCryptoService(store: InMemoryKeychainStore())
+        let crypto = LoggerCryptoService(store: InMemoryKeychainStore())
         let original = try crypto.symmetricEncrypt(object: "before rotation")
         try await withThrowingTaskGroup(of: Data.self) { group in
             for _ in 0..<30 {
@@ -122,7 +125,7 @@ struct ReliabilityRegressionTests {
                 #expect(decoded == "after rotation")
             }
         }
-        #expect(crypto.currentKeyVersion.value.value == 31)
+        #expect(crypto.currentKeyVersion.value?.value == 31)
         let decoded: String = try crypto.symmetricDecrypt(encryptedData: original)
         #expect(decoded == "before rotation")
     }
@@ -153,6 +156,8 @@ private actor StartupOverlapStorage: LogRPersistence {
         }
         return entries
     }
+    var storedIDs: [String] { entries.map(\.id) }
+
     func releaseFetch() {
         fetchReleased = true
         fetchWaiter?.resume()

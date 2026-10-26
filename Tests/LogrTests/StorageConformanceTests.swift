@@ -107,13 +107,28 @@ struct StorageConformanceTests {
         let original = Self.entry(1)
         try await storage.store(original)
 
-        // SQLiteStorage rejects the duplicate and FileSystemStorage keeps both; either way the
+        // SQLiteStorage ignores the duplicate and FileSystemStorage keeps both; either way the
         // original must survive and `count()` must agree with what `fetchEntries()` returns.
         _ = try? await storage.store(Self.entry(1, data: Data("duplicate".utf8)))
 
         let entries = try await storage.fetchEntries()
         #expect(entries.first == original)
         #expect(try await storage.count() == entries.count)
+    }
+
+    @Test(arguments: StorageBackend.allCases)
+    func entriesWithTheSameTimestampKeepTheirWriteOrder(backend: StorageBackend) async throws {
+        let storage = try backend.open(in: directory.url)
+        let ids = ["c", "a", "d", "b", "e"]
+        let entries = ids.map { EncryptedLogEntry(id: $0, timestamp: Self.start, data: Data($0.utf8)) }
+        try await storage.store(entries[0])
+        try await storage.store(Array(entries[1...]))
+
+        #expect(try await storage.fetchEntries().map(\.id) == ids)
+        #expect(try await storage.fetchEntries(limit: 2).map(\.id) == ["b", "e"])
+
+        try await storage.deleteEntries(keepingLatest: 3)
+        #expect(try await storage.fetchEntries().map(\.id) == ["d", "b", "e"])
     }
 
     @Test(arguments: StorageBackend.allCases)

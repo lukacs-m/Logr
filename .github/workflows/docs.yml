@@ -31,7 +31,8 @@ jobs:
       - name: Generate combined DocC archive
         run: |
           swift package --allow-writing-to-directory docs-site \
-            generate-documentation --target Logr --target LogrUI --target LogrTesting \
+            generate-documentation --target Logr --target LogrUI --target LogrTesting --target LogrSwiftLog \
+            --target LogrNetwork \
             --enable-experimental-combined-documentation \
             --transform-for-static-hosting --hosting-base-path Logr \
             --output-path docs-site

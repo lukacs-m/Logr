@@ -132,11 +132,48 @@ struct ModelsTests {
             }
         }
 
-        @Test("Test custom category")
+        @Test("A custom category displays its name unchanged")
         func testCustomCategory() {
-            let custom = LogCategory.custom("MyCustomCategory")
+            let custom = LogCategory(rawValue: "MyCustomCategory")
             #expect(custom.rawValue == "MyCustomCategory")
-            #expect(custom.displayName == "Mycustomcategory")
+            #expect(custom.displayName == "MyCustomCategory")
+        }
+
+        @Test("An app-defined category constant is an ordinary category")
+        func testCategoryDefinedInAnExtension() {
+            #expect(LogCategory.checkout == LogCategory(rawValue: "checkout"))
+            #expect(LogCategory.checkout.displayName == "checkout")
+            #expect(LogCategory(rawValue: "network") == .network)
+        }
+
+        @Test("Categories encode as their name, in entries and in configuration overrides")
+        func testCategoryEncodesAsAString() throws {
+            let entry = LogEntry(level: .info, category: .checkout, subsystem: "s", message: "m")
+            let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(entry)) as? [String: Any]
+            #expect(json?["category"] as? String == "checkout")
+
+            let configuration = LogrConfiguration(categoryLevelOverrides: [.network: .warning, .checkout: .debug])
+            let decoded = try JSONDecoder().decode(LogrConfiguration.self,
+                                                   from: JSONEncoder().encode(configuration))
+            #expect(decoded.categoryLevelOverrides == [.network: .warning, .checkout: .debug])
+        }
+
+        @Test("Categories written by Logr 1.x decode", arguments: [
+            (#"{"network":{}}"#, "network"),
+            (#"{"custom":{"_0":"Checkout"}}"#, "Checkout"),
+            (#"{"custom":{"_0":"network"}}"#, "network"),
+            (#""feature-flags""#, "feature-flags")
+        ])
+        func testLegacyCategoryDecodes(json: String, name: String) throws {
+            #expect(try JSONDecoder().decode(LogCategory.self, from: Data(json.utf8)) == LogCategory(rawValue: name))
+        }
+
+        @Test("Malformed categories fail to decode",
+              arguments: [#"{}"#, #"{"network":{},"ui":{}}"#, #"{"custom":{}}"#, "42"])
+        func testMalformedCategoryThrows(json: String) {
+            #expect(throws: DecodingError.self) {
+                _ = try JSONDecoder().decode(LogCategory.self, from: Data(json.utf8))
+            }
         }
 
         @Test("Test category raw values")
@@ -182,7 +219,7 @@ struct ModelsTests {
             #expect(systemCategory == .system)
 
             let customCategory = LogCategory(rawValue: "nonexistent")
-            #expect(customCategory == .custom("nonexistent"))
+            #expect(customCategory == LogCategory(rawValue: "nonexistent"))
         }
 
         @Test("Test category codable")
@@ -199,7 +236,7 @@ struct ModelsTests {
 
         @Test("Test custom category codable")
         func testCustomCategoryCodable() throws {
-            let category = LogCategory.custom("MyCategory")
+            let category = LogCategory(rawValue: "MyCategory")
             let encoder = JSONEncoder()
             let data = try encoder.encode(category)
 
@@ -543,6 +580,31 @@ struct ModelsTests {
             #expect(config.logVerbosity == .verbose)
         }
 
+        @Test("maxLogEntries is clamped to 100...100,000, whether passed in or decoded", arguments: [
+            (-10_000, 100), (-1, 100), (0, 100), (99, 100), (100, 100), (2_000, 2_000),
+            (100_000, 100_000), (100_001, 100_000), (Int.max, 100_000)
+        ])
+        func testMaxLogEntriesIsClamped(requested: Int, effective: Int) throws {
+            #expect(LogrConfiguration(maxLogEntries: requested).maxLogEntries == effective)
+            let decoded = try JSONDecoder().decode(LogrConfiguration.self,
+                                                   from: Data(#"{"maxLogEntries":\#(requested)}"#.utf8))
+            #expect(decoded.maxLogEntries == effective)
+        }
+
+        @Test("cleanupInterval is clamped to one minute...one day, whether passed in or decoded; NaN is the default",
+              arguments: [(-1, 60), (0, 60), (59.5, 60), (60, 60), (300, 300), (86_400, 86_400), (86_401, 86_400),
+                          (.infinity, 86_400), (-.infinity, 60), (.nan, 3_600)] as [(TimeInterval, TimeInterval)])
+        func testCleanupIntervalIsClamped(requested: TimeInterval, effective: TimeInterval) throws {
+            #expect(LogrConfiguration(cleanupInterval: requested).cleanupInterval == effective)
+            let decoder = JSONDecoder()
+            decoder.nonConformingFloatDecodingStrategy = .convertFromString(positiveInfinity: "inf",
+                                                                              negativeInfinity: "-inf", nan: "nan")
+            let value = requested.isFinite ? "\(requested)" : #""\#(requested)""#
+            let decoded = try decoder.decode(LogrConfiguration.self,
+                                             from: Data(#"{"cleanupInterval":\#(value)}"#.utf8))
+            #expect(decoded.cleanupInterval == effective)
+        }
+
         @Test("Test custom configuration")
         func testCustomConfiguration() {
             let config = LogrConfiguration(
@@ -596,12 +658,16 @@ struct ModelsTests {
 
         @Test("Test configuration with partial parameters")
         func testConfigurationWithPartialParameters() {
-            let config = LogrConfiguration(maxLogEntries: 50)
+            let config = LogrConfiguration(maxLogEntries: 500)
 
-            #expect(config.maxLogEntries == 50)
+            #expect(config.maxLogEntries == 500)
             // Other values should be defaults
             #expect(config.maxLogAge == LogrConfiguration.default.maxLogAge)
             #expect(config.enabledLevels == LogrConfiguration.default.enabledLevels)
         }
     }
+}
+
+private extension LogCategory {
+    static let checkout: Self = "checkout"
 }

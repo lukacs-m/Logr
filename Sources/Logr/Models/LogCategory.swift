@@ -9,14 +9,14 @@ import Foundation
 
 /// Comprehensive category system for organizing and filtering logs.
 ///
-/// `LogCategory` provides 49 predefined categories organized into logical groups,
-/// plus support for custom project-specific categories.
+/// `LogCategory` provides 49 predefined categories organized into logical groups, and apps add their own
+/// names.
 ///
 /// ## Overview
 ///
 /// Categories help organize logs by system area, making it easier to filter, search,
 /// and analyze logs from specific parts of your application. Each category maps to
-/// an OSLog category and is Codable for persistence.
+/// an OSLog category (its ``rawValue``) and encodes as that string.
 ///
 /// ## Predefined Categories
 ///
@@ -44,13 +44,16 @@ import Foundation
 ///
 /// ## Custom Categories
 ///
-/// For project-specific needs, use `.custom(String)`:
+/// Add project-specific names in an extension, or pass a string literal; they display as written:
 ///
 /// ```swift
-/// logger.info("Inventory updated", category: .custom("inventory"))
-/// logger.debug("Feature flag toggled", category: .custom("feature-flags"))
-/// ```
+/// extension LogCategory {
+///     static let checkout: Self = "checkout"
+/// }
 ///
+/// logger.info("Order placed", category: .checkout)
+/// logger.debug("Feature flag toggled", category: "feature-flags")
+/// ```
 /// ## Usage Examples
 ///
 /// ```swift
@@ -140,267 +143,222 @@ import Foundation
 /// - ``test``
 /// - ``mock``
 ///
-/// ### Custom
-/// - ``custom(_:)``
+/// ### Creating Categories
+/// - ``init(rawValue:)``
+/// - ``init(stringLiteral:)``
 ///
 /// ### Properties
 /// - ``rawValue``
 /// - ``displayName``
 /// - ``common``
 /// - ``predefined``
-public enum LogCategory: Sendable, Codable, Hashable, Equatable {
+public struct LogCategory: RawRepresentable, Hashable, Sendable, Codable, ExpressibleByStringLiteral,
+    CustomStringConvertible {
+    /// The category's name, also used as the OSLog category.
+    public let rawValue: String
+
+    /// Creates the category named `rawValue`; a predefined name gives the predefined category.
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    /// Creates the category named by the literal, as in `category: "checkout"`.
+    public init(stringLiteral value: String) {
+        self.init(rawValue: value)
+    }
+
     // MARK: - System & Core
 
     /// General system-level logs.
-    case system
+    public static let system: Self = "system"
     /// App lifecycle events (launch, terminate, background, foreground).
-    case lifecycle
+    public static let lifecycle: Self = "lifecycle"
     /// Initialization and setup operations.
-    case initialization
+    public static let initialization: Self = "initialization"
     /// Configuration changes and updates.
-    case configuration
+    public static let configuration: Self = "configuration"
 
     // MARK: - Networking
 
     /// General networking operations.
-    case network
+    public static let network: Self = "network"
     /// API requests and responses.
-    case api
+    public static let api: Self = "api"
     /// HTTP-specific operations.
-    case http
+    public static let http: Self = "http"
     /// WebSocket connections and messages.
-    case websocket
+    public static let websocket: Self = "websocket"
     /// SSL/TLS certificate and encryption issues.
-    case ssl
+    public static let ssl: Self = "ssl"
 
     // MARK: - User Interface
 
     /// User interface events and updates.
-    case ui
+    public static let ui: Self = "ui"
     /// Navigation and routing operations.
-    case navigation
+    public static let navigation: Self = "navigation"
     /// Animation-related logs.
-    case animation
+    public static let animation: Self = "animation"
     /// Layout calculations and constraints.
-    case layout
+    public static let layout: Self = "layout"
     /// Gesture recognition and handling.
-    case gesture
+    public static let gesture: Self = "gesture"
 
     // MARK: - Data & Storage
 
     /// Database operations (SQLite, Core Data, etc.).
-    case database
+    public static let database: Self = "database"
     /// Core Data specific operations.
-    case coreData
+    public static let coreData: Self = "coreData"
     /// File system read/write operations.
-    case fileSystem
+    public static let fileSystem: Self = "fileSystem"
     /// Cache operations and management.
-    case cache
+    public static let cache: Self = "cache"
     /// General persistence operations.
-    case persistence
+    public static let persistence: Self = "persistence"
     /// Data synchronization operations.
-    case sync
+    public static let sync: Self = "sync"
 
     // MARK: - Security & Authentication
 
     /// User authentication operations.
-    case authentication
+    public static let authentication: Self = "authentication"
     /// Authorization and permissions.
-    case authorization
+    public static let authorization: Self = "authorization"
     /// General security-related logs.
-    case security
+    public static let security: Self = "security"
     /// Encryption and decryption operations.
-    case encryption
+    public static let encryption: Self = "encryption"
     /// Keychain access and operations.
-    case keychain
+    public static let keychain: Self = "keychain"
     /// Biometric authentication (Face ID, Touch ID).
-    case biometrics
+    public static let biometrics: Self = "biometrics"
 
     // MARK: - Performance & Monitoring
 
     /// Performance measurements and benchmarks.
-    case performance
+    public static let performance: Self = "performance"
     /// Memory usage and management.
-    case memory
+    public static let memory: Self = "memory"
     /// CPU usage and profiling.
-    case cpu
+    public static let cpu: Self = "cpu"
     /// Battery usage and power management.
-    case battery
+    public static let battery: Self = "battery"
     /// Analytics tracking and reporting.
-    case analytics
+    public static let analytics: Self = "analytics"
     /// Crash reports and diagnostics.
-    case crash
+    public static let crash: Self = "crash"
     /// Performance profiling operations.
-    case profiling
+    public static let profiling: Self = "profiling"
 
     // MARK: - External Services
 
     /// Push notification operations.
-    case push
+    public static let push: Self = "push"
     /// Location services and tracking.
-    case location
+    public static let location: Self = "location"
     /// Camera access and operations.
-    case camera
+    public static let camera: Self = "camera"
     /// Microphone access and recording.
-    case microphone
+    public static let microphone: Self = "microphone"
     /// Contacts access and operations.
-    case contacts
+    public static let contacts: Self = "contacts"
     /// Calendar access and operations.
-    case calendar
+    public static let calendar: Self = "calendar"
     /// Photo library access and operations.
-    case photos
+    public static let photos: Self = "photos"
 
     // MARK: - Business Logic
 
     /// Payment processing operations.
-    case payment
+    public static let payment: Self = "payment"
     /// Subscription management.
-    case subscription
+    public static let subscription: Self = "subscription"
     /// In-app purchase operations.
-    case purchase
+    public static let purchase: Self = "purchase"
     /// User account and profile operations.
-    case user
+    public static let user: Self = "user"
     /// Content management operations.
-    case content
+    public static let content: Self = "content"
     /// Search operations and indexing.
-    case search
+    public static let search: Self = "search"
 
     // MARK: - Development & Testing
 
     /// Debug-specific logs for development.
-    case debug
+    public static let debug: Self = "debug"
     /// Test execution and results.
-    case test
+    public static let test: Self = "test"
     /// Mock data and services.
-    case mock
+    public static let mock: Self = "mock"
 
-    // MARK: - Custom
-
-    /// Custom category for project-specific needs.
-    ///
-    /// Use this for specialized categories unique to your project:
-    ///
-    /// ```swift
-    /// logger.info("Inventory updated", category: .custom("inventory"))
-    /// ```
-    case custom(String)
-
-    public var rawValue: String {
-        switch self {
-        case .system: "system"
-        case .lifecycle: "lifecycle"
-        case .initialization: "initialization"
-        case .configuration: "configuration"
-        case .network: "network"
-        case .api: "api"
-        case .http: "http"
-        case .websocket: "websocket"
-        case .ssl: "ssl"
-        case .ui: "ui"
-        case .navigation: "navigation"
-        case .animation: "animation"
-        case .layout: "layout"
-        case .gesture: "gesture"
-        case .database: "database"
-        case .coreData: "coreData"
-        case .fileSystem: "fileSystem"
-        case .cache: "cache"
-        case .persistence: "persistence"
-        case .sync: "sync"
-        case .authentication: "authentication"
-        case .authorization: "authorization"
-        case .security: "security"
-        case .encryption: "encryption"
-        case .keychain: "keychain"
-        case .biometrics: "biometrics"
-        case .performance: "performance"
-        case .memory: "memory"
-        case .cpu: "cpu"
-        case .battery: "battery"
-        case .analytics: "analytics"
-        case .crash: "crash"
-        case .profiling: "profiling"
-        case .push: "push"
-        case .location: "location"
-        case .camera: "camera"
-        case .microphone: "microphone"
-        case .contacts: "contacts"
-        case .calendar: "calendar"
-        case .photos: "photos"
-        case .payment: "payment"
-        case .subscription: "subscription"
-        case .purchase: "purchase"
-        case .user: "user"
-        case .content: "content"
-        case .search: "search"
-        case .debug: "debug"
-        case .test: "test"
-        case .mock: "mock"
-        case let .custom(value): value
-        }
-    }
-
+    /// A readable name: the curated one for predefined categories, the raw value for any other.
     public var displayName: String {
-        switch self {
-        case .system: "System"
-        case .lifecycle: "Lifecycle"
-        case .initialization: "Initialization"
-        case .configuration: "Configuration"
-        case .network: "Network"
-        case .api: "API"
-        case .http: "HTTP"
-        case .websocket: "WebSocket"
-        case .ssl: "SSL/TLS"
-        case .ui: "User Interface"
-        case .navigation: "Navigation"
-        case .animation: "Animation"
-        case .layout: "Layout"
-        case .gesture: "Gesture"
-        case .database: "Database"
-        case .coreData: "Core Data"
-        case .fileSystem: "File System"
-        case .cache: "Cache"
-        case .persistence: "Persistence"
-        case .sync: "Synchronization"
-        case .authentication: "Authentication"
-        case .authorization: "Authorization"
-        case .security: "Security"
-        case .encryption: "Encryption"
-        case .keychain: "Keychain"
-        case .biometrics: "Biometrics"
-        case .performance: "Performance"
-        case .memory: "Memory"
-        case .cpu: "CPU"
-        case .battery: "Battery"
-        case .analytics: "Analytics"
-        case .crash: "Crash"
-        case .profiling: "Profiling"
-        case .push: "Push Notifications"
-        case .location: "Location"
-        case .camera: "Camera"
-        case .microphone: "Microphone"
-        case .contacts: "Contacts"
-        case .calendar: "Calendar"
-        case .photos: "Photos"
-        case .payment: "Payment"
-        case .subscription: "Subscription"
-        case .purchase: "Purchase"
-        case .user: "User"
-        case .content: "Content"
-        case .search: "Search"
-        case .debug: "Debug"
-        case .test: "Test"
-        case .mock: "Mock"
-        case let .custom(value): value.capitalized
-        }
+        Self.displayNames[rawValue] ?? rawValue
     }
+
+    public var description: String {
+        displayName
+    }
+
+    private static let displayNames: [String: String] = [
+        "system": "System",
+        "lifecycle": "Lifecycle",
+        "initialization": "Initialization",
+        "configuration": "Configuration",
+        "network": "Network",
+        "api": "API",
+        "http": "HTTP",
+        "websocket": "WebSocket",
+        "ssl": "SSL/TLS",
+        "ui": "User Interface",
+        "navigation": "Navigation",
+        "animation": "Animation",
+        "layout": "Layout",
+        "gesture": "Gesture",
+        "database": "Database",
+        "coreData": "Core Data",
+        "fileSystem": "File System",
+        "cache": "Cache",
+        "persistence": "Persistence",
+        "sync": "Synchronization",
+        "authentication": "Authentication",
+        "authorization": "Authorization",
+        "security": "Security",
+        "encryption": "Encryption",
+        "keychain": "Keychain",
+        "biometrics": "Biometrics",
+        "performance": "Performance",
+        "memory": "Memory",
+        "cpu": "CPU",
+        "battery": "Battery",
+        "analytics": "Analytics",
+        "crash": "Crash",
+        "profiling": "Profiling",
+        "push": "Push Notifications",
+        "location": "Location",
+        "camera": "Camera",
+        "microphone": "Microphone",
+        "contacts": "Contacts",
+        "calendar": "Calendar",
+        "photos": "Photos",
+        "payment": "Payment",
+        "subscription": "Subscription",
+        "purchase": "Purchase",
+        "user": "User",
+        "content": "Content",
+        "search": "Search",
+        "debug": "Debug",
+        "test": "Test",
+        "mock": "Mock"
+    ]
 
     /// Common categories for quick access
     public static let common: [LogCategory] = [
         .system, .network, .ui, .authentication, .database, .performance, .debug
     ]
 
-    /// All predefined categories (excluding custom)
+    /// All predefined categories
     public static let predefined: [LogCategory] = [
         .system, .lifecycle, .initialization, .configuration,
         .network, .api, .http, .websocket, .ssl,
@@ -412,13 +370,48 @@ public enum LogCategory: Sendable, Codable, Hashable, Equatable {
         .payment, .subscription, .purchase, .user, .content, .search,
         .debug, .test, .mock
     ]
+}
 
-    public init(rawValue: String) {
-        if let predefined = Self.predefined.first(where: { $0.rawValue == rawValue }) {
-            self = predefined
-        } else {
-            self = .custom(rawValue)
+// MARK: - Codable
+
+public extension LogCategory {
+    /// Decodes a category name. Also accepts the form Logr 1.x wrote, when `LogCategory` was an enum:
+    /// `{"network":{}}` and `{"custom":{"_0":"Checkout"}}`.
+    init(from decoder: any Decoder) throws {
+        if let name = try? decoder.singleValueContainer().decode(String.self) {
+            self.init(rawValue: name)
+            return
         }
+        let container = try decoder.container(keyedBy: LegacyKey.self)
+        guard container.allKeys.count == 1, let key = container.allKeys.first else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "Expected a category name"))
+        }
+        guard key.stringValue == "custom" else {
+            self.init(rawValue: key.stringValue)
+            return
+        }
+        let associatedValues = try container.nestedContainer(keyedBy: LegacyKey.self, forKey: key)
+        try self.init(rawValue: associatedValues.decode(String.self, forKey: LegacyKey(stringValue: "_0")))
+    }
+
+    /// Encodes the category as its ``rawValue``.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+private struct LegacyKey: CodingKey {
+    let stringValue: String
+    let intValue: Int? = nil
+
+    init(stringValue: String) {
+        self.stringValue = stringValue
+    }
+
+    init?(intValue: Int) {
+        nil
     }
 }
 
@@ -431,11 +424,5 @@ extension LogCategory: Identifiable {
 extension LogCategory: CaseIterable {
     public static var allCases: [LogCategory] {
         predefined
-    }
-}
-
-extension LogCategory: CustomStringConvertible {
-    public var description: String {
-        displayName
     }
 }

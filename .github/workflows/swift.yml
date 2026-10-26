@@ -2,9 +2,9 @@ name: "Swift Package CI"
 
 on:
   push:
-    branches: ["main", "develop"]
+    branches: ["main", "develop", "feature/logr-2.0"]
   pull_request:
-    branches: ["main", "develop"]
+    branches: ["main", "develop", "feature/logr-2.0"]
 
 permissions:
   contents: read
@@ -49,6 +49,8 @@ jobs:
           swift package generate-documentation --target Logr --warnings-as-errors
           swift package generate-documentation --target LogrUI --warnings-as-errors
           swift package generate-documentation --target LogrTesting --warnings-as-errors
+          swift package generate-documentation --target LogrSwiftLog --warnings-as-errors
+          swift package generate-documentation --target LogrNetwork --warnings-as-errors
 
   platforms:
     name: Build (${{ matrix.platform }})

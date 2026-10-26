@@ -46,7 +46,7 @@ import Foundation
 ///     // Implement the other required methods...
 /// }
 ///
-/// let logger = try LogR(storage: CloudStorage())
+/// let logger = LogR(storage: .custom(CloudStorage()))
 /// ```
 ///
 /// ## Topics

@@ -86,14 +86,14 @@ actor SlowStorage: LogRPersistence {
 @MainActor
 @Suite("Writer Reliability")
 struct WriterReliabilityTests {
-    private func makeCrypto() throws -> LoggerCryptoService {
-        try LoggerCryptoService(store: InMemoryKeychainStore())
+    private func makeCrypto() -> LoggerCryptoService {
+        LoggerCryptoService(store: InMemoryKeychainStore())
     }
 
     @Test("A transient store failure does not lose log entries")
     func testTransientFailureDoesNotDrop() async throws {
         let storage = FlakyStorage(failingFirst: 1)
-        let logr = LogR(storage: storage, cryptoService: try makeCrypto())
+        let logr = LogR(storage: .custom(storage), cryptoService: makeCrypto())
 
         logr.info("a")
         logr.info("b")
@@ -108,7 +108,7 @@ struct WriterReliabilityTests {
     @Test("All logged entries are persisted after flush")
     func testFlushPersistsAll() async throws {
         let storage = FlakyStorage(failingFirst: 0)
-        let logr = LogR(storage: storage, cryptoService: try makeCrypto())
+        let logr = LogR(storage: .custom(storage), cryptoService: makeCrypto())
 
         for index in 0 ..< 120 {
             logr.info("msg \(index)")
@@ -125,7 +125,7 @@ struct WriterReliabilityTests {
     func testDroppedLogCountVisibleViaExistential() async throws {
         // Fails enough times to exhaust the writer's retries, so the batch is dropped and reported.
         let storage = FlakyStorage(failingFirst: 3)
-        let service: any LogRService = LogR(storage: storage, cryptoService: try makeCrypto())
+        let service: any LogRService = LogR(storage: .custom(storage), cryptoService: makeCrypto())
 
         service.info("x")
         await service.flush()
@@ -142,8 +142,8 @@ struct WriterReliabilityTests {
         // A plain `OSAllocatedUnfairLock` rather than `SafeMutex`: the latter is `~Copyable`, so it
         // can't be captured in the escaping `@Sendable` onDrop closure below.
         let droppedBox = OSAllocatedUnfairLock(initialState: 0)
-        let writer = LogWriterActor(storage: storage,
-                                    cryptoService: try makeCrypto(),
+        let writer = LogWriterActor(storage: .custom(storage),
+                                    cryptoService: makeCrypto(),
                                     configuration: .default,
                                     batchSize: 5,
                                     maxRetries: 1,
@@ -167,8 +167,8 @@ struct WriterReliabilityTests {
     @Test("Drops that happen before a handler is registered are delivered when it is")
     func testDropsBeforeHandlerAreDelivered() async throws {
         let storage = SlowStorage(delay: .milliseconds(50))
-        let writer = LogWriterActor(storage: storage,
-                                    cryptoService: try makeCrypto(),
+        let writer = LogWriterActor(storage: .custom(storage),
+                                    cryptoService: makeCrypto(),
                                     configuration: .default,
                                     batchSize: 5,
                                     maxRetries: 1,
@@ -190,7 +190,7 @@ struct WriterReliabilityTests {
     @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @Test("droppedLogCount counts every entry that fails to encrypt, however early", .timeLimit(.minutes(1)))
     func testDroppedLogCountIsExactForEncryptionFailures() async throws {
-        let logr = LogR(storage: FlakyStorage(failingFirst: 0), cryptoService: FailingCrypto())
+        let logr = LogR(storage: .custom(FlakyStorage(failingFirst: 0)), cryptoService: FailingCrypto())
 
         for index in 0 ..< 5 {
             logr.info("unencryptable \(index)")
@@ -200,6 +200,55 @@ struct WriterReliabilityTests {
         let dropped = await Observations { logr.droppedLogCount }.first { @Sendable in $0 >= 5 }
         #expect(dropped == 5)
     }
+
+    @Test("Cleanup passes do not pile up behind one that is still running", .timeLimit(.minutes(1)))
+    func testCleanupPassesDoNotPileUp() async throws {
+        let storage = GatedCleanupStorage()
+        let logr = LogR(storage: .custom(storage), cryptoService: makeCrypto())
+
+        logr.performCleanup()
+        await storage.cleanupStarted()
+        for _ in 0 ..< 50 {
+            logr.performCleanup()
+        }
+        await storage.releaseCleanup()
+        await logr.flush()
+
+        #expect(await storage.cleanupPasses == 1)
+    }
+}
+
+/// Holds the first cleanup pass in `deleteEntries(olderThan:)` until `releaseCleanup()`; later passes run through.
+private actor GatedCleanupStorage: LogRPersistence {
+    private(set) var cleanupPasses = 0
+    private var isReleased = false
+    private var started: CheckedContinuation<Void, Never>?
+    private var gate: CheckedContinuation<Void, Never>?
+
+    func cleanupStarted() async {
+        guard cleanupPasses == 0 else { return }
+        await withCheckedContinuation { started = $0 }
+    }
+
+    func releaseCleanup() {
+        isReleased = true
+        gate?.resume()
+        gate = nil
+    }
+
+    func deleteEntries(olderThan date: Date) async throws {
+        cleanupPasses += 1
+        started?.resume()
+        started = nil
+        guard !isReleased else { return }
+        await withCheckedContinuation { gate = $0 }
+    }
+
+    func store(_ entry: EncryptedLogEntry) async throws {}
+    func fetchEntries() async throws -> [EncryptedLogEntry] { [] }
+    func deleteEntries(keepingLatest count: Int) async throws {}
+    func clear() async throws {}
+    func count() async throws -> Int { 0 }
 }
 
 private struct FailingCrypto: LoggerCryptoServicing {

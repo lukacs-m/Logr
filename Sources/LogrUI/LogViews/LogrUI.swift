@@ -6,8 +6,8 @@
 //
 
 import Combine
-import DequeModule
 import Logr
+import LogrNetwork
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -52,7 +52,8 @@ import UniformTypeIdentifiers
 /// - Expand/collapse all log entries
 /// - Export logs in JSON, CSV, or plain text format
 /// - Share logs via system share sheet
-/// - Clear all logs with confirmation
+/// - Clear all logs with confirmation (and captured HTTP bodies, given a `\.networkLogger`)
+/// - Browse recorded HTTP requests in ``NetworkLogView``
 ///
 /// **AI Analysis** (iOS 26+)
 /// - Scan for privacy issues and PII exposure
@@ -67,8 +68,7 @@ import UniformTypeIdentifiers
 ///
 /// @main
 /// struct MyApp: App {
-///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
-///     let logger = try! LogR(storage: SQLiteStorage())
+///     let logger = LogR(storage: .sqlite())
 ///
 ///     var body: some Scene {
 ///         WindowGroup {
@@ -99,6 +99,7 @@ import UniformTypeIdentifiers
 /// - ``init(functionalityFilter:)``
 public struct LogViewer: View {
     @Environment(\.logService) private var logr
+    @Environment(\.networkLogger) private var networkLogger
     @State private var logFilterPreferences = LogFilterPreferences()
     @State private var showingDeleteConfirmation = false
     @State private var presentedSheet: SheetDestination?
@@ -114,16 +115,24 @@ public struct LogViewer: View {
         case privacyLogChecks
         case issuesSummary
         case statistics
+        case network
 
         var id: Self {
             self
         }
     }
 
+    /// The optional parts of the viewer.
     public enum Functionalities: Equatable, CaseIterable {
+        /// The "Analyze logs" menu, shown while the service can analyse logs.
         case analyser
+        /// Export and sharing.
         case sharing
+        /// The statistics sheet.
         case statistics
+        /// A Network button, shown while the logs hold an entry `NetworkLogger` recorded, that opens
+        /// ``NetworkLogView`` in a sheet.
+        case network
     }
 
     enum LogViewerError: LocalizedError {
@@ -159,8 +168,7 @@ public struct LogViewer: View {
     ///
     /// @main
     /// struct MyApp: App {
-    ///     // Stored-property initializers can't use `try`; in real code prefer a throwing `init()`.
-    ///     let logger = try! LogR()
+    ///     let logger = LogR()
     ///
     ///     var body: some Scene {
     ///         WindowGroup {
@@ -205,7 +213,7 @@ public struct LogViewer: View {
             FilterSheet()
                 .environment(logFilterPreferences)
         case .privacyLogChecks:
-            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *) {
+            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *) {
                 NavigationStack {
                     PrivacyWarningsView()
                 }
@@ -213,7 +221,7 @@ public struct LogViewer: View {
                 NonAccessibleFeatureView()
             }
         case .issuesSummary:
-            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 12.0, *) {
+            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *) {
                 NavigationStack {
                     IssueSummaryView()
                 }
@@ -224,6 +232,8 @@ public struct LogViewer: View {
             NavigationStack {
                 LogStatisticsView()
             }
+        case .network:
+            NetworkSheet()
         }
     }
 }
@@ -297,7 +307,7 @@ private extension LogViewer {
     }
 
     /// `nil` while the summary panel is hidden, so nothing schedules a refresh no one reads.
-    var compactStatisticsRefreshID: Deque<LogEntry>? {
+    var compactStatisticsRefreshID: LogEntries? {
         logFilterPreferences.showStatisticsPanel ? logr.recentLogs : nil
     }
 
@@ -365,6 +375,15 @@ private extension LogViewer {
 private extension LogViewer {
     var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            if functionalityFilter.contains(.network),
+               logr.recentLogs.contains(where: { NetworkRequest($0) != nil }) {
+                Button {
+                    presentedSheet = .network
+                } label: {
+                    Label("Network", systemImage: "network")
+                }
+            }
+
             Button("Filters") {
                 presentedSheet = .filters
             }
@@ -474,11 +493,19 @@ private extension LogViewer {
 private extension LogViewer {
     func clearAllLogs() {
         Task {
+            // Bodies go even when the entries cannot be cleared: they are what holds request content.
+            var failure: (any Error)?
+            do {
+                try await networkLogger?.clearBodies()
+            } catch {
+                failure = error
+            }
             do {
                 try await logr.clearLogs()
             } catch {
-                showError = error
+                failure = failure ?? error
             }
+            showError = failure
         }
     }
 
@@ -499,6 +526,26 @@ private extension LogViewer {
 
             return true
         }
+    }
+}
+
+private struct NetworkSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            NetworkLogView()
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+        #if os(macOS)
+        .frame(minWidth: 520, minHeight: 560)
+        #endif
     }
 }
 

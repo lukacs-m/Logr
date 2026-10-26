@@ -17,6 +17,7 @@ container of its own: host it inside a `NavigationStack`.
 
 - ``SwiftUICore/View/logRService(_:)``
 - ``SwiftUICore/EnvironmentValues/logService``
+- ``SwiftUICore/EnvironmentValues/networkLogger``
 - ``LogRServiceModifier``
 
 ### Views
@@ -28,6 +29,8 @@ container of its own: host it inside a `NavigationStack`.
 - ``AIAnalysisView``
 - ``PrivacyWarningsView``
 - ``IssueSummaryView``
+- ``NetworkLogView``
+- ``NetworkLogDetailView``
 
 ### Viewer preferences
 

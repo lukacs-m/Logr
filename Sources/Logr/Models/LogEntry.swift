@@ -44,6 +44,7 @@ import Foundation
 /// - ``function``
 /// - ``line``
 /// - ``metadata``
+/// - ``privateRanges``
 public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     /// Unique identifier for this log entry.
     public let id: String
@@ -60,10 +61,11 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     /// The subsystem identifier (typically your app's bundle ID).
     public let subsystem: String
 
-    /// The log message content.
+    /// The log message as stored: private values in clear only when ``LogrConfiguration/storesPrivateValues`` was
+    /// on, see ``LogPrivacy``.
     public let message: String
 
-    /// The source file where this log was created.
+    /// The source file where this log was created, as `#fileID` gives it: `Module/File.swift`.
     public let file: String
 
     /// The function name where this log was created.
@@ -84,6 +86,11 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     /// ```
     public let metadata: [String: LogMetadataValue]?
 
+    /// Where ``message`` holds private values in clear, as UTF-8 offsets; empty when it holds none.
+    ///
+    /// Exports replace these ranges with `<private>` unless asked to keep them. Logr 1.x entries have none.
+    public let privateRanges: [Range<Int>]
+
     /// Creates a new log entry.
     ///
     /// - Parameters:
@@ -93,20 +100,22 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
     ///   - category: The category for organizing logs.
     ///   - subsystem: The subsystem identifier.
     ///   - message: The log message content.
-    ///   - file: Source file (automatically captured).
+    ///   - file: Source file. Defaults to the caller's `#fileID` (`Module/File.swift`).
     ///   - function: Function name (automatically captured).
     ///   - line: Line number (automatically captured).
     ///   - metadata: Optional structured metadata key-value pairs.
+    ///   - privateRanges: Where `message` holds private values in clear, as UTF-8 offsets. Defaults to none.
     public init(id: String = UUID().uuidString,
                 timestamp: Date = Date(),
                 level: LogLevel,
                 category: LogCategory,
                 subsystem: String,
                 message: String,
-                file: String = #file,
+                file: String = #fileID,
                 function: String = #function,
                 line: Int = #line,
-                metadata: [String: LogMetadataValue]? = nil) {
+                metadata: [String: LogMetadataValue]? = nil,
+                privateRanges: [Range<Int>] = []) {
         self.id = id
         self.timestamp = timestamp
         self.level = level
@@ -117,6 +126,7 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
         self.function = function
         self.line = line
         self.metadata = metadata
+        self.privateRanges = privateRanges
     }
 
     public static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
@@ -126,7 +136,8 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
             lhs.category == rhs.category &&
             lhs.subsystem == rhs.subsystem &&
             lhs.message == rhs.message &&
-            lhs.metadata == rhs.metadata
+            lhs.metadata == rhs.metadata &&
+            lhs.privateRanges == rhs.privateRanges
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -137,6 +148,78 @@ public struct LogEntry: Sendable, Codable, Identifiable, Hashable, Equatable {
         hasher.combine(subsystem)
         hasher.combine(message)
         hasher.combine(metadata)
+        hasher.combine(privateRanges)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, timestamp, level, category, subsystem, message, file, function, line, metadata, privateRanges
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        level = try container.decode(LogLevel.self, forKey: .level)
+        category = try container.decode(LogCategory.self, forKey: .category)
+        subsystem = try container.decode(String.self, forKey: .subsystem)
+        message = try container.decode(String.self, forKey: .message)
+        file = try container.decode(String.self, forKey: .file)
+        function = try container.decode(String.self, forKey: .function)
+        line = try container.decode(Int.self, forKey: .line)
+        metadata = try container.decodeIfPresent([String: LogMetadataValue].self, forKey: .metadata)
+        privateRanges = try container.decodeIfPresent([Range<Int>].self, forKey: .privateRanges) ?? []
+    }
+
+    /// Leaves out empty ``privateRanges``, as most entries have none.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encode(level, forKey: .level)
+        try container.encode(category, forKey: .category)
+        try container.encode(subsystem, forKey: .subsystem)
+        try container.encode(message, forKey: .message)
+        try container.encode(file, forKey: .file)
+        try container.encode(function, forKey: .function)
+        try container.encode(line, forKey: .line)
+        try container.encodeIfPresent(metadata, forKey: .metadata)
+        if !privateRanges.isEmpty {
+            try container.encode(privateRanges, forKey: .privateRanges)
+        }
+    }
+}
+
+extension LogEntry {
+    /// This entry with `<private>` in place of every private value ``message`` holds in clear.
+    ///
+    /// Ranges come from storage or from callers, so they are clamped to the message and merged where they
+    /// overlap; a range that splits a character replaces what is left of it with U+FFFD.
+    func redactingPrivateValues() -> LogEntry {
+        guard !privateRanges.isEmpty else { return self }
+        let source = Array(message.utf8)
+        var merged: [Range<Int>] = []
+        for range in privateRanges.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            let lower = min(max(range.lowerBound, 0), source.count)
+            let upper = min(max(range.upperBound, lower), source.count)
+            guard lower < upper else { continue }
+            if let last = merged.last, lower < last.upperBound {
+                merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, upper)
+            } else {
+                merged.append(lower..<upper)
+            }
+        }
+        var output: [UInt8] = []
+        var cursor = 0
+        for range in merged {
+            output += source[cursor..<range.lowerBound]
+            output += LogPrivacy.privatePlaceholder.utf8
+            cursor = range.upperBound
+        }
+        output += source[cursor...]
+        return LogEntry(id: id, timestamp: timestamp, level: level, category: category, subsystem: subsystem,
+                        message: String(decoding: output, as: UTF8.self), file: file, function: function,
+                        line: line,
+                        metadata: metadata)
     }
 }
 
