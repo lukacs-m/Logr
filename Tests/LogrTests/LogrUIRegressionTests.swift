@@ -1,3 +1,8 @@
+#if os(macOS)
+import AppKit
+import SwiftUI
+import Vision
+#endif
 import Collections
 import DequeModule
 import Foundation
@@ -5,6 +10,7 @@ import Testing
 import UniformTypeIdentifiers
 @testable import Logr
 @testable import LogrUI
+import LogrNetwork
 import LogrTesting
 
 @MainActor
@@ -297,6 +303,37 @@ private final class StubLogService: LogRService {
         throw CancellationError()
     }
 }
+
+#if os(macOS)
+@MainActor
+@Suite("NetworkLogDetailView rendering")
+struct NetworkLogDetailViewRenderingTests {
+    @Test func aHeaderInBothSectionsShowsEachSectionsOwnValue() throws {
+        let entry = LogEntry(level: .info, category: .http, subsystem: "test", message: "POST /", metadata: [
+            HTTPLogFields.method: "POST",
+            HTTPLogFields.url: "https://a.test/",
+            HTTPLogFields.requestHeaders: ["Content-Type": "REQUESTVALUE"],
+            HTTPLogFields.responseHeaders: ["Content-Type": "RESPONSEVALUE"]
+        ])
+        let view = NSHostingView(rootView: NetworkLogDetailView(entry: entry))
+        view.frame = NSRect(x: 0, y: 0, width: 600, height: 1000)
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+
+        // The macOS List keeps no accessibility tree outside an app, so read what it drew.
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: try #require(bitmap.cgImage)).perform([request])
+        let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        #expect(text.contains { $0.contains("REQUESTVALUE") })
+        #expect(text.contains { $0.contains("RESPONSEVALUE") })
+    }
+}
+#endif
 
 private struct StubTimeout: Error {}
 

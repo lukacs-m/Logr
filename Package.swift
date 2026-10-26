@@ -25,7 +25,9 @@ let package = Package(
         .library(name: "LogrTesting",
                  targets: ["LogrTesting"]),
         .library(name: "LogrSwiftLog",
-                 targets: ["LogrSwiftLog"])
+                 targets: ["LogrSwiftLog"]),
+        .library(name: "LogrNetwork",
+                 targets: ["LogrNetwork"])
     ],
     dependencies: [
            .package(url: "https://github.com/nicklockwood/SwiftFormat", from: "0.61.0"),
@@ -49,7 +51,7 @@ let package = Package(
         ),
         .target(
             name: "LogrUI",
-            dependencies: ["Logr"],
+            dependencies: ["Logr", "LogrNetwork"],
             swiftSettings: [
               .defaultIsolation(MainActor.self),
               .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
@@ -77,9 +79,18 @@ let package = Package(
               .enableUpcomingFeature("ExistentialAny")
             ]
         ),
+        .target(
+            name: "LogrNetwork",
+            dependencies: ["Logr"],
+            swiftSettings: [
+              .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+              .enableUpcomingFeature("InferIsolatedConformances"),
+              .enableUpcomingFeature("ExistentialAny")
+            ]
+        ),
         .testTarget(
             name: "LogrTests",
-            dependencies: ["Logr", "LogrUI", "LogrTesting", "LogrSwiftLog",
+            dependencies: ["Logr", "LogrUI", "LogrTesting", "LogrSwiftLog", "LogrNetwork",
                            .product(name: "Logging", package: "swift-log")],
             resources: [.copy("Fixtures")],
             swiftSettings: [systemModel]

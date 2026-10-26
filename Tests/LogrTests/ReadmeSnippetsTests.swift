@@ -10,6 +10,7 @@
 
 import Logging
 import Logr
+import LogrNetwork
 import LogrSwiftLog
 import LogrTesting
 import LogrUI
@@ -88,6 +89,19 @@ func checkout(orderID: String, logger: any LogRService) async {
 private func swiftLogSnippet() {
     let logger = LogR(storage: .sqlite())
     LoggingSystem.bootstrap { label in LogrLogHandler(label: label, logger: logger) }
+}
+
+// MARK: - Network (compile-only: requests reach the network)
+
+private func networkSnippet() {
+    let logger = LogR(storage: .sqlite())
+    let network = NetworkLogger(logger: logger, configuration: NetworkLoggerConfiguration(captureBodies: true))
+
+    func fetchUser(id: Int) async throws -> Data {
+        let request = URLRequest(url: URL(string: "https://api.example.com/users/\(id)")!)
+        let (data, _) = try await URLSession.shared.loggedData(for: request, to: network)
+        return data
+    }
 }
 
 // MARK: - Configuration, storage, encryption, AI (compile-only)

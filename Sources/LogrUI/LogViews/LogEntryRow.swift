@@ -12,6 +12,7 @@ struct LogEntryRow: View, @MainActor Equatable {
     let entry: LogEntry
     @Binding var displayState: Bool
     @State private var isExpanded = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         LogDisclosureGroup(isExpanded: $isExpanded) {
@@ -48,13 +49,18 @@ private extension LogEntryRow {
             isExpanded.toggle()
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                let header = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+                    : AnyLayout(HStackLayout())
+                header {
                     LogLevelBadge(level: entry.level)
                     Text(entry.category.displayName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Spacer()
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer()
+                    }
 
                     Text(entry.timestamp, style: .time)
                         .font(.caption2)
@@ -104,6 +110,7 @@ struct LogLevelBadge: View {
             .background(backgroundColor)
             .foregroundColor(foregroundColor)
             .clipShape(Capsule())
+            .fixedSize()
     }
 
     private var backgroundColor: Color {
