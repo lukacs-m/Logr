@@ -24,8 +24,8 @@ public struct NetworkLogDetailView: View {
             List {
                 OverviewSection(request: request)
                 TimingSection(request: request)
-                HeadersSection(title: "Request Headers", headers: request.headers(HTTPLogFields.requestHeaders))
-                HeadersSection(title: "Response Headers", headers: request.headers(HTTPLogFields.responseHeaders))
+                HeadersSection(title: "Request Headers", field: HTTPLogFields.requestHeaders, request: request)
+                HeadersSection(title: "Response Headers", field: HTTPLogFields.responseHeaders, request: request)
                 if case let .string(bodyID)? = entry.metadata?[HTTPLogFields.bodyID] {
                     BodySection(bodyID: bodyID)
                 }
@@ -157,10 +157,11 @@ private struct TimingRow: View {
 
 private struct HeadersSection: View {
     let title: LocalizedStringKey
-    let headers: [(name: String, value: String)]?
+    let field: String
+    let request: NetworkRequest
 
     var body: some View {
-        if let headers {
+        if let headers = request.headers(field) {
             Section(title) {
                 if headers.isEmpty {
                     Text("None")
@@ -176,6 +177,8 @@ private struct HeadersSection: View {
                             .selectableText()
                     }
                     .accessibilityElement(children: .combine)
+                    // Both sections share one List, where a name alone collides with the other section's row.
+                    .id(field + header.name)
                 }
             }
         }
