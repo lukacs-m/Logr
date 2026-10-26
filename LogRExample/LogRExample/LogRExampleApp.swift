@@ -6,12 +6,14 @@
 //
 
 import Logr
+import LogrNetwork
 import LogrUI
 import SwiftUI
 
 @main
 struct LogRExampleApp: App {
     @State private var logger: LogR
+    private let networkLogger: NetworkLogger
 
     init() {
         let config = LogrConfiguration(maxLogEntries: 10_000,
@@ -20,18 +22,21 @@ struct LogRExampleApp: App {
                                        subsystem: "me.martin.example.LogRExample",
                                        cleanupInterval: 60 * 60,
                                        logVerbosity: .verbose)
-        if #available(macOS 26.0, *) {
-            _logger = State(initialValue: LogR(storage: .sqlite(), logAnalyser: AIAnalyzer(),
-                                               configuration: config))
+        let logger = if #available(macOS 26.0, *) {
+            LogR(storage: .sqlite(), logAnalyser: AIAnalyzer(), configuration: config)
         } else {
-            _logger = State(initialValue: LogR(storage: .sqlite(), configuration: config))
+            LogR(storage: .sqlite(), configuration: config)
         }
+        _logger = State(initialValue: logger)
+        networkLogger = NetworkLogger(logger: logger,
+                                      configuration: NetworkLoggerConfiguration(captureBodies: true))
     }
 
     var body: some Scene {
         WindowGroup {
             MainTabView()
                 .environment(\.logService, logger)
+                .environment(\.networkLogger, networkLogger)
         }
     }
 }

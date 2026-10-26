@@ -6,6 +6,7 @@
 //
 
 import Logr
+import LogrNetwork
 import SwiftUI
 
 // MARK: - Environment Key and Values
@@ -17,6 +18,10 @@ public extension EnvironmentValues {
     /// when no logger has been injected. Provide a real service with
     /// ``SwiftUICore/View/logRService(_:)`` (or `.environment(\.logService, logger)`).
     @Entry var logService: any LogRService = DisabledLogR()
+
+    /// The `NetworkLogger` whose captured bodies ``NetworkLogDetailView`` shows, and which ``LogViewer``'s
+    /// Clear All Logs also clears. `nil` by default: details then show no bodies.
+    @Entry var networkLogger: NetworkLogger?
 }
 
 public struct LogRServiceModifier: ViewModifier {

@@ -10,8 +10,8 @@ OSLog; when a ``LogStorage`` is supplied, entries are also encrypted through
 ``LoggerCryptoServicing`` and persisted on a background actor. ``LogR`` documents the pipeline,
 the isolation model and the lifecycle. Compiled usage examples live in the package README.
 
-The `LogrUI` module adds a SwiftUI viewer, statistics views and a mock service for previews, and
-`LogrSwiftLog` records swift-log events in a Logr service.
+The `LogrUI` module adds a SwiftUI viewer, statistics views and a mock service for previews,
+`LogrSwiftLog` records swift-log events in a Logr service, and `LogrNetwork` records HTTP requests.
 
 ## Topics
 

@@ -20,6 +20,7 @@ struct LogDemoView: View {
     var body: some View {
         List {
             quickActionsSection
+            NetworkDemoSection()
             logLevelsSection
             categoriesSection
             customLogSection

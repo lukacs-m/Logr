@@ -11,6 +11,7 @@
 		5B0A85F32ED6543B003D3300 /* LogrUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5B0A85F22ED6543B003D3300 /* LogrUI */; };
 		5B0A85F62ED65629003D3300 /* Logr in Frameworks */ = {isa = PBXBuildFile; productRef = 5B0A85F52ED65629003D3300 /* Logr */; };
 		5B0A85F82ED65629003D3300 /* LogrUI in Frameworks */ = {isa = PBXBuildFile; productRef = 5B0A85F72ED65629003D3300 /* LogrUI */; };
+		5B0A85FA2ED65629003D3300 /* LogrNetwork in Frameworks */ = {isa = PBXBuildFile; productRef = 5B0A85F92ED65629003D3300 /* LogrNetwork */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +35,7 @@
 				5B0A85F32ED6543B003D3300 /* LogrUI in Frameworks */,
 				5B0A85F12ED6543B003D3300 /* Logr in Frameworks */,
 				5B0A85F62ED65629003D3300 /* Logr in Frameworks */,
+				5B0A85FA2ED65629003D3300 /* LogrNetwork in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -80,6 +82,7 @@
 				5B0A85F22ED6543B003D3300 /* LogrUI */,
 				5B0A85F52ED65629003D3300 /* Logr */,
 				5B0A85F72ED65629003D3300 /* LogrUI */,
+				5B0A85F92ED65629003D3300 /* LogrNetwork */,
 			);
 			productName = LogRExample;
 			productReference = 5B0A85E12ED653ED003D3300 /* LogRExample.app */;
@@ -269,6 +272,7 @@
 				DEVELOPMENT_TEAM = SSGRJPAZU2;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -313,6 +317,7 @@
 				DEVELOPMENT_TEAM = SSGRJPAZU2;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -393,6 +398,11 @@
 		5B0A85F72ED65629003D3300 /* LogrUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LogrUI;
+		};
+		5B0A85F92ED65629003D3300 /* LogrNetwork */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5B0A85F42ED65629003D3300 /* XCLocalSwiftPackageReference "../../Logr" */;
+			productName = LogrNetwork;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

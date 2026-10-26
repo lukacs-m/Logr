@@ -10,7 +10,7 @@ encrypted at rest with Keychain-backed keys, can be browsed in a drop-in SwiftUI
 iOS 26+ can be analysed on-device by Apple Intelligence.
 
 - **Log from anywhere**: logging is `nonisolated`, no `await`, safe from any actor or thread; persistence runs on a background actor
-- **Four modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock), `LogrSwiftLog` (swift-log handler) and `LogrTesting` (test doubles)
+- **Five modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock), `LogrSwiftLog` (swift-log handler), `LogrNetwork` (HTTP capture) and `LogrTesting` (test doubles)
 - **Storage**: SQLite, an append-only NDJSON file, or your own `LogRPersistence`
 - **Encryption**: AES-256-GCM or ChaCha20-Poly1305, versioned keys with rotation
 - **Structure**: six levels, 49 predefined categories plus your own (`static let checkout: LogCategory = "checkout"`), typed metadata on every entry
@@ -30,7 +30,7 @@ dependencies: [
 ```
 
 Add `Logr` to your target, `LogrUI` if you want the SwiftUI views, `LogrSwiftLog` to bridge swift-log,
-and `LogrTesting` to your test target. In Xcode: File → Add Package Dependencies → `https://github.com/lukacs-m/logr`.
+`LogrNetwork` to record HTTP requests, and `LogrTesting` to your test target. In Xcode: File → Add Package Dependencies → `https://github.com/lukacs-m/logr`.
 
 ## Quick start
 
@@ -153,6 +153,30 @@ own handlers, `LogrLogHandler` drops levels below `info` unless a `Logger` lower
 have no per-value privacy, so they are stored as public, with the event's `error` appended as a private value; a
 metadata value tagged `.attributed(email, attributes: [LogrSensitivity.private])` is stored as `<private>`.
 
+## Network
+
+The `LogrNetwork` product records each request you opt in as one entry in category `.http`, such as
+`GET /users/42 → 200 (84 ms)`, with method, redacted URL and headers, status, sizes and phase timings as metadata:
+
+```swift
+let logger = LogR(storage: .sqlite())
+let network = NetworkLogger(logger: logger, configuration: NetworkLoggerConfiguration(captureBodies: true))
+
+func fetchUser(id: Int) async throws -> Data {
+    let request = URLRequest(url: URL(string: "https://api.example.com/users/\(id)")!)
+    let (data, _) = try await URLSession.shared.loggedData(for: request, to: network)
+    return data
+}
+```
+
+Nothing is swizzled: call `loggedData(for:to:)` or `loggedUpload(for:from:to:)`, or give a session you own
+`LogrURLSessionProxyDelegate(logger: network, forwardingTo: yourDelegate)`. `Authorization`, cookies, API key
+and token headers, and `password`, `token` and similar query items and JSON or form keys, read `<private>`.
+Bodies are off by default; with `captureBodies`, textual bodies are encrypted outside the entries, newest 100
+requests only, and `clearLogs()` does not reach them: call `network.clearBodies()` too. Put
+`.environment(\.networkLogger, network)` on `LogViewer`: it then shows a Network button with a request list,
+timings and bodies, and its Clear All clears the bodies as well.
+
 ## Configuration
 
 ```swift
@@ -263,9 +287,11 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 | `Sources/LogrUI/LogViews/` | `LogViewer`, its filter and export sheets, the entry row |
 | `Sources/LogrUI/Statistics/` | `LogStatisticsView`, `CompactLogStatisticsView` |
 | `Sources/LogrUI/AIAnalysisViews/` | Privacy warnings, issue summary and progress views |
+| `Sources/LogrUI/Network/` | `NetworkLogView`, `NetworkLogDetailView` |
 | `Sources/LogrUI/Mock+Previews/` | `MockLogR` |
-| `Sources/LogrUI/Tools+Extensions/` | The `\.logService` environment key, `.logRService(_:)`, the no-op default logger, level and severity colours |
+| `Sources/LogrUI/Tools+Extensions/` | The `\.logService` and `\.networkLogger` environment keys, `.logRService(_:)`, the no-op default logger, level and severity colours |
 | `Sources/LogrSwiftLog/` | `LogrLogHandler` (swift-log `LogHandler`), `LogrSensitivity` |
+| `Sources/LogrNetwork/` | `NetworkLogger`, `URLSession.loggedData`/`loggedUpload`, `LogrURLSessionProxyDelegate`, `HTTPLogFields`, the encrypted body store |
 | `Sources/LogrTesting/` | `InMemoryKeychainStore` |
 | `Tests/LogrTests/` | Swift Testing suites; `ReadmeSnippetsTests.swift` compiles every snippet in this file |
 | `LogRExample/` | Xcode sample app exercising every feature |
