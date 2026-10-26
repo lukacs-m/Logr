@@ -52,7 +52,8 @@ import UniformTypeIdentifiers
 /// - Expand/collapse all log entries
 /// - Export logs in JSON, CSV, or plain text format
 /// - Share logs via system share sheet
-/// - Clear all logs with confirmation
+/// - Clear all logs with confirmation (and captured HTTP bodies, given a `\.networkLogger`)
+/// - Browse recorded HTTP requests in ``NetworkLogView``
 ///
 /// **AI Analysis** (iOS 26+)
 /// - Scan for privacy issues and PII exposure

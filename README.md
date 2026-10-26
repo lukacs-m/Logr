@@ -173,9 +173,9 @@ Nothing is swizzled: call `loggedData(for:to:)` or `loggedUpload(for:from:to:)`,
 `LogrURLSessionProxyDelegate(logger: network, forwardingTo: yourDelegate)`. `Authorization`, cookies, API key
 and token headers, and `password`, `token` and similar query items and JSON or form keys, read `<private>`.
 Bodies are off by default; with `captureBodies`, textual bodies are encrypted outside the entries, newest 100
-requests only, and `clearLogs()` does not reach them: call `network.clearBodies()` too. Put
-`.environment(\.networkLogger, network)` on `LogViewer`: it then shows a Network button with a request list,
-timings and bodies, and its Clear All clears the bodies as well.
+requests only, and `clearLogs()` does not reach them: call `network.clearBodies()` too. `LogViewer` shows a
+Network button with a request list and timings once requests are recorded; put
+`.environment(\.networkLogger, network)` on it to also show bodies and have its Clear All clear them.
 
 ## Configuration
 
