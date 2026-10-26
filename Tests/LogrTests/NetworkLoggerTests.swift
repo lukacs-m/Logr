@@ -86,7 +86,7 @@ final class LocalHTTPServer: Sendable {
             listener.stateUpdateHandler = { state in
                 switch state {
                 case .ready, .failed, .cancelled:
-                    if !started.withLock({ defer { $0 = true }; return $0 }) { continuation.resume() }
+                    if !started.withLock({ wasStarted in defer { wasStarted = true }; return wasStarted }) { continuation.resume() }
                 default:
                     break
                 }
