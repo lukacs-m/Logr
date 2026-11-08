@@ -1,215 +1,169 @@
 import Logr
 import SwiftUI
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+/// Lists the values `LogRService.scanForPrivacyIssues()` found, one row per call site and detector.
 public struct PrivacyWarningsView: View {
     @Environment(\.logService) var logr
     @State private var loading = false
-    @State private var showError: Error?
+    /// This view's own scan, run each time it appears so new logs are included: a service may not publish its
+    /// result (``LogRService`` has a default implementation).
+    @State private var scanned: PrivacyAnalysisResult?
+
+    private var result: PrivacyAnalysisResult? {
+        scanned ?? logr.privacyAnalysisResult
+    }
 
     public init() {}
 
     public var body: some View {
-        mainContent
-            .navigationTitle("Privacy Warnings")
-            .toolbar {
-                toolbarContent
+        List {
+            if let result {
+                PrivacySummarySection(result: result)
+                ForEach(result.warnings) { warning in
+                    Section {
+                        PrivacyWarningRow(warning: warning)
+                    }
+                }
             }
-            .overlay {
-                overlayContent
+        }
+        .navigationTitle("Privacy Warnings")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if result != nil {
+                    Button("ReScan") {
+                        Task { await scan() }
+                    }
+                    .disabled(loading)
+                }
             }
-            .task {
-                await loadData()
+        }
+        .overlay {
+            if loading {
+                ProgressView("Scanning logs…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background)
+            } else if let result, result.isEmpty {
+                NoPrivacyIssuesView()
             }
-            .errorAlert(error: $showError)
+        }
+        .task {
+            await scan()
+        }
     }
 
-    private func severityBadge(count: Int, severity: String, color: Color) -> some View {
+    private func scan() async {
+        loading = true
+        defer { loading = false }
+        scanned = await logr.scanForPrivacyIssues()
+    }
+}
+
+private struct PrivacySummarySection: View {
+    let result: PrivacyAnalysisResult
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let header = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout())
+        let badges = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 16))
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                header {
+                    Image(systemName: result.isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                        .foregroundStyle(result.isEmpty ? .green : .red)
+                        .font(.title2)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Privacy Scan")
+                            .font(.headline)
+                        Text(result.summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if result.criticalCount > 0 || result.highCount > 0 {
+                    badges {
+                        if result.criticalCount > 0 {
+                            SeverityCountBadge(count: result.criticalCount, severity: .critical)
+                        }
+                        if result.highCount > 0 {
+                            SeverityCountBadge(count: result.highCount, severity: .high)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(.vertical, 8)
+        } footer: {
+            if !result.isEmpty {
+                Text("Interpolate these values with privacy: .private or .sensitive, or stop logging them.")
+            }
+        }
+    }
+}
+
+private struct SeverityCountBadge: View {
+    let count: Int
+    let severity: LogSeverity
+
+    var body: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(color)
+                .fill(severity.tint)
                 .frame(width: 8, height: 8)
-            Text("\(count) \(severity)")
+            Text("\(count) \(severity.description)")
                 .font(.caption)
                 .fontWeight(.medium)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(color.opacity(0.1))
+        .background(severity.tint.opacity(0.1))
         .cornerRadius(8)
     }
-
-    private func loadData(reload: Bool = false) async {
-        guard reload || logr.privacyAnalysisResult == nil else {
-            return
-        }
-        defer { loading = false }
-
-        do {
-            loading = true
-            try await logr.scanForPrivacyIssues()
-        } catch {
-            showError = error
-        }
-    }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-private extension PrivacyWarningsView {
-    var mainContent: some View {
-        List {
-            analysisSections
-            warningSections
-        }
-    }
-
-    @ViewBuilder
-    var analysisSections: some View {
-        if let privacyAnalysis = logr.privacyAnalysisResult {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: privacyAnalysis
-                            .isEmpty ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                            .foregroundStyle(privacyAnalysis.isEmpty ? .green : .red)
-                            .font(.title2)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Privacy Analysis")
-                                .font(.headline)
-                            Text(privacyAnalysis.summary)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if privacyAnalysis.criticalCount > 0 || privacyAnalysis.highCount > 0 {
-                        HStack(spacing: 16) {
-                            if privacyAnalysis.criticalCount > 0 {
-                                severityBadge(count: privacyAnalysis.criticalCount,
-                                              severity: "Critical",
-                                              color: .red)
-                            }
-                            if privacyAnalysis.highCount > 0 {
-                                severityBadge(count: privacyAnalysis.highCount,
-                                              severity: "High",
-                                              color: .orange)
-                            }
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-        }
-    }
-
-    @ViewBuilder
-    var warningSections: some View {
-        if let privacyAnalysis = logr.privacyAnalysisResult, !privacyAnalysis.warnings.isEmpty {
-            // Only merged multi-chunk results are deduplicated, so ids can repeat.
-            ForEach(Array(privacyAnalysis.warnings.enumerated()), id: \.offset) { _, warning in
-                Section {
-                    PrivacyWarningRow(warning: warning)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Overlay
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-private extension PrivacyWarningsView {
-    @ViewBuilder
-    var overlayContent: some View {
-        if loading {
-            AnalyzeProcessingView()
-        } else if let privacyAnalysis = logr.privacyAnalysisResult, privacyAnalysis.isEmpty {
-            ContentUnavailableView {
-                Image(systemName: "text.page.badge.magnifyingglass")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 210, height: 120)
-                    .padding(.bottom, 16)
-            } description: {
-                VStack(spacing: 8) {
-                    Text("No Privacy issues found in your logs")
-                        .font(.title2)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                        .opacity(0.9)
-                    Text("Nothing to report here. It seems your are not exposing any sensitive user information.")
-                        .font(.title3)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 32)
-                }
-                .padding(.horizontal, 16)
-            } actions: {}
-        }
-    }
-}
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-private extension PrivacyWarningsView {
-    var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            if logr.privacyAnalysisResult != nil {
-                Button("ReScan") {
-                    Task {
-                        await loadData(reload: true)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private struct PrivacyWarningRow: View {
     let warning: PrivacyWarning
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        let header = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                severityIcon
+            header {
+                Image(systemName: warning.severity.symbolName)
+                    .foregroundStyle(warning.severity.tint)
                     .font(.title3)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(warning.exposureType.capitalized)
+                    Text(warning.detector)
                         .font(.headline)
                     Text("\(warning.file):\(warning.line)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospaced()
                 }
-
-                Spacer()
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                PrivacyDetailRow(label: "Exposed", value: warning.exposedContent)
-                    .font(.caption)
+                PrivacyDetailRow(label: warning.field == "message" ? "Message" : "Metadata \(warning.field)",
+                                 value: warning.excerpt)
                     .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.red.opacity(0.05))
                     .cornerRadius(6)
 
-                PrivacyDetailRow(label: "Explanation", value: warning.explanation)
-
-                PrivacyDetailRow(label: "Recommendation", value: warning.recommendation)
-                    .foregroundStyle(.blue)
+                Text(warning.occurrences == 1 ? "1 occurrence" : "\(warning.occurrences) occurrences")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 8)
-    }
-
-    /// Single source of truth — see `LogSeverity.tint`/`symbolName` in Presentation.swift.
-    private var severityIcon: some View {
-        Image(systemName: warning.severity.symbolName)
-            .foregroundStyle(warning.severity.tint)
     }
 }
 
@@ -229,7 +183,34 @@ struct PrivacyDetailRow: View {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+private struct NoPrivacyIssuesView: View {
+    var body: some View {
+        ContentUnavailableView {
+            Image(systemName: "text.page.badge.magnifyingglass")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 210, height: 120)
+                .padding(.bottom, 16)
+        } description: {
+            VStack(spacing: 8) {
+                Text("No Privacy issues found in your logs")
+                    .font(.title2)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .opacity(0.9)
+                Text("Nothing to report here. It seems you are not exposing any sensitive user information.")
+                    .font(.title3)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 32)
+            }
+            .padding(.horizontal, 16)
+        } actions: {}
+    }
+}
+
 #Preview {
     @Previewable @State var mock = MockLogR()
     NavigationStack {

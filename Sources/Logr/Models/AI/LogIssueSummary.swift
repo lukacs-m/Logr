@@ -7,135 +7,42 @@
 
 import Foundation
 
-// `@Generable` copies member declarations into its expansion, so `#if` must wrap whole declarations, never
-// individual `@Guide` attributes.
-#if LOGR_SYSTEM_MODEL
-import FoundationModels
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-@Generable(description: "Individual issue detected in application logs")
+/// One ``LogIssueGroup`` with the explanation an analyzer wrote for it.
 public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
-    @Guide(description: "Category of the issue: error, warning, crash, performance, or other")
-    public var category: String
-
-    @Guide(description: "Brief title describing the issue")
+    /// The digest group: call site, template, level and exact counts.
+    public var group: LogIssueGroup
     public var title: String
-
-    @Guide(description: "Detailed description of the issue")
-    public var description: String
-
-    @Guide(description: "The source file where the issue occurred")
-    public var file: String
-
-    @Guide(description: "The line number in the source file", .range(1...100_000))
-    public var line: Int
-
-    @Guide(description: "How many times this issue appears in the logs", .range(1...10_000))
-    public var occurrences: Int
-
-    @Guide(description: "Severity level: critical, high, medium, or low")
+    public var explanation: String
+    public var suggestedFix: String
     public var severity: LogSeverity
 
-    @Guide(description: "Suggested solution or next steps to resolve the issue")
-    public var suggestedFix: String
-
-    public init(category: String,
-                title: String,
-                description: String,
-                file: String,
-                line: Int,
-                occurrences: Int,
-                severity: LogSeverity,
-                suggestedFix: String) {
-        self.category = category
+    public init(group: LogIssueGroup, title: String, explanation: String, suggestedFix: String,
+                severity: LogSeverity) {
+        self.group = group
         self.title = title
-        self.description = description
-        self.file = file
-        self.line = line
-        self.occurrences = occurrences
-        self.severity = severity
+        self.explanation = explanation
         self.suggestedFix = suggestedFix
-    }
-}
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-@Generable(description: "Comprehensive summary of issues found in application logs")
-public struct LogIssueSummary: Sendable, Equatable {
-    @Guide(description: "Executive summary of the overall health of the application based on logs")
-    public var executiveSummary: String
-
-    @Guide(description: "List of all issues detected in the logs")
-    public var issues: [LogIssue]
-
-    @Guide(description: "Total number of error-level log entries analyzed", .range(0...10_000))
-    public var totalErrors: Int
-
-    @Guide(description: "Total number of warning-level log entries analyzed", .range(0...10_000))
-    public var totalWarnings: Int
-
-    @Guide(description: "Total number of fault-level log entries analyzed", .range(0...10_000))
-    public var totalFaults: Int
-
-    @Guide(description: "List of recurring patterns or trends identified across multiple logs")
-    public var patterns: [String]
-
-    @Guide(description: "Recommended priority actions to improve application stability")
-    public var priorityActions: [String]
-
-    public init(executiveSummary: String,
-                issues: [LogIssue],
-                totalErrors: Int,
-                totalWarnings: Int,
-                totalFaults: Int,
-                patterns: [String],
-                priorityActions: [String]) {
-        self.executiveSummary = executiveSummary
-        self.issues = issues
-        self.totalErrors = totalErrors
-        self.totalWarnings = totalWarnings
-        self.totalFaults = totalFaults
-        self.patterns = patterns
-        self.priorityActions = priorityActions
-    }
-}
-#else
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-public struct LogIssue: Sendable, Identifiable, Hashable, Equatable {
-    public var category: String
-    public var title: String
-    public var description: String
-    public var file: String
-    public var line: Int
-    public var occurrences: Int
-    public var severity: LogSeverity
-    public var suggestedFix: String
-
-    public init(category: String,
-                title: String,
-                description: String,
-                file: String,
-                line: Int,
-                occurrences: Int,
-                severity: LogSeverity,
-                suggestedFix: String) {
-        self.category = category
-        self.title = title
-        self.description = description
-        self.file = file
-        self.line = line
-        self.occurrences = occurrences
         self.severity = severity
-        self.suggestedFix = suggestedFix
+    }
+
+    /// The group's ``LogIssueGroup/id``.
+    public var id: String {
+        group.id
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+/// The outcome of ``LogRService/summarizeIssues()``: a ``LogIssueDigest`` explained by a ``LogAIAnalyzer``.
 public struct LogIssueSummary: Sendable, Equatable {
     public var executiveSummary: String
+    /// One issue per digest group, in the digest's order.
     public var issues: [LogIssue]
+    /// The digest's ``LogIssueDigest/totalErrors``.
     public var totalErrors: Int
+    /// The digest's ``LogIssueDigest/totalWarnings``.
     public var totalWarnings: Int
+    /// The digest's ``LogIssueDigest/totalFaults``.
     public var totalFaults: Int
+    /// Counts drawn from the digest, such as categories with several issues.
     public var patterns: [String]
     public var priorityActions: [String]
 
@@ -155,16 +62,7 @@ public struct LogIssueSummary: Sendable, Equatable {
         self.priorityActions = priorityActions
     }
 }
-#endif
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-public extension LogIssue {
-    var id: String {
-        "\(category):\(title)"
-    }
-}
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public extension LogIssueSummary {
     var isEmpty: Bool {
         issues.isEmpty && totalErrors == 0 && totalWarnings == 0 && totalFaults == 0
@@ -178,5 +76,67 @@ public extension LogIssueSummary {
                         totalFaults: 0,
                         patterns: [],
                         priorityActions: [])
+    }
+}
+
+// MARK: - Assembly
+
+extension LogIssueSummary {
+    /// What a model wrote for one group of a chunk, the group named by its position in the chunk.
+    struct Insight {
+        let groupIndex: Int
+        let title: String
+        let explanation: String
+        let suggestedFix: String
+        let severity: LogSeverity
+    }
+
+    /// The issues `insights` describe, by group id. Indexes outside the chunk are dropped; the first insight for a
+    /// group wins.
+    static func issues(from insights: [Insight], chunk: [LogIssueGroup]) -> [String: LogIssue] {
+        var issues: [String: LogIssue] = [:]
+        for insight in insights where chunk.indices.contains(insight.groupIndex) {
+            let group = chunk[insight.groupIndex]
+            guard issues[group.id] == nil else { continue }
+            issues[group.id] = LogIssue(group: group, title: insight.title, explanation: insight.explanation,
+                                        suggestedFix: insight.suggestedFix, severity: insight.severity)
+        }
+        return issues
+    }
+
+    /// One issue per digest group in the digest's order, counts and totals from the digest. A group without an
+    /// issue keeps its template as title and gets a severity from its level; without an overview, the summary
+    /// and actions are counts.
+    static func assemble(digest: LogIssueDigest, issues: [String: LogIssue],
+                         overview: (executiveSummary: String, priorityActions: [String])?) -> LogIssueSummary {
+        let issues = digest.groups.map { group in
+            issues[group.id] ?? LogIssue(group: group, title: group.template, explanation: "", suggestedFix: "",
+                                         severity: group.level == .fault ? .critical : group
+                                             .level == .error ? .high : .medium)
+        }
+        let actions = issues.filter { $0.severity.priority >= LogSeverity.high.priority }.prefix(5).map {
+            "\($0.title) (\($0.group.file):\($0.group.line), \($0.group.count)×)"
+        }
+        return LogIssueSummary(executiveSummary: overview?.executiveSummary ?? countsSummary(digest),
+                               issues: issues,
+                               totalErrors: digest.totalErrors,
+                               totalWarnings: digest.totalWarnings,
+                               totalFaults: digest.totalFaults,
+                               patterns: patterns(digest),
+                               priorityActions: overview?.priorityActions ?? actions)
+    }
+
+    private static func countsSummary(_ digest: LogIssueDigest) -> String {
+        "\(digest.totalErrors) errors, \(digest.totalWarnings) warnings and \(digest.totalFaults) faults "
+            + "at \(digest.groups.count) call sites."
+    }
+
+    /// Categories with more than one issue, most logged first.
+    private static func patterns(_ digest: LogIssueDigest) -> [String] {
+        Dictionary(grouping: digest.groups, by: \.category)
+            .filter { $0.value.count > 1 }
+            .map { category, groups in (category, groups.count, groups.reduce(0) { $0 + $1.count }) }
+            .sorted { ($1.2, $0.0.rawValue) < ($0.2, $1.0.rawValue) }
+            .map { category, issues, entries in "\(category.rawValue): \(issues) issues, \(entries) entries" }
     }
 }

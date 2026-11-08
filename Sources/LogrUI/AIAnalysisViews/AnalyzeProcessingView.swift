@@ -8,7 +8,6 @@
 import Logr
 import SwiftUI
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 struct AnalyzeProcessingView: View {
     @Environment(\.logService) private var logr
 
@@ -26,7 +25,7 @@ struct AnalyzeProcessingView: View {
                     .fontWeight(.semibold)
 
                 if let progress {
-                    Text("\(progress.analyzedLogs) of \(progress.totalLogs) logs analyzed")
+                    Text("\(progress.analyzedGroups) of \(progress.totalGroups) issues explained")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .contentTransition(.numericText())
@@ -36,7 +35,7 @@ struct AnalyzeProcessingView: View {
                         .foregroundStyle(.tertiary)
                         .contentTransition(.numericText())
                 } else {
-                    Text("AI Intelligence tool is processing your logs...")
+                    Text("Apple Intelligence is reading your logs…")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

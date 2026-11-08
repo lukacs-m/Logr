@@ -268,7 +268,7 @@ struct LogAnalysisView: View {
     private func privacyWarningRow(_ warning: PrivacyWarning) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(warning.exposureType)
+                Text(warning.detector)
                     .font(.headline)
                 Spacer()
                 Text(warning.severity.description)
@@ -283,17 +283,13 @@ struct LogAnalysisView: View {
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
 
-            if !warning.explanation.isEmpty {
-                Text(warning.explanation)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
+            Text(warning.excerpt)
+                .font(.callout)
+                .foregroundStyle(.secondary)
 
-            if !warning.recommendation.isEmpty {
-                Text(warning.recommendation)
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-            }
+            Text("\(warning.occurrences)× in \(warning.field)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
@@ -350,15 +346,17 @@ struct LogAnalysisView: View {
                     .foregroundStyle(severityColor(issue.severity.description))
             }
 
-            Text(issue.category)
+            Text("\(issue.group.level.displayName) • \(issue.group.category.rawValue) • \(issue.group.file):\(issue.group.line)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text(issue.description)
-                .font(.callout)
+            if !issue.explanation.isEmpty {
+                Text(issue.explanation)
+                    .font(.callout)
+            }
 
-            if issue.occurrences > 1 {
-                Text("Occurred \(issue.occurrences) times")
+            if issue.group.count > 1 {
+                Text("Occurred \(issue.group.count) times")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -388,13 +386,8 @@ struct LogAnalysisView: View {
         isAnalyzingPrivacy = true
         defer { isAnalyzingPrivacy = false }
 
-        do {
-            privacyResult = try await logger.scanForPrivacyIssues()
-            logger.info("Privacy analysis completed", category: .analytics)
-        } catch {
-            errorMessage = "Privacy analysis failed: \(error.localizedDescription)"
-            logger.error("Privacy analysis failed: \(error.localizedDescription)", category: .analytics)
-        }
+        privacyResult = await logger.scanForPrivacyIssues()
+        logger.info("Privacy analysis completed", category: .analytics)
     }
 
     @available(iOS 26.0, macOS 26.0, *)

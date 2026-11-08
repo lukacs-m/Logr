@@ -253,7 +253,7 @@ struct ContentView: View {
 
             FeatureRow(icon: "waveform.badge.magnifyingglass",
                        title: "AI Analysis",
-                       description: "Privacy scanning and issue summarization (iOS 26+)")
+                       description: "Privacy scanning and issue grouping, explained by Apple Intelligence on 26+")
 
             FeatureRow(icon: "gear",
                        title: "Settings",

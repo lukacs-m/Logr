@@ -42,7 +42,7 @@ import UIKit
 /// lock, so a read right after a write sees the entry from any thread; through `any LogRService` it is
 /// `@MainActor`. The observation notification is
 /// dispatched to the main actor and coalesced to at most one per
-/// ``LogrConfiguration/coalesceWindowMillis``. ``droppedLogCount`` and the AI results are `@MainActor`.
+/// ``LogrConfiguration/coalesceWindowMillis``. ``droppedLogCount`` and the analysis results are `@MainActor`.
 ///
 /// ## Lifecycle
 ///
@@ -91,26 +91,19 @@ public final class LogR: LogRService {
 
     public let configuration: LogrConfiguration
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    @MainActor public var privacyAnalysisResult: PrivacyAnalysisResult? {
-        _privacyAnalysisResult as? PrivacyAnalysisResult
-    }
+    @MainActor public private(set) var privacyAnalysisResult: PrivacyAnalysisResult?
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    @MainActor public var logIssueSummary: LogIssueSummary? {
-        _logIssueSummary as? LogIssueSummary
-    }
+    @MainActor public private(set) var logIssueSummary: LogIssueSummary?
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    @MainActor public var analysisProgress: AnalysisProgress? {
-        _analysisProgress as? AnalysisProgress
-    }
+    @MainActor public private(set) var analysisProgress: AnalysisProgress?
+
+    /// Counts ``summarizeIssues()`` calls: only the newest one reports progress, and a result is published unless
+    /// a newer call published first.
+    @ObservationIgnored @MainActor private var summaryRuns = 0
+    @ObservationIgnored @MainActor private var publishedSummaryRun = 0
 
     @MainActor public var canAnalyseLogs: Bool {
-        guard #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *), let analyser else {
-            return false
-        }
-        return analyser.isAvailable
+        analyser?.isAvailable ?? false
     }
 
     @MainActor public private(set) var droppedLogCount: Int = 0
@@ -139,32 +132,19 @@ public final class LogR: LogRService {
     /// no writer to derive a key from the crypto service, and their entries never outlive the process.
     private static let processHashKey = SymmetricKey(size: .bits256)
 
-    // Type-erased so these stored properties carry no `@available` requirement (a stored property
-    // cannot be annotated `@available`, and the analyzer types are iOS 26+). The mutable result
-    // stores are `@MainActor`-isolated (written only by the main-actor AI methods and read by the
-    // main-actor computed properties above). The injected analyzer is an immutable `let` set once
-    // at init; `LogAIAnalyzer` is `Sendable`, so it is stored as `any Sendable` and downcast back
-    // in the availability-gated accessor below — keeping the class `Sendable` and `init` nonisolated.
-    @MainActor private var _logIssueSummary: Any?
-    @MainActor private var _privacyAnalysisResult: Any?
-    @MainActor private var _analysisProgress: Any?
-    private let _analyser: (any Sendable)?
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    private var analyser: (any LogAIAnalyzer)? {
-        _analyser as? (any LogAIAnalyzer)
-    }
+    @ObservationIgnored
+    private let analyser: (any LogAIAnalyzer)?
 
     /// Designated initializer. `nonisolated`, so a `LogR` can be created from any isolation
-    /// domain. `analyser` is type-erased to `any Sendable` because the concrete `LogAIAnalyzer`
-    /// types are iOS 26+ and a stored property cannot be `@available`-gated. `retrySignals` lets tests
-    /// stand in for the protected-data notification; `nil` observes it, and only when there is storage.
+    /// domain. `retrySignals` lets tests stand in for the protected-data notification; `nil` observes it, and
+    /// only when there is storage.
     init(storage: LogStorage,
          cryptoService: any LoggerCryptoServicing,
          configuration: LogrConfiguration,
-         analyser: (any Sendable)?,
+         analyser: (any LogAIAnalyzer)?,
          retrySignals: AsyncStream<Void>?) {
         self.configuration = configuration
-        _analyser = analyser
+        self.analyser = analyser
         commonLoggers = Self.makeCommonLoggers(subsystem: configuration.subsystem)
         if case .memoryOnly = storage {
             writer = nil
@@ -191,19 +171,18 @@ public final class LogR: LogRService {
                   retrySignals: nil)
     }
 
-    /// Creates a logger that can analyse its entries. Never throws: storage opens in the background, see
+    /// Creates a logger that can summarize its issues. Never throws: storage opens in the background, see
     /// ``persistenceStatus``.
     ///
     /// - Parameters:
     ///   - storage: Where entries persist. Defaults to ``LogStorage/memoryOnly``.
-    ///   - logAnalyser: Runs ``scanForPrivacyIssues()`` and ``summarizeIssues()``. Defaults to the on-device
-    ///     ``AIAnalyzer``.
+    ///   - logAnalyser: Runs ``summarizeIssues()``, such as the on-device ``AIAnalyzer`` (iOS, macOS and visionOS
+    ///     26+).
     ///   - cryptoService: Encrypts entries before they reach storage. Defaults to a ``LoggerCryptoService``
     ///     with its key in the Keychain.
     ///   - configuration: Retention, levels, verbosity and OSLog mirroring.
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public convenience init(storage: LogStorage = .memoryOnly,
-                            logAnalyser: any LogAIAnalyzer = AIAnalyzer(),
+                            logAnalyser: any LogAIAnalyzer,
                             cryptoService: any LoggerCryptoServicing = LoggerCryptoService(),
                             configuration: LogrConfiguration = .default) {
         self.init(storage: storage, cryptoService: cryptoService, configuration: configuration,
@@ -341,55 +320,51 @@ public extension LogR {
 
 // MARK: - Logs analyzer
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 public extension LogR {
-    @MainActor
-    func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
-        guard let analyser else {
-            throw AIAnalyzerError.missingAnalyzer
-        }
-
-        // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/Array below.
-        let snapshot = recentLogs
-
-        // Reset progress at start; clear it however the analysis ends, including when it throws.
-        _analysisProgress = AnalysisProgress.starting(totalLogs: snapshot.count)
-        defer { _analysisProgress = nil }
-
-        let result: PrivacyAnalysisResult = if snapshot.isEmpty {
-            PrivacyAnalysisResult.empty
-        } else {
-            try await analyser.scanForPrivacyIssues(logs: Array(snapshot)) { [weak self] progress in
-                self?._analysisProgress = progress
-            }
-        }
-
-        _privacyAnalysisResult = result
+    @MainActor @discardableResult
+    func scanForPrivacyIssues(detectors: [PrivacyDetector]) async -> PrivacyAnalysisResult {
+        let result = await PrivacyScanner.scan(recentLogs, detectors: detectors)
+        // A cancelled scan stopped early: publishing it could show a partial count as the latest result.
+        guard !Task.isCancelled else { return result }
+        privacyAnalysisResult = result
         return result
     }
 
-    @MainActor
+    func issueDigest() async -> LogIssueDigest {
+        await LogIssueDigest.make(from: recentLogs)
+    }
+
+    @MainActor @discardableResult
     func summarizeIssues() async throws -> LogIssueSummary {
         guard let analyser else {
             throw AIAnalyzerError.missingAnalyzer
         }
+        summaryRuns += 1
+        let run = summaryRuns
+        let digest = await issueDigest()
 
-        // Single lock acquisition + O(1) COW snapshot, reused for count/isEmpty/Array below.
-        let snapshot = recentLogs
-
-        // Reset progress at start; clear it however the analysis ends, including when it throws.
-        _analysisProgress = AnalysisProgress.starting(totalLogs: snapshot.count)
-        defer { _analysisProgress = nil }
-
-        let result: LogIssueSummary = if snapshot.isEmpty {
-            LogIssueSummary.empty
-        } else {
-            try await analyser.summarizeIssues(logs: Array(snapshot)) { [weak self] progress in
-                self?._analysisProgress = progress
+        // The analyzer reports progress (over the groups it explains); clear it however the analysis ends.
+        defer {
+            if summaryRuns == run {
+                analysisProgress = nil
             }
         }
 
-        _logIssueSummary = result
+        let result: LogIssueSummary = if digest.isEmpty {
+            .empty
+        } else {
+            try await analyser.summarizeIssues(digest) { [weak self] progress in
+                guard let self, summaryRuns == run else { return }
+                analysisProgress = progress
+            }
+        }
+
+        // A cancelled call may still get a summary back (an empty digest, an analyzer that does not check).
+        try Task.checkCancellation()
+        if run > publishedSummaryRun {
+            publishedSummaryRun = run
+            logIssueSummary = result
+        }
         return result
     }
 }

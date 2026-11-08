@@ -10,7 +10,7 @@ import Foundation
 /// The main logging service protocol that defines all logging operations.
 ///
 /// `LogRService` provides a comprehensive interface for logging messages with various
-/// severity levels, managing log storage, exporting logs, and performing AI-powered analysis.
+/// severity levels, managing log storage, exporting logs, scanning for leaked values and summarizing issues.
 ///
 /// ## Overview
 ///
@@ -77,9 +77,12 @@ import Foundation
 /// - ``clearLogs()``
 /// - ``flush()``
 ///
-/// ### AI Analysis
+/// ### Analysis
+/// - ``scanForPrivacyIssues(detectors:)``
 /// - ``scanForPrivacyIssues()``
+/// - ``issueDigest()``
 /// - ``summarizeIssues()``
+/// - ``analysisProgress``
 public protocol LogRService: Observable, Sendable {
     /// Recent logs maintained in memory for quick access.
     ///
@@ -89,10 +92,9 @@ public protocol LogRService: Observable, Sendable {
     /// - Note: This is an in-memory cache. For persistent storage, configure a storage backend.
     @MainActor var recentLogs: LogEntries { get }
 
-    /// Indicates whether AI analysis features are available.
+    /// Whether ``summarizeIssues()`` can run: an analyzer is configured and its model is available.
     ///
-    /// This property returns `true` when running on iOS 26+ or macOS 26+ with an AI analyzer configured.
-    /// When `false`, calling `scanForPrivacyIssues()` or `summarizeIssues()` will throw an error.
+    /// Privacy scans and ``issueDigest()`` do not need an analyzer and work on every platform.
     @MainActor var canAnalyseLogs: Bool { get }
 
     /// The number of log entries that could not be persisted.
@@ -111,31 +113,18 @@ public protocol LogRService: Observable, Sendable {
     /// entries cannot be encrypted. ``PersistenceStatus/disabled`` when no storage is configured.
     @MainActor var persistenceStatus: PersistenceStatus { get }
 
-    /// The most recent privacy analysis result (iOS 26+).
+    /// The latest ``scanForPrivacyIssues(detectors:)`` result the service published, `nil` before the first.
     ///
-    /// Contains warnings about potential privacy issues detected in logs, along with
-    /// a summary and critical/high counts.
-    ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+    /// ``LogR`` publishes every completed scan; the default implementation of ``scanForPrivacyIssues(detectors:)``
+    /// only returns its result, so a conformer relying on it reports `nil` here.
     @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? { get }
 
-    /// The most recent AI-generated issue summary (iOS 26+).
-    ///
-    /// Provides an intelligent summary of critical issues found in logs, including
-    /// an executive summary, individual issues, patterns and priority actions.
-    ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+    /// The result of the latest ``summarizeIssues()``: when calls overlap, the most recently started one that
+    /// succeeds. `nil` before the first.
     @MainActor var logIssueSummary: LogIssueSummary? { get }
 
-    /// The current progress of an ongoing AI analysis operation (iOS 26+).
-    ///
-    /// This property is updated in real-time during analysis operations and can be
-    /// observed in SwiftUI views to display progress indicators.
-    ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+    /// The progress the analyzer of the newest ``summarizeIssues()`` call reports, `nil` once that call ends (when
+    /// calls overlap, an older one still running reports none).
     @MainActor var analysisProgress: AnalysisProgress? { get }
 
     /// Records a message with the specified level, category, and source information.
@@ -231,54 +220,53 @@ public protocol LogRService: Observable, Sendable {
     /// Call before a lifecycle transition to drain pending writes.
     func flush() async
 
-    /// Scans logs for potential privacy issues using AI analysis (iOS 26+).
+    /// Scans the recent logs for values that should not be logged in clear, without a language model.
     ///
-    /// Analyzes recent logs to detect potential privacy violations, sensitive data exposure,
-    /// and compliance issues. Returns a detailed analysis with warnings and recommendations.
+    /// Each detector runs over every message and metadata value off the main actor; findings are grouped by call
+    /// site and detector (see ``PrivacyWarning``). Values the developer marked private (`privacy: .private`, kept
+    /// in clear in DEBUG builds) and `<private>`/`<sensitive>` placeholders are never reported. The default
+    /// implementation scans and returns; ``LogR`` also publishes the result as ``privacyAnalysisResult``.
     ///
-    /// - Returns: A `PrivacyAnalysisResult` containing warnings, a summary and critical/high counts.
-    /// - Throws: `AIAnalyzerError` if AI analysis is unavailable or fails.
-    ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
+    /// - Parameter detectors: What to look for, most specific first. ``scanForPrivacyIssues()`` passes
+    ///   ``PrivacyDetector/builtIn``.
+    /// - Returns: The warnings, sorted by severity and occurrences. When the calling task is cancelled, what was
+    ///   scanned so far, which ``LogR`` does not publish.
     ///
     /// ## Example
     /// ```swift
-    /// if #available(iOS 26.0, *) {
-    ///     Task { @MainActor in
-    ///         let result = try await logger.scanForPrivacyIssues()
-    ///         print(result.summary)
-    ///         for warning in result.warnings {
-    ///             print("⚠️ [\(warning.severity)] \(warning.exposureType): \(warning.recommendation)")
-    ///         }
-    ///     }
+    /// let result = await logger.scanForPrivacyIssues()
+    /// for warning in result.warnings {
+    ///     print("[\(warning.severity.description)] \(warning.detector) at \(warning.file):\(warning.line)")
     /// }
     /// ```
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    @MainActor @discardableResult func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult
+    @MainActor @discardableResult func scanForPrivacyIssues(detectors: [PrivacyDetector]) async
+        -> PrivacyAnalysisResult
 
-    /// Generates an AI-powered summary of critical issues in logs (iOS 26+).
+    /// Groups the warning, error and fault entries of the recent logs by call site and message template, without a
+    /// language model.
     ///
-    /// Uses AI to analyze error and warning logs, identify patterns, and provide
-    /// actionable recommendations for addressing issues.
+    /// The grouping runs off the main actor. ``summarizeIssues()`` hands this digest to the configured
+    /// ``LogAIAnalyzer``.
+    func issueDigest() async -> LogIssueDigest
+
+    /// Explains the groups of ``issueDigest()`` with the configured ``LogAIAnalyzer``.
     ///
-    /// - Returns: A `LogIssueSummary` with an executive summary, issues, patterns and priority actions.
-    /// - Throws: `AIAnalyzerError` if AI analysis is unavailable or fails.
+    /// ``LogR`` publishes progress as ``analysisProgress`` (the newest call's, when calls overlap) and the result
+    /// as ``logIssueSummary``. File, line, counts and totals come from the digest. When the model fails after some
+    /// groups are explained, those are returned and the rest keep their template.
     ///
-    /// - Requires: iOS 26.0, macOS 26.0, tvOS 26.0, or watchOS 26.0
+    /// - Returns: One ``LogIssue`` per digest group, with an executive summary and priority actions.
+    /// - Throws: ``AIAnalyzerError/missingAnalyzer`` without an analyzer, ``AIAnalyzerError`` when the model is
+    ///   unavailable or fails before explaining any group, `CancellationError` when the calling task is cancelled.
     ///
     /// ## Example
     /// ```swift
-    /// if #available(iOS 26.0, *) {
-    ///     Task { @MainActor in
-    ///         let summary = try await logger.summarizeIssues()
-    ///         print(summary.executiveSummary)
-    ///         for issue in summary.issues {
-    ///             print("- [\(issue.severity)] \(issue.title)")
-    ///         }
-    ///     }
+    /// let summary = try await logger.summarizeIssues()
+    /// print(summary.executiveSummary)
+    /// for issue in summary.issues {
+    ///     print("[\(issue.severity.description)] \(issue.title): \(issue.group.count)×")
     /// }
     /// ```
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor @discardableResult func summarizeIssues() async throws -> LogIssueSummary
 }
 
@@ -375,6 +363,22 @@ public extension LogRService {
         // per-entry aggregates off it.
         let snapshot = await MainActor.run { Array(recentLogs) }
         return await LogStatisticsComputer.compute(from: snapshot)
+    }
+
+    @MainActor @discardableResult
+    func scanForPrivacyIssues(detectors: [PrivacyDetector]) async -> PrivacyAnalysisResult {
+        await PrivacyScanner.scan(recentLogs, detectors: detectors)
+    }
+
+    /// Calls ``scanForPrivacyIssues(detectors:)`` with ``PrivacyDetector/builtIn``.
+    @MainActor @discardableResult
+    func scanForPrivacyIssues() async -> PrivacyAnalysisResult {
+        await scanForPrivacyIssues(detectors: PrivacyDetector.builtIn)
+    }
+
+    func issueDigest() async -> LogIssueDigest {
+        // `LogEntries` is a copy-on-write snapshot, so the main actor only pays for the copy of a reference.
+        await LogIssueDigest.make(from: MainActor.run { recentLogs })
     }
 }
 

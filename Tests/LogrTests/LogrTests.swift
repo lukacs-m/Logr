@@ -196,18 +196,15 @@ struct LogrTests {
 
     // MARK: - AI analysis
 
-    @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @Test("analysisProgress is cleared when the analyzer throws")
     func testAnalysisProgressClearsWhenAnalyzerThrows() async throws {
         let logr = LogR(logAnalyser: ThrowingAnalyzer(), cryptoService: cryptoService,
                         configuration: LogrConfiguration(mirrorToOSLog: false))
-        logr.info("something to analyse")
-
-        await #expect(throws: ThrowingAnalyzer.Failure.self) { try await logr.scanForPrivacyIssues() }
-        #expect(logr.analysisProgress == nil)
+        logr.error("something to analyse")
 
         await #expect(throws: ThrowingAnalyzer.Failure.self) { try await logr.summarizeIssues() }
         #expect(logr.analysisProgress == nil)
+        #expect(logr.logIssueSummary == nil)
     }
 
     // MARK: - Lazy Evaluation Tests
@@ -785,27 +782,15 @@ struct LogrTests {
 }
 
 /// Reports one progress step, then fails, like an analysis interrupted halfway.
-@available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
 private struct ThrowingAnalyzer: LogAIAnalyzer {
     struct Failure: Error {}
 
     var isAvailable: Bool { true }
 
-    func scanForPrivacyIssues(logs: [LogEntry]) async throws -> PrivacyAnalysisResult { throw Failure() }
-
-    func summarizeIssues(logs: [LogEntry]) async throws -> LogIssueSummary { throw Failure() }
-
-    func scanForPrivacyIssues(logs: [LogEntry],
-                              onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void) async throws
-        -> PrivacyAnalysisResult {
-        await onProgress(AnalysisProgress(totalLogs: logs.count, analyzedLogs: 1))
-        throw Failure()
-    }
-
-    func summarizeIssues(logs: [LogEntry],
+    func summarizeIssues(_ digest: LogIssueDigest,
                          onProgress: @escaping @MainActor @Sendable (AnalysisProgress) -> Void) async throws
         -> LogIssueSummary {
-        await onProgress(AnalysisProgress(totalLogs: logs.count, analyzedLogs: 1))
+        await onProgress(AnalysisProgress(totalGroups: digest.groups.count, analyzedGroups: 1))
         throw Failure()
     }
 }

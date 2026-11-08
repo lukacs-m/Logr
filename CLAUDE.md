@@ -49,8 +49,8 @@ Lint with the `swiftformat` CLI, 0.63.1 or newer (`--minversion` in `.swiftforma
 
 ### Library Targets
 
-- **Logr** (`Sources/Logr/`): Core logging library — models, protocols, storage, encryption, AI analysis
-- **LogrUI** (`Sources/LogrUI/`): SwiftUI views for log browsing, statistics, AI analysis results, and the network list/detail (`Sources/LogrUI/Network/`, reading `HTTPLogFields`); depends on `LogrNetwork`
+- **Logr** (`Sources/Logr/`): Core logging library - models, protocols, storage, encryption, privacy scanner, issue digest, AI summary
+- **LogrUI** (`Sources/LogrUI/`): SwiftUI views for log browsing, statistics, privacy warnings, issues, and the network list/detail (`Sources/LogrUI/Network/`, reading `HTTPLogFields`); depends on `LogrNetwork`
 - **LogrTesting** (`Sources/LogrTesting/`): test doubles for consumers' test targets (`InMemoryKeychainStore`)
 - **LogrNetwork** (`Sources/LogrNetwork/`): `NetworkLogger` records each opted-in request as one `.http` `LogEntry` (`HTTPLogFields` metadata, redacted headers/query/JSON and form keys) through `URLSession.loggedData`/`loggedUpload` (a per-task delegate that only collects metrics) or `LogrURLSessionProxyDelegate` (logs at `didFinishCollecting`, the only callback a session delegate gets for async and completion-handler tasks; forwards the rest). With `captureBodies`, textual bodies go to `NetworkBodyStore`: one encrypted file per request in `Application Support/<bundle id>/Logr/http-bodies/`, names sort oldest first, pruned to `maxStoredBodies` (100); `clearLogs()` does not reach it, `clearBodies()` does (LogViewer calls both). No dependency but `Logr`
 - **LogrSwiftLog** (`Sources/LogrSwiftLog/`): `LogrLogHandler`, a swift-log `LogHandler` that calls `LogRService.record` (handler < provider < event metadata, then `LogContext` under it; `LogrSensitivity` metadata attributes redact values in every build, since Logr metadata has no private ranges). The only target that depends on swift-log
@@ -65,10 +65,10 @@ Lint with the `swiftformat` CLI, 0.63.1 or newer (`--minversion` in `.swiftforma
 - Coordinates encryption and cleanup automatically
 
 **Key protocols:**
-- `LogRService` - public logging API (`@Observable`, `Sendable`). Logging (`log`/`debug`/`info`/…) and `init` are `nonisolated` (callable from any domain); conformers implement `record(level:message:…)`, and `log` and the level helpers are extension methods that fill in the call site (named apart so a 1.x `log(... String ...)` conformer fails to compile instead of inheriting a self-recursive default); the observable state that drives SwiftUI (`recentLogs`, `droppedLogCount`, `persistenceStatus`, `canAnalyseLogs`, AI results) is `@MainActor`
+- `LogRService` - public logging API (`@Observable`, `Sendable`). Logging (`log`/`debug`/`info`/…) and `init` are `nonisolated` (callable from any domain); conformers implement `record(level:message:…)`, and `log` and the level helpers are extension methods that fill in the call site (named apart so a 1.x `log(... String ...)` conformer fails to compile instead of inheriting a self-recursive default); the observable state that drives SwiftUI (`recentLogs`, `droppedLogCount`, `persistenceStatus`, `canAnalyseLogs`, analysis results) is `@MainActor`
 - `LogRPersistence` — storage abstraction (FileSystem or SQLite implementations)
 - `LoggerCryptoServicing` - AES-256-GCM / ChaCha20-Poly1305 encryption with Keychain-backed keys. `LoggerCryptoService` writes a binary envelope (`0xC5`, format 2, cipher byte, big-endian `UInt32` key version, then the sealed box) around a JSON-encoded `LogEntry`, and still reads the 1.x JSON envelope (first byte `{`, `algorithm` optional = ChaCha). `SystemKeychainStore` calls the Security framework directly; on macOS it uses the data-protection keychain when the app is entitled (a provisioning profile) and the login keychain otherwise (`errSecMissingEntitlement`), copies keys Logr 1.x left in the login keychain on read, and removes from both. `swift test` binaries are not entitled, so tests use `InMemoryKeychainStore`
-- `LogAIAnalyzer` — injectable analysis protocol; the native `AIAnalyzer` uses `FoundationModels` (26+) where `Package.swift` defines `LOGR_SYSTEM_MODEL` (iOS, macOS, Mac Catalyst, visionOS; also set on `LogrTests`) and reports unavailable elsewhere. Guard FoundationModels code with `#if LOGR_SYSTEM_MODEL`, never `canImport(FoundationModels)`: tvOS and watchOS SDKs ship the module without the system model
+- `scanForPrivacyIssues(detectors:)` (`PrivacyScanner`, `PrivacyDetector.builtIn`) and `issueDigest()` (`LogIssueDigest`: warning+ entries grouped by file, line and message template) are deterministic, on every platform, and run `@concurrent` over a `recentLogs` snapshot (no lock on the logging path). `LogAIAnalyzer` only explains a digest (`summarizeIssues(_:onProgress:)`); file, line and counts come from the digest, merged by `LogIssueSummary.assemble`. The native `AIAnalyzer` uses `FoundationModels` (26+) where `Package.swift` defines `LOGR_SYSTEM_MODEL` (iOS, macOS, Mac Catalyst, visionOS; also set on `LogrTests`) and reports unavailable elsewhere. Guard FoundationModels code with `#if LOGR_SYSTEM_MODEL`, never `canImport(FoundationModels)`: tvOS and watchOS SDKs ship the module without the system model
 
 ### Data Flow
 
@@ -82,7 +82,7 @@ Logging calls (nonisolated, any domain) → `LogR` (lock-protected in-memory cac
 ### Concurrency Model
 
 - Logging (`init`, `log`, and the convenience methods) is `nonisolated` — callable from any isolation domain with no `await`. `LogR` is `@Observable` but not `@MainActor`; its `recentLogs` cache lives behind a `SafeMutex`, so synchronous read-after-write holds from any thread
-- Only the `@Observable` state read by SwiftUI is `@MainActor` (`recentLogs`, `droppedLogCount`, `canAnalyseLogs`, the AI results + analysis methods); the change notification is coalesced and emitted on the main actor
+- Only the `@Observable` state read by SwiftUI is `@MainActor` (`recentLogs`, `droppedLogCount`, `canAnalyseLogs`, the analysis results + analysis methods); the change notification is coalesced and emitted on the main actor
 - Background storage writes happen on dedicated `LogWriterActor`
 - `LogrUI` target uses `@defaultIsolation(MainActor.self)`
 - All five library targets enable the `NonisolatedNonsendingByDefault` and `InferIsolatedConformances` upcoming features; `Logr`, `LogrTesting`, `LogrSwiftLog` and `LogrNetwork` also enable `ExistentialAny`, and `Logr` enables `ImmutableWeakCaptures`

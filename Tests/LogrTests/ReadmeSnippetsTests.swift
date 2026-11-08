@@ -132,17 +132,22 @@ private func encryptionSnippet() throws {
     _ = logger
 }
 
-private func aiSnippet() {
-    if #available(iOS 26.0, macOS 26.0, *) {
-        let logger = LogR(logAnalyser: AIAnalyzer())
-        Task { @MainActor in
-            do {
-                let privacy = try await logger.scanForPrivacyIssues()
-                let issues = try await logger.summarizeIssues()
-                print(privacy.summary, issues.executiveSummary)
-            } catch {
-                print("Analysis failed: \(error)")
-            }
+private func analysisSnippet() {
+    let logger = if #available(iOS 26.0, macOS 26.0, *) {
+        LogR(storage: .sqlite(), logAnalyser: AIAnalyzer())
+    } else {
+        LogR(storage: .sqlite())
+    }
+    Task { @MainActor in
+        let leaks = await logger.scanForPrivacyIssues()   // every platform, no model
+        let digest = await logger.issueDigest()            // warnings, errors and faults by call site
+        print(leaks.summary, digest.groups.count)
+        guard logger.canAnalyseLogs else { return }
+        do {
+            let summary = try await logger.summarizeIssues()   // Apple Intelligence explains the top 40 groups
+            print(summary.executiveSummary)
+        } catch {
+            print("Summary failed: \(error)")
         }
     }
 }

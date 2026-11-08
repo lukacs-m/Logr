@@ -1,291 +1,293 @@
 import Logr
 import SwiftUI
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+/// Lists the warning, error and fault entries grouped by call site (`LogRService.issueDigest()`), on every
+/// platform. While `LogRService.canAnalyseLogs` is true, a button explains the groups with
+/// `LogRService.summarizeIssues()`.
 public struct IssueSummaryView: View {
     @Environment(\.logService) var logr
-    @State private var loading = false
+    @State private var digest: LogIssueDigest?
     @State private var showError: Error?
+    /// A summary to run in `.task(id:)`, which cancels it when the view goes away: it can take minutes.
+    @State private var request: Request?
+    @State private var requestCount = 0
+    /// One per start of the task: a cancelled run can end after its replacement started, same request or not.
+    @State private var running: Run?
+    @State private var starts = 0
+
+    private struct Run: Equatable {
+        let start: Int
+        /// The model is at work, not only the digest reloading.
+        var explaining: Bool
+    }
+
+    private struct Request: Equatable {
+        let id: Int
+        /// Reload the digest first, then summarize only when a summary is shown.
+        let reload: Bool
+    }
 
     public init() {}
 
     public var body: some View {
-        mainContent
-            .navigationTitle("Issue Summary")
-            .toolbar {
-                toolbarContent
+        List {
+            // An empty summary from before the logs had issues must not hide the fresh digest.
+            if let summary = logr.logIssueSummary, !summary.isEmpty {
+                IssueTotalsSection(errors: summary.totalErrors, warnings: summary.totalWarnings,
+                                   faults: summary.totalFaults, executiveSummary: summary.executiveSummary)
+                TextListSection(title: "Priority Actions", items: summary.priorityActions, numbered: true)
+                TextListSection(title: "Patterns Detected", items: summary.patterns, numbered: false)
+                IssuesSection(rows: summary.issues.map { IssueRowModel(group: $0.group, issue: $0) })
+            } else if let digest {
+                IssueTotalsSection(errors: digest.totalErrors, warnings: digest.totalWarnings,
+                                   faults: digest.totalFaults, executiveSummary: nil)
+                if logr.canAnalyseLogs, !digest.isEmpty {
+                    SummarizeSection {
+                        requestCount += 1
+                        request = Request(id: requestCount, reload: false)
+                    }
+                }
+                IssuesSection(rows: digest.groups.map { IssueRowModel(group: $0, issue: nil) })
             }
-            .overlay {
-                overlayContent
+        }
+        .navigationTitle("Issue Summary")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if digest != nil || logr.logIssueSummary != nil {
+                    Button("ReScan") {
+                        requestCount += 1
+                        request = Request(id: requestCount, reload: true)
+                    }
+                    .disabled(running != nil)
+                }
             }
-            .task {
-                await loadData()
+        }
+        .overlay {
+            if running?.explaining == true {
+                AnalyzeProcessingView()
+            } else if logr.logIssueSummary?.isEmpty ?? true, digest?.isEmpty == true {
+                NoIssuesView()
             }
-            .errorAlert(error: $showError)
+        }
+        .task {
+            digest = await logr.issueDigest()
+        }
+        .task(id: request) {
+            guard let request else { return }
+            starts += 1
+            let start = starts
+            running = Run(start: start, explaining: false)
+            defer {
+                if running?.start == start {
+                    running = nil
+                }
+            }
+            if request.reload {
+                digest = await logr.issueDigest()
+            }
+            if !request.reload || logr.logIssueSummary != nil && logr.canAnalyseLogs {
+                if running?.start == start {
+                    running?.explaining = true
+                }
+                await summarize()
+            }
+            // `.task(id:)` runs again whenever the view reappears: a finished request must not.
+            if !Task.isCancelled {
+                self.request = nil
+            }
+        }
+        .errorAlert(error: $showError)
     }
 
-    private func priorityColor(for index: Int) -> Color {
-        switch index {
-        case 0: .red
-        case 1: .orange
-        case 2: .yellow
-        default: .blue
-        }
-    }
-
-    private func loadData(reload: Bool = false) async {
-        guard reload || logr.logIssueSummary == nil else {
-            return
-        }
-        defer { loading = false }
-
+    private func summarize() async {
         do {
-            loading = true
             try await logr.summarizeIssues()
+        } catch is CancellationError {
+            // Dismissed while summarizing.
         } catch {
             showError = error
         }
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-private extension IssueSummaryView {
-    var mainContent: some View {
-        List {
-            summaryView
-            actionView
-            patternView
-            issuesView
-        }
+private struct IssueRowModel: Identifiable {
+    let group: LogIssueGroup
+    let issue: LogIssue?
+
+    var id: String {
+        group.id
     }
+}
 
-    @ViewBuilder
-    var summaryView: some View {
-        if let summary = logr.logIssueSummary {
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "chart.bar.doc.horizontal")
-                            .foregroundStyle(.blue)
-                            .font(.title2)
+private struct IssueTotalsSection: View {
+    let errors: Int
+    let warnings: Int
+    let faults: Int
+    let executiveSummary: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-                        Text("Executive Summary")
-                            .font(.headline)
-                    }
-
-                    Text(summary.executiveSummary)
+    var body: some View {
+        let badges = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 16))
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                if let executiveSummary {
+                    Label("Executive Summary", systemImage: "chart.bar.doc.horizontal")
+                        .font(.headline)
+                    Text(executiveSummary)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-
-                    HStack(spacing: 16) {
-                        StatBadgeView(count: summary.totalErrors, label: "Errors", color: .red)
-                        StatBadgeView(count: summary.totalWarnings, label: "Warnings", color: .orange)
-                        StatBadgeView(count: summary.totalFaults, label: "Faults", color: .purple)
-                    }
                 }
-                .padding(.vertical, 8)
+
+                badges {
+                    StatBadgeView(count: errors, label: "Errors", color: LogLevel.error.tint)
+                    StatBadgeView(count: warnings, label: "Warnings", color: LogLevel.warning.tint)
+                    StatBadgeView(count: faults, label: "Faults", color: LogLevel.fault.tint)
+                }
             }
+            .padding(.vertical, 8)
         }
     }
+}
 
-    @ViewBuilder
-    var actionView: some View {
-        if let summary = logr.logIssueSummary, !summary.priorityActions.isEmpty {
-            Section("Priority Actions") {
-                ForEach(Array(summary.priorityActions.enumerated()), id: \.offset) { index, action in
-                    HStack {
-                        Text("\(index + 1)")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundStyle(.white)
-                            .frame(width: 24, height: 24)
-                            .background(priorityColor(for: index))
-                            .clipShape(Circle())
+private struct SummarizeSection: View {
+    let action: () -> Void
 
-                        Text(action)
+    var body: some View {
+        Section {
+            Button(action: action) {
+                Label("Explain with Apple Intelligence", systemImage: "sparkles")
+            }
+        } footer: {
+            Text("Adds a title, a likely cause and a fix to each issue, and an executive summary.")
+        }
+    }
+}
+
+private struct TextListSection: View {
+    let title: LocalizedStringKey
+    let items: [String]
+    let numbered: Bool
+    @ScaledMetric(relativeTo: .caption) private var numberSize = 24
+
+    var body: some View {
+        if !items.isEmpty {
+            Section(title) {
+                // Ids distinct from the other section's: macOS lists reuse rows by id across sections.
+                let rows = items.enumerated().map {
+                    (id: "\(numbered)-\($0.offset)", index: $0.offset, item: $0.element)
+                }
+                ForEach(rows, id: \.id) { _, index, item in
+                    HStack(alignment: .firstTextBaseline) {
+                        if numbered {
+                            Text("\(index + 1)")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                                .frame(width: numberSize, height: numberSize)
+                                .background(index == 0 ? .red : index == 1 ? .orange : .blue)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "chart.line.uptrend.xyaxis")
+                                .foregroundStyle(.blue)
+                        }
+                        Text(item)
                             .font(.subheadline)
                     }
                 }
             }
         }
     }
+}
 
-    @ViewBuilder
-    var patternView: some View {
-        if let summary = logr.logIssueSummary, !summary.patterns.isEmpty {
-            Section("Patterns Detected") {
-                ForEach(Array(summary.patterns.enumerated()), id: \.offset) { _, pattern in
-                    HStack {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .foregroundStyle(.blue)
-                        Text(pattern)
-                            .font(.subheadline)
-                    }
-                }
-            }
-        }
-    }
+private struct IssuesSection: View {
+    let rows: [IssueRowModel]
 
-    @ViewBuilder
-    var issuesView: some View {
-        if let summary = logr.logIssueSummary, !summary.issues.isEmpty {
-            Section("All Issues (\(summary.issues.count))") {
-                // Only merged multi-chunk results are deduplicated, so ids can repeat.
-                ForEach(Array(summary.issues.enumerated()), id: \.offset) { _, issue in
-                    IssueRow(issue: issue)
+    var body: some View {
+        if !rows.isEmpty {
+            Section("All Issues (\(rows.count))") {
+                ForEach(rows) { row in
+                    IssueRow(group: row.group, issue: row.issue)
                 }
             }
         }
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-private extension IssueSummaryView {
-    var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            if logr.logIssueSummary != nil {
-                Button("ReScan") {
-                    Task {
-                        await loadData(reload: true)
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Overlay
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-private extension IssueSummaryView {
-    @ViewBuilder
-    var overlayContent: some View {
-        if loading {
-            AnalyzeProcessingView()
-        } else if let summary = logr.logIssueSummary, summary.isEmpty {
-            ContentUnavailableView {
-                Image(systemName: "text.page.badge.magnifyingglass")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 210, height: 120)
-                    .padding(.bottom, 16)
-            } description: {
-                VStack(spacing: 8) {
-                    Text("No issues detected in your logs yet")
-                        .font(.title2)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                        .opacity(0.9)
-                    Text("Nothing to report here. Try adding some logs if an issue is reported")
-                        .font(.title3)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 32)
-                }
-                .padding(.horizontal, 16)
-            } actions: {}
-        }
-    }
-}
-
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
 struct IssueRow: View {
-    let issue: LogIssue
+    let group: LogIssueGroup
+    let issue: LogIssue?
     @State private var isExpanded = false
 
     var body: some View {
         LogDisclosureGroup(isExpanded: $isExpanded) {
             VStack(alignment: .leading, spacing: 12) {
-                IssueDetailRow(label: "Description", value: issue.description)
-
-                IssueDetailRow(label: "Location", value: "\(issue.file):\(issue.line)")
-                    .monospaced()
-
-                IssueDetailRow(label: "Suggested Fix", value: issue.suggestedFix)
-                    .foregroundStyle(.blue)
-            }
-        } label: {
-            mainContent
-        }
-    }
-
-    var mainContent: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isExpanded.toggle()
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    categoryIcon
-                        .font(.title3)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(issue.title)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        HStack(spacing: 8) {
-                            Text(issue.category.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            if issue.occurrences > 1 {
-                                Text("•")
-                                    .foregroundStyle(.secondary)
-                                Text("\(issue.occurrences)× occurred")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    Spacer()
-
-                    severityBadge
+                if let explanation = issue?.explanation, !explanation.isEmpty {
+                    IssueDetailRow(label: "Likely Cause", value: explanation)
                 }
-                .contentShape(Rectangle())
+                IssueDetailRow(label: "Latest Message", value: group.sampleMessage)
+                IssueDetailRow(label: "Location", value: "\(group.file):\(group.line)")
+                    .monospaced()
+                IssueDetailRow(label: "Last Seen",
+                               value: group.lastSeen.formatted(date: .abbreviated, time: .standard))
+                if let fix = issue?.suggestedFix, !fix.isEmpty {
+                    IssueDetailRow(label: "Suggested Fix", value: fix)
+                        .foregroundStyle(.blue)
+                }
+            }
+        } label: {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                IssueRowLabel(group: group, issue: issue)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct IssueRowLabel: View {
+    let group: LogIssueGroup
+    let issue: LogIssue?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+        layout {
+            Image(systemName: group.level == .warning ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
+                .foregroundStyle(group.level.tint)
+                .font(.title3)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(issue?.title ?? group.template)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text("\(group.level.displayName) • \(group.category.rawValue) • \(group.count)×")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer()
+            }
+
+            if let issue {
+                Text(issue.severity.description)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(issue.severity.tint.opacity(0.2))
+                    .foregroundStyle(issue.severity.tint)
+                    .cornerRadius(6)
             }
         }
-        .buttonStyle(.plain)
-    }
-
-    private var categoryIcon: some View {
-        switch issue.category.lowercased() {
-        case "error":
-            Image(systemName: "xmark.circle.fill")
-                .foregroundStyle(.red)
-        case "warning":
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-        case "performance":
-            Image(systemName: "gauge.with.dots.needle.67percent")
-                .foregroundStyle(.yellow)
-        case "crash":
-            Image(systemName: "bolt.trianglebadge.exclamationmark.fill")
-                .foregroundStyle(.red)
-        default:
-            Image(systemName: "info.circle.fill")
-                .foregroundStyle(.blue)
-        }
-    }
-
-    private var severityBadge: some View {
-        Text(issue.severity.description.capitalized)
-            .font(.caption)
-            .fontWeight(.semibold)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(severityColor.opacity(0.2))
-            .foregroundStyle(severityColor)
-            .cornerRadius(6)
-    }
-
-    /// Single source of truth — see `LogSeverity.tint` in Presentation.swift.
-    private var severityColor: Color {
-        issue.severity.tint
+        .contentShape(Rectangle())
     }
 }
 
@@ -329,7 +331,34 @@ struct StatBadgeView: View {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+private struct NoIssuesView: View {
+    var body: some View {
+        ContentUnavailableView {
+            Image(systemName: "text.page.badge.magnifyingglass")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 210, height: 120)
+                .padding(.bottom, 16)
+        } description: {
+            VStack(spacing: 8) {
+                Text("No issues detected in your logs yet")
+                    .font(.title2)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .opacity(0.9)
+                Text("Nothing to report here. Warnings, errors and faults show up here once they are logged.")
+                    .font(.title3)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 32)
+            }
+            .padding(.horizontal, 16)
+        } actions: {}
+    }
+}
+
 #Preview {
     @Previewable @State var mock = MockLogR()
     NavigationStack {
