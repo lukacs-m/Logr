@@ -113,14 +113,16 @@ public protocol LogRService: Observable, Sendable {
     /// entries cannot be encrypted. ``PersistenceStatus/disabled`` when no storage is configured.
     @MainActor var persistenceStatus: PersistenceStatus { get }
 
-    /// The latest ``scanForPrivacyIssues(detectors:)`` result the service published, `nil` before the first.
+    /// The latest ``scanForPrivacyIssues(detectors:)`` result the service published, `nil` before the first and
+    /// after ``clearLogs()``.
     ///
-    /// ``LogR`` publishes every completed scan; the default implementation of ``scanForPrivacyIssues(detectors:)``
-    /// only returns its result, so a conformer relying on it reports `nil` here.
+    /// ``LogR`` publishes every completed scan not started before a ``clearLogs()``; the default implementation of
+    /// ``scanForPrivacyIssues(detectors:)`` only returns its result, so a conformer relying on it reports `nil`
+    /// here.
     @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? { get }
 
     /// The result of the latest ``summarizeIssues()``: when calls overlap, the most recently started one that
-    /// succeeds. `nil` before the first.
+    /// succeeds. `nil` before the first and after ``clearLogs()``.
     @MainActor var logIssueSummary: LogIssueSummary? { get }
 
     /// The progress the analyzer of the newest ``summarizeIssues()`` call reports, `nil` once that call ends (when
