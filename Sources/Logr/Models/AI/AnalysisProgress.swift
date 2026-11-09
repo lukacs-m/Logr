@@ -7,22 +7,18 @@
 
 import Foundation
 
-/// Represents the progress of an AI analysis operation.
-///
-/// This struct tracks the current state of log analysis, including
-/// how many logs have been processed and the overall completion percentage.
-@available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
+/// How far ``LogRService/summarizeIssues()`` has got through the issue groups of a ``LogIssueDigest``.
 public struct AnalysisProgress: Sendable, Equatable {
-    /// The total number of logs being analyzed.
-    public let totalLogs: Int
+    /// The number of issue groups being summarized.
+    public let totalGroups: Int
 
-    /// The number of logs that have been analyzed so far.
-    public let analyzedLogs: Int
+    /// The number of issue groups summarized so far.
+    public let analyzedGroups: Int
 
-    /// The completion percentage (0.0 to 1.0).
+    /// The completion fraction (0.0 to 1.0).
     public var progress: Double {
-        guard totalLogs > 0 else { return 0 }
-        return Double(analyzedLogs) / Double(totalLogs)
+        guard totalGroups > 0 else { return 0 }
+        return Double(analyzedGroups) / Double(totalGroups)
     }
 
     /// The completion percentage as an integer (0 to 100).
@@ -30,29 +26,26 @@ public struct AnalysisProgress: Sendable, Equatable {
         Int(progress * 100)
     }
 
-    /// Whether the analysis is complete.
+    /// Whether every group has been summarized.
     public var isComplete: Bool {
-        analyzedLogs >= totalLogs
+        analyzedGroups >= totalGroups
     }
 
-    /// Creates a new analysis progress instance.
     /// - Parameters:
-    ///   - totalLogs: The total number of logs to analyze.
-    ///   - analyzedLogs: The number of logs analyzed so far.
-    public init(totalLogs: Int, analyzedLogs: Int) {
-        self.totalLogs = totalLogs
-        self.analyzedLogs = min(analyzedLogs, totalLogs)
+    ///   - totalGroups: The number of issue groups to summarize.
+    ///   - analyzedGroups: The number summarized so far, capped at `totalGroups`.
+    public init(totalGroups: Int, analyzedGroups: Int) {
+        self.totalGroups = totalGroups
+        self.analyzedGroups = min(analyzedGroups, totalGroups)
     }
 
-    /// An empty progress instance representing no analysis.
+    /// No analysis.
     public static var empty: AnalysisProgress {
-        AnalysisProgress(totalLogs: 0, analyzedLogs: 0)
+        AnalysisProgress(totalGroups: 0, analyzedGroups: 0)
     }
 
-    /// Creates a progress instance for the start of analysis.
-    /// - Parameter totalLogs: The total number of logs to analyze.
-    /// - Returns: A progress instance with zero analyzed logs.
-    public static func starting(totalLogs: Int) -> AnalysisProgress {
-        AnalysisProgress(totalLogs: totalLogs, analyzedLogs: 0)
+    /// The start of a summary over `totalGroups` issue groups.
+    public static func starting(totalGroups: Int) -> AnalysisProgress {
+        AnalysisProgress(totalGroups: totalGroups, analyzedGroups: 0)
     }
 }

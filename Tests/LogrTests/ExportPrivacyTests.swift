@@ -115,17 +115,14 @@ private final class LegacyExportService: LogRService {
         false
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? {
         nil
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var logIssueSummary: LogIssueSummary? {
         nil
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var analysisProgress: AnalysisProgress? {
         nil
     }
@@ -142,12 +139,6 @@ private final class LegacyExportService: LogRService {
 
     func flush() async {}
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
-        throw AIAnalyzerError.missingAnalyzer
-    }
-
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     func summarizeIssues() async throws -> LogIssueSummary {
         throw AIAnalyzerError.missingAnalyzer
     }

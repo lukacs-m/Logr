@@ -231,17 +231,14 @@ private final class StubLogService: LogRService {
         false
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var privacyAnalysisResult: PrivacyAnalysisResult? {
         nil
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var logIssueSummary: LogIssueSummary? {
         nil
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor var analysisProgress: AnalysisProgress? {
         nil
     }
@@ -293,12 +290,6 @@ private final class StubLogService: LogRService {
 
     func flush() async {}
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    @MainActor func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
-        throw CancellationError()
-    }
-
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     @MainActor func summarizeIssues() async throws -> LogIssueSummary {
         throw CancellationError()
     }

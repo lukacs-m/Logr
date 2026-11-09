@@ -55,74 +55,14 @@ public struct GenerationConfig {
 
 @Observable
 public final class MockLogR: LogRService, Sendable {
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public var privacyAnalysisResult: PrivacyAnalysisResult? {
-        PrivacyAnalysisResult(warnings: [
-            PrivacyWarning(file: "LoginViewController.swift",
-                           line: 42,
-                           exposureType: "email",
-                           exposedContent: "user@example.com",
-                           explanation: "Email address is being logged in plain text, which could expose user identity.",
-                           severity: .high,
-                           recommendation: "Remove email logging or use hashed/redacted versions."),
-            PrivacyWarning(file: "PaymentService.swift",
-                           line: 158,
-                           exposureType: "credit card",
-                           exposedContent: "4532-1234-5678-1234",
-                           explanation: "Full credit card number detected in logs - severe PCI compliance violation.",
-                           severity: .critical,
-                           recommendation: "Never log credit card numbers. Implement PCI-DSS compliant logging.")
-        ],
-        summary: "Found 2 potential privacy exposures: 1 critical, 1 high severity.",
-        criticalCount: 1,
-        highCount: 1)
+        Self.samplePrivacyResult
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public var logIssueSummary: LogIssueSummary? {
-        LogIssueSummary(executiveSummary: "Analyzed 45 errors, 23 warnings, and 3 faults. Found 12 distinct issues: 2 critical, 4 high severity. Immediate action required on critical issues.",
-                        issues: [
-                            LogIssue(category: "error",
-                                     title: "Network timeout in API requests",
-                                     description: "Multiple API requests are timing out after 30 seconds, causing poor user experience.",
-                                     file: "NetworkManager.swift",
-                                     line: 156,
-                                     occurrences: 23,
-                                     severity: .high,
-                                     suggestedFix: "Implement retry logic with exponential backoff and reduce timeout to 15s."),
-                            LogIssue(category: "crash",
-                                     title: "Force unwrap causing crashes",
-                                     description: "Optional value is being force unwrapped without safety checks, leading to runtime crashes.",
-                                     file: "DataParser.swift",
-                                     line: 89,
-                                     occurrences: 5,
-                                     severity: .critical,
-                                     suggestedFix: "Use optional binding (if let) or nil coalescing instead of force unwrap."),
-                            LogIssue(category: "performance",
-                                     title: "Main thread blocked by heavy computation",
-                                     description: "Image processing is running on main thread causing UI freezes.",
-                                     file: "ImageProcessor.swift",
-                                     line: 234,
-                                     occurrences: 12,
-                                     severity: .medium,
-                                     suggestedFix: "Move image processing to background queue using DispatchQueue.global().")
-                        ],
-                        totalErrors: 45,
-                        totalWarnings: 23,
-                        totalFaults: 3,
-                        patterns: [
-                            "3 error issues detected across multiple locations",
-                            "High frequency of network-related errors during peak hours",
-                            "Memory warnings correlate with image processing operations"
-                        ],
-                        priorityActions: [
-                            "Force unwrap causing crashes (DataParser.swift:89)",
-                            "Network timeout in API requests (NetworkManager.swift:156)",
-                            "Memory leak in cache manager (CacheManager.swift:201)"
-                        ])
+        Self.sampleIssueSummary
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public var analysisProgress: AnalysisProgress? {
         nil
     }
@@ -211,72 +151,70 @@ public final class MockLogR: LogRService, Sendable {
 
     public func flush() async {}
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    public func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
-        PrivacyAnalysisResult(warnings: [
-            PrivacyWarning(file: "LoginViewController.swift",
-                           line: 42,
-                           exposureType: "email",
-                           exposedContent: "user@example.com",
-                           explanation: "Email address is being logged in plain text, which could expose user identity.",
-                           severity: .high,
-                           recommendation: "Remove email logging or use hashed/redacted versions."),
-            PrivacyWarning(file: "PaymentService.swift",
-                           line: 158,
-                           exposureType: "credit card",
-                           exposedContent: "4532-1234-5678-1234",
-                           explanation: "Full credit card number detected in logs - severe PCI compliance violation.",
-                           severity: .critical,
-                           recommendation: "Never log credit card numbers. Implement PCI-DSS compliant logging.")
-        ],
-        summary: "Found 2 potential privacy exposures: 1 critical, 1 high severity.",
-        criticalCount: 1,
-        highCount: 1)
+    public func scanForPrivacyIssues(detectors: [PrivacyDetector]) async -> PrivacyAnalysisResult {
+        Self.samplePrivacyResult
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     public func summarizeIssues() async throws -> LogIssueSummary {
-        LogIssueSummary(executiveSummary: "Analyzed 45 errors, 23 warnings, and 3 faults. Found 12 distinct issues: 2 critical, 4 high severity. Immediate action required on critical issues.",
-                        issues: [
-                            LogIssue(category: "error",
-                                     title: "Network timeout in API requests",
-                                     description: "Multiple API requests are timing out after 30 seconds, causing poor user experience.",
-                                     file: "NetworkManager.swift",
-                                     line: 156,
-                                     occurrences: 23,
-                                     severity: .high,
-                                     suggestedFix: "Implement retry logic with exponential backoff and reduce timeout to 15s."),
-                            LogIssue(category: "crash",
-                                     title: "Force unwrap causing crashes",
-                                     description: "Optional value is being force unwrapped without safety checks, leading to runtime crashes.",
-                                     file: "DataParser.swift",
-                                     line: 89,
-                                     occurrences: 5,
-                                     severity: .critical,
-                                     suggestedFix: "Use optional binding (if let) or nil coalescing instead of force unwrap."),
-                            LogIssue(category: "performance",
-                                     title: "Main thread blocked by heavy computation",
-                                     description: "Image processing is running on main thread causing UI freezes.",
-                                     file: "ImageProcessor.swift",
-                                     line: 234,
-                                     occurrences: 12,
-                                     severity: .medium,
-                                     suggestedFix: "Move image processing to background queue using DispatchQueue.global().")
-                        ],
-                        totalErrors: 45,
-                        totalWarnings: 23,
-                        totalFaults: 3,
-                        patterns: [
-                            "3 error issues detected across multiple locations",
-                            "High frequency of network-related errors during peak hours",
-                            "Memory warnings correlate with image processing operations"
-                        ],
-                        priorityActions: [
-                            "Force unwrap causing crashes (DataParser.swift:89)",
-                            "Network timeout in API requests (NetworkManager.swift:156)",
-                            "Memory leak in cache manager (CacheManager.swift:201)"
-                        ])
+        Self.sampleIssueSummary
     }
+
+    private static let samplePrivacyResult = PrivacyAnalysisResult(warnings: [
+        PrivacyWarning(file: "Payments/PaymentService.swift", line: 158, detector: "Payment card",
+                       severity: .critical, occurrences: 3,
+                       excerpt: "Charging [Payment card] for order 1042", field: "message"),
+        PrivacyWarning(file: "Auth/LoginViewController.swift", line: 42, detector: "Email address",
+                       severity: .high, occurrences: 12,
+                       excerpt: "Signed in as [Email address]", field: "message"),
+        PrivacyWarning(file: "Sync/SyncClient.swift", line: 77, detector: "IP address", severity: .medium,
+                       occurrences: 1, excerpt: "peer=[IP address]", field: "peer")
+    ],
+    summary: "3 call sites log sensitive values: 1 critical, 1 high severity.",
+    criticalCount: 1,
+    highCount: 1)
+
+    private static let sampleIssueSummary: LogIssueSummary = {
+        func group(_ id: String, _ level: LogLevel, _ category: LogCategory, _ file: String, _ line: Int,
+                   _ template: String, _ count: Int) -> LogIssueGroup {
+            LogIssueGroup(id: id, level: level, category: category, file: file, line: line, template: template,
+                          count: count, firstSeen: .now.addingTimeInterval(-3_600), lastSeen: .now,
+                          sampleMessage: template.replacingOccurrences(of: "<number>", with: "30"))
+        }
+        return LogIssueSummary(executiveSummary: "Network timeouts and a recurring crash dominate the recent errors. "
+            + "Fix the force unwrap in the parser first, then add retries to API requests.",
+            issues: [
+                LogIssue(group: group("6f1c2a9b0d3e4f51", .fault, .database,
+                                      "Data/DataParser.swift", 89,
+                                      "Unexpectedly found nil while decoding <string>", 5),
+                         title: "Force unwrap causing crashes",
+                         explanation: "An optional value is force unwrapped without a check.",
+                         suggestedFix: "Use optional binding or a default value instead of a force unwrap.",
+                         severity: .critical),
+                LogIssue(group: group("0a7e3c5d9b1f2468", .error, .network,
+                                      "Network/NetworkManager.swift", 156,
+                                      "Request timed out after <number> s", 23),
+                         title: "Network timeout in API requests",
+                         explanation: "API requests time out after 30 seconds.",
+                         suggestedFix: "Retry with exponential backoff and lower the timeout to 15 s.",
+                         severity: .high),
+                LogIssue(group: group("c4b2e8f0a6d1937e", .warning, .performance,
+                                      "UI/ImageProcessor.swift", 234,
+                                      "Image processing took <number> ms on the main thread",
+                                      12),
+                         title: "Main thread blocked by image processing",
+                         explanation: "Image processing runs on the main thread and freezes the UI.",
+                         suggestedFix: "Move image processing to a background task.",
+                         severity: .medium)
+            ],
+            totalErrors: 23,
+            totalWarnings: 12,
+            totalFaults: 5,
+            patterns: ["network: 2 issues, 31 entries"],
+            priorityActions: [
+                "Replace the force unwrap in the data parser",
+                "Add retries with backoff to API requests"
+            ])
+    }()
 
     // MARK: - Instant Generation
 

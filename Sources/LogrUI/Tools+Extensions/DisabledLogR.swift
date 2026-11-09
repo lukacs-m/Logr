@@ -14,7 +14,7 @@ import Logr
 /// environment key when no real logger has been injected.
 ///
 /// Every logging call is silently discarded, the log cache is always empty, and
-/// AI analysis reports as unavailable. This lets `LogrUI` views render a safe,
+/// issue summaries report as unavailable. This lets `LogrUI` views render a safe,
 /// empty state instead of forcing an optional environment value (and the side
 /// effects of constructing a real ``LogR`` as a default).
 ///
@@ -34,17 +34,14 @@ final class DisabledLogR: LogRService {
         0
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     var privacyAnalysisResult: PrivacyAnalysisResult? {
         nil
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     var logIssueSummary: LogIssueSummary? {
         nil
     }
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     var analysisProgress: AnalysisProgress? {
         nil
     }
@@ -63,12 +60,6 @@ final class DisabledLogR: LogRService {
 
     func flush() async {}
 
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
-    func scanForPrivacyIssues() async throws -> PrivacyAnalysisResult {
-        throw AIAnalyzerError.missingAnalyzer
-    }
-
-    @available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *)
     func summarizeIssues() async throws -> LogIssueSummary {
         throw AIAnalyzerError.missingAnalyzer
     }

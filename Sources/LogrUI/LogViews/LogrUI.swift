@@ -17,7 +17,7 @@ import UniformTypeIdentifiers
 /// - Real-time log display with automatic updates
 /// - Advanced filtering by level, category, and search text
 /// - Export and sharing in multiple formats (JSON, CSV, TXT)
-/// - AI-powered privacy scanning and issue summarization (iOS 26+)
+/// - Privacy scanning and issues grouped by call site, explained by Apple Intelligence where available
 /// - Expandable/collapsible log entries
 /// - Clear all logs functionality
 ///
@@ -55,9 +55,9 @@ import UniformTypeIdentifiers
 /// - Clear all logs with confirmation (and captured HTTP bodies, given a `\.networkLogger`)
 /// - Browse recorded HTTP requests in ``NetworkLogView``
 ///
-/// **AI Analysis** (iOS 26+)
+/// **Analysis**
 /// - Scan for privacy issues and PII exposure
-/// - Summarize critical issues and patterns
+/// - Review warnings, errors and faults grouped by call site, explained by Apple Intelligence (iOS and macOS 26+)
 ///
 /// ## Complete Example
 ///
@@ -124,7 +124,7 @@ public struct LogViewer: View {
 
     /// The optional parts of the viewer.
     public enum Functionalities: Equatable, CaseIterable {
-        /// The "Analyze logs" menu, shown while the service can analyse logs.
+        /// The "Analyze logs" menu: the privacy scan and the issue summary.
         case analyser
         /// Export and sharing.
         case sharing
@@ -213,20 +213,12 @@ public struct LogViewer: View {
             FilterSheet()
                 .environment(logFilterPreferences)
         case .privacyLogChecks:
-            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *) {
-                NavigationStack {
-                    PrivacyWarningsView()
-                }
-            } else {
-                NonAccessibleFeatureView()
+            NavigationStack {
+                PrivacyWarningsView()
             }
         case .issuesSummary:
-            if #available(iOS 26.0, macOS 26.0, tvOS 26.0, watchOS 26.0, *) {
-                NavigationStack {
-                    IssueSummaryView()
-                }
-            } else {
-                NonAccessibleFeatureView()
+            NavigationStack {
+                IssueSummaryView()
             }
         case .statistics:
             NavigationStack {
@@ -425,39 +417,37 @@ private extension LogViewer {
 
     @ViewBuilder
     var logAnalyzeMenu: some View {
-        if logr.canAnalyseLogs {
-            LogActionsMenu {
-                Button {
-                    presentedSheet = .privacyLogChecks
-                } label: {
-                    Label {
-                        Text("Scan for Privacy Issues")
-                    } icon: {
-                        Image(systemName: "eye.trianglebadge.exclamationmark.fill")
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, .red)
-                    }
-                }
-                .disabled(logr.recentLogs.isEmpty)
-
-                Button {
-                    presentedSheet = .issuesSummary
-                } label: {
-                    Label {
-                        Text("Summarize Issues")
-                    } icon: {
-                        Image(systemName: "chart.bar.doc.horizontal.fill")
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.blue)
-                    }
-                }
-                .disabled(logr.recentLogs.isEmpty)
+        LogActionsMenu {
+            Button {
+                presentedSheet = .privacyLogChecks
             } label: {
-                Text("Analyze logs")
+                Label {
+                    Text("Scan for Privacy Issues")
+                } icon: {
+                    Image(systemName: "eye.trianglebadge.exclamationmark.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .red)
+                }
             }
             .disabled(logr.recentLogs.isEmpty)
-            Divider()
+
+            Button {
+                presentedSheet = .issuesSummary
+            } label: {
+                Label {
+                    Text("Summarize Issues")
+                } icon: {
+                    Image(systemName: "chart.bar.doc.horizontal.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.blue)
+                }
+            }
+            .disabled(logr.recentLogs.isEmpty)
+        } label: {
+            Text("Analyze logs")
         }
+        .disabled(logr.recentLogs.isEmpty)
+        Divider()
     }
 
     @ViewBuilder
@@ -546,22 +536,6 @@ private struct NetworkSheet: View {
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 560)
         #endif
-    }
-}
-
-private struct NonAccessibleFeatureView: View {
-    var body: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 8) {
-                Text("Missing Feature")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-
-                Text("AI Intelligence tool are only available on from iOS 26 and above.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 }
 

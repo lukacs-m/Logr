@@ -73,13 +73,19 @@ The `LogrUI` module adds a SwiftUI viewer, statistics views and a mock service f
 - ``ShareItem``
 - ``LogExportError``
 
-### AI analysis
+### Privacy scan
 
+- ``PrivacyDetector``
+- ``PrivacyAnalysisResult``
+- ``PrivacyWarning``
+
+### Issues and AI summary
+
+- ``LogIssueDigest``
+- ``LogIssueGroup``
 - ``LogAIAnalyzer``
 - ``AIAnalyzer``
 - ``AnalyzerConfiguration``
-- ``PrivacyAnalysisResult``
-- ``PrivacyWarning``
 - ``LogIssueSummary``
 - ``LogIssue``
 - ``LogSeverity``

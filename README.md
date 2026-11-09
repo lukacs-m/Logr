@@ -6,8 +6,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Persistent, encrypted logging for Apple platforms, built on OSLog. Logs survive restarts, are
-encrypted at rest with Keychain-backed keys, can be browsed in a drop-in SwiftUI viewer, and on
-iOS 26+ can be analysed on-device by Apple Intelligence.
+encrypted at rest with Keychain-backed keys, can be browsed in a drop-in SwiftUI viewer, are scanned
+for leaked values and grouped into issues on every platform, and on iOS and macOS 26+ the issues can be
+explained on-device by Apple Intelligence.
 
 - **Log from anywhere**: logging is `nonisolated`, no `await`, safe from any actor or thread; persistence runs on a background actor
 - **Five modules**: `Logr` (core), `LogrUI` (viewer, statistics, mock), `LogrSwiftLog` (swift-log handler), `LogrNetwork` (HTTP capture) and `LogrTesting` (test doubles)
@@ -18,8 +19,8 @@ iOS 26+ can be analysed on-device by Apple Intelligence.
 ## Installation
 
 Requires a Swift 6.3 toolchain. Platforms: iOS 17, macOS 14, tvOS 17, watchOS 10.
-Native AI analysis needs iOS 26 or macOS 26 and an available Apple Intelligence model.
-On tvOS and watchOS, core logging remains available and the native analyzer reports unavailable.
+Apple Intelligence summaries need iOS, macOS or visionOS 26 and an available model; on tvOS and
+watchOS the native analyzer reports unavailable. The privacy scan and the issue digest work everywhere.
 The native file exporter is available on iOS and macOS.
 
 ```swift
@@ -229,25 +230,35 @@ Custom backends conform to `LogRPersistence`, custom encryption to `LoggerCrypto
 Both protocol docs carry a worked example. Opt-in `String` helpers such as `redactedEmail()`,
 `maskedCreditCard()` and `hashed()` keep sensitive values out of messages.
 
-## AI analysis (iOS 26+)
+## Privacy scan and issue summary
 
 ```swift
-if #available(iOS 26.0, macOS 26.0, *) {
-    let logger = LogR(logAnalyser: AIAnalyzer())
-    Task { @MainActor in
-        do {
-            let privacy = try await logger.scanForPrivacyIssues()
-            let issues = try await logger.summarizeIssues()
-            print(privacy.summary, issues.executiveSummary)
-        } catch {
-            print("Analysis failed: \(error)")
-        }
+let logger = if #available(iOS 26.0, macOS 26.0, *) {
+    LogR(storage: .sqlite(), logAnalyser: AIAnalyzer())
+} else {
+    LogR(storage: .sqlite())
+}
+Task { @MainActor in
+    let leaks = await logger.scanForPrivacyIssues()   // every platform, no model
+    let digest = await logger.issueDigest()            // warnings, errors and faults by call site
+    print(leaks.summary, digest.groups.count)
+    guard logger.canAnalyseLogs else { return }
+    do {
+        let summary = try await logger.summarizeIssues()   // Apple Intelligence explains the top 40 groups
+        print(summary.executiveSummary)
+    } catch {
+        print("Summary failed: \(error)")
     }
 }
 ```
 
-Results are also published as `privacyAnalysisResult`, `logIssueSummary` and `analysisProgress`.
-`LogViewer` shows an "Analyze logs" menu whenever `canAnalyseLogs` is true.
+The scan looks for payment cards (Luhn), JWTs, API keys, credentials, emails, phone numbers, IBANs,
+US SSNs, IP addresses, coordinates, street addresses and high-entropy tokens in messages and metadata;
+values logged with `privacy: .private` are not leaks. Add your own with
+`scanForPrivacyIssues(detectors: PrivacyDetector.builtIn + [mine])`. The model only sees the digest,
+and file, line and counts always come from it. Results are published as `privacyAnalysisResult`,
+`logIssueSummary` and `analysisProgress`. `LogViewer`'s "Analyze logs" menu works everywhere and offers
+the Apple Intelligence explanation while `canAnalyseLogs` is true.
 
 ## Testing
 
@@ -279,11 +290,12 @@ Data flow: `log()` → lock-protected cache (and OSLog) → `LogWriterActor` →
 | Path | What lives there |
 |---|---|
 | `Sources/Logr/LogR.swift` | `LogR`: the cache, coalesced observation, the cleanup timer, and the private `LogWriterActor` (opens the storage in the background and holds entries while the key or storage cannot be read; encrypt → batch of 50 or one-second partial-batch deadline → store; 3 attempts with backoff; 100,000-entry backpressure cap, every drop counted in `droppedLogCount`) |
-| `Sources/Logr/Protocols/` | `LogRService` (public API plus `getLogs`, `exportLogs`, `logStatistics`), `LogRPersistence`, `LogAIAnalyzer` |
+| `Sources/Logr/Protocols/` | `LogRService` (public API plus `getLogs`, `exportLogs`, `logStatistics`, `scanForPrivacyIssues`, `issueDigest`), `LogRPersistence`, `LogAIAnalyzer` |
 | `Sources/Logr/Models/` | `LogEntry`, `LogEntries`, `LogMessage`, `LogPrivacy`, `LogContext`, `LogLevel`, `LogCategory`, `LogMetadataValue`, `LogStorage`, `PersistenceStatus`, `LogrConfiguration`, `LogStatistics`, `ExportFormat`, AI result types, errors |
 | `Sources/Logr/Tools/` | `LoggerCryptoService`, `KeychainStore` and `SystemKeychainStore`, `FileSystemStorage`, `SQLiteStorage`, `SafeMutex` |
 | `Sources/Logr/Utilities/` | `String` redaction helpers |
-| `Sources/Logr/AI/` | `AIAnalyzer`: FoundationModels, chunked and parallel, iOS 26+ |
+| `Sources/Logr/Analysis/` | `PrivacyScanner` and the `PrivacyDetector`s, `LogIssueDigest` |
+| `Sources/Logr/AI/` | `AIAnalyzer`: FoundationModels, chunks sized to the context window, iOS 26+ |
 | `Sources/LogrUI/LogViews/` | `LogViewer`, its filter and export sheets, the entry row |
 | `Sources/LogrUI/Statistics/` | `LogStatisticsView`, `CompactLogStatisticsView` |
 | `Sources/LogrUI/AIAnalysisViews/` | Privacy warnings, issue summary and progress views |

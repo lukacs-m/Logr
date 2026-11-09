@@ -251,7 +251,7 @@ struct SettingsView: View {
                 featureItem("SQLite Persistence", icon: "externaldrive.fill")
                 featureItem("AES-256 or CHACHA Encryption", icon: "lock.shield.fill")
                 featureItem("SwiftUI Log Viewer", icon: "list.bullet.rectangle")
-                featureItem("AI Analysis (iOS 26+)", icon: "brain")
+                featureItem("Privacy scan, issue digest, AI summary (26+)", icon: "brain")
                 featureItem("Export (JSON/CSV/TXT)", icon: "square.and.arrow.up")
             }
         } header: {
