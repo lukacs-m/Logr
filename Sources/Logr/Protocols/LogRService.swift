@@ -197,7 +197,9 @@ public protocol LogRService: Observable, Sendable {
     ///
     /// ``LogR`` clears memory at once, and storage even while the encryption key cannot be read. When the storage
     /// itself cannot be opened yet (see ``persistenceStatus``), it returns and clears the storage as soon as it
-    /// opens; entries logged before the call are never written.
+    /// opens; entries logged before the call are never written. It also resets ``privacyAnalysisResult``,
+    /// ``logIssueSummary`` and ``analysisProgress``: a scan or summary started before the call still returns its
+    /// result but no longer publishes it.
     ///
     /// - Throws: Storage-related errors if the operation fails.
     ///

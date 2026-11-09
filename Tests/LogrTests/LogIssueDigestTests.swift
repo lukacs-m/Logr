@@ -288,6 +288,63 @@ struct IssueSummaryAssemblyTests {
         #expect(logger.logIssueSummary == nil)
     }
 
+    @Test @MainActor func clearingLogsResetsPublishedAnalysis() async throws {
+        let logger = LogR(logAnalyser: FakeAnalyzer(), cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
+                          configuration: LogrConfiguration(mirrorToOSLog: false))
+        logger.error("Signed in as jane@example.com")
+        try await logger.summarizeIssues()
+        await logger.scanForPrivacyIssues()
+        #expect(logger.logIssueSummary != nil)
+        #expect(logger.privacyAnalysisResult != nil)
+
+        try await logger.clearLogs()
+
+        #expect(logger.logIssueSummary == nil)
+        #expect(logger.privacyAnalysisResult == nil)
+    }
+
+    @Test @MainActor func aSummaryStartedBeforeAClearIsNotPublished() async throws {
+        let analyzer = HeldAnalyzer()
+        let logger = LogR(logAnalyser: analyzer, cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
+                          configuration: LogrConfiguration(mirrorToOSLog: false))
+        logger.error("Upload failed")
+        let summary = Task { try await logger.summarizeIssues() }
+        while await !analyzer.isHolding(1) {
+            await Task.yield()
+        }
+
+        try await logger.clearLogs()
+        #expect(logger.analysisProgress == nil)
+        await analyzer.release(1)
+
+        _ = try await summary.value
+        #expect(logger.logIssueSummary == nil)
+        #expect(logger.analysisProgress == nil)
+    }
+
+    @Test @MainActor func aScanStartedBeforeAClearIsNotPublished() async throws {
+        let logger = LogR(cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
+                          configuration: LogrConfiguration(mirrorToOSLog: false))
+        logger.error("Upload failed")
+        let (started, startedContinuation) = AsyncStream<Void>.makeStream()
+        let gate = DispatchSemaphore(value: 0)
+        let held = PrivacyDetector(name: "Held", severity: .high) { text in
+            startedContinuation.yield()
+            gate.wait()
+            return [text.startIndex..<text.endIndex]
+        }
+        let scan = Task { await logger.scanForPrivacyIssues(detectors: [held]) }
+        for await _ in started {
+            break
+        }
+
+        try await logger.clearLogs()
+        gate.signal()
+
+        #expect(await scan.value.warnings.count == 1)
+        #expect(logger.privacyAnalysisResult == nil)
+    }
+
     @Test @MainActor func withoutAnAnalyzerSummariesThrow() async {
         let logger = LogR(cryptoService: LoggerCryptoService(store: InMemoryKeychainStore()),
                           configuration: LogrConfiguration(mirrorToOSLog: false))

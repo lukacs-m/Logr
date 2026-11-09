@@ -98,7 +98,7 @@ public final class LogR: LogRService {
     @MainActor public private(set) var analysisProgress: AnalysisProgress?
 
     /// Counts ``summarizeIssues()`` calls: only the newest one reports progress, and a result is published unless
-    /// a newer call published first.
+    /// a newer call published first. ``clearLogs()`` bumps both, so no earlier call reports or publishes.
     @ObservationIgnored @MainActor private var summaryRuns = 0
     @ObservationIgnored @MainActor private var publishedSummaryRun = 0
 
@@ -299,7 +299,14 @@ public extension LogR {
             // Supersede any in-flight startup load so it can't merge cleared entries back in.
             state.generation &+= 1
         }
-        await MainActor.run { notifyObservers() }
+        await MainActor.run {
+            summaryRuns += 1
+            publishedSummaryRun = summaryRuns
+            analysisProgress = nil
+            logIssueSummary = nil
+            privacyAnalysisResult = nil
+            notifyObservers()
+        }
         // Clear persisted storage *through the writer* so the clear is ordered against in-flight
         // writes: every entry ingested before this call (including any still buffered in the writer)
         // is discarded. A `log()` that races this `await` is the one ambiguous case: if its
@@ -323,9 +330,10 @@ public extension LogR {
 public extension LogR {
     @MainActor @discardableResult
     func scanForPrivacyIssues(detectors: [PrivacyDetector]) async -> PrivacyAnalysisResult {
-        let result = await PrivacyScanner.scan(recentLogs, detectors: detectors)
+        let (logs, generation) = cache.withLock { (LogEntries($0.entries), $0.generation) }
+        let result = await PrivacyScanner.scan(logs, detectors: detectors)
         // A cancelled scan stopped early: publishing it could show a partial count as the latest result.
-        guard !Task.isCancelled else { return result }
+        guard !Task.isCancelled, cache.withLock({ $0.generation }) == generation else { return result }
         privacyAnalysisResult = result
         return result
     }

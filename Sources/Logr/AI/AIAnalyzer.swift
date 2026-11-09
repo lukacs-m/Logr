@@ -221,6 +221,20 @@ extension AIAnalyzer {
         return issues
     }
 
+    /// Both halves of `items` explained in order; an ``AIAnalyzerError`` from the second half keeps the first
+    /// half's issues, unless it explained none.
+    static func split<Item, Issue>(_ items: [Item],
+                                   using explain: ([Item]) async throws -> [String: Issue]) async throws
+        -> [String: Issue] {
+        let half = items.count / 2
+        let first = try await explain(Array(items[..<half]))
+        do {
+            return try await first.merging(explain(Array(items[half...]))) { first, _ in first }
+        } catch is AIAnalyzerError where !first.isEmpty {
+            return first
+        }
+    }
+
     /// Issues for one chunk, keyed by group id; empty when the model will not explain these groups.
     private func issues(for chunk: [LogIssueGroup], withSamples: Bool = true) async throws -> [String: LogIssue] {
         // Also between the requests of a split chunk.
@@ -244,9 +258,7 @@ extension AIAnalyzer {
             // Overflows and refusals split down to the group at fault, retried once without its sample.
             _ = try Self.failure(error)
             if chunk.count > 1 {
-                let half = chunk.count / 2
-                return try await issues(for: Array(chunk[..<half]), withSamples: withSamples)
-                    .merging(issues(for: Array(chunk[half...]), withSamples: withSamples)) { first, _ in first }
+                return try await Self.split(chunk) { try await issues(for: $0, withSamples: withSamples) }
             }
             return withSamples ? try await issues(for: chunk, withSamples: false) : [:]
         }

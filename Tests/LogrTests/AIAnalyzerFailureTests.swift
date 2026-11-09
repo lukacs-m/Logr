@@ -98,5 +98,30 @@ struct AIAnalyzerChunkRunTests {
             } onChunk: { _ in }
         }
     }
+
+    @available(macOS 26.0, iOS 26.0, *)
+    @Test func aSplitKeepsTheFirstHalfWhenTheSecondFails() async throws {
+        let explained = try await AIAnalyzer.split(["a", "b", "c"]) { half in
+            guard half == ["a"] else { throw AIAnalyzerError.rateLimited }
+            return ["a": "A"]
+        }
+        #expect(explained == ["a": "A"])
+    }
+
+    @available(macOS 26.0, iOS 26.0, *)
+    @Test func aSplitThrowsWhenNothingWasExplained() async {
+        await #expect(throws: AIAnalyzerError.self) {
+            _ = try await AIAnalyzer.split(["a", "b"]) { half -> [String: String] in
+                guard half == ["a"] else { throw AIAnalyzerError.rateLimited }
+                return [:]
+            }
+        }
+        await #expect(throws: CancellationError.self) {
+            _ = try await AIAnalyzer.split(["a", "b"]) { half -> [String: String] in
+                guard half == ["a"] else { throw CancellationError() }
+                return ["a": "A"]
+            }
+        }
+    }
 }
 #endif
