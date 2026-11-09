@@ -77,9 +77,9 @@ public extension PrivacyDetector {
         return Patterns.credential.matches(in: text).compactMap { match in
             let key = match.groups[1].lowercased()
             let value = match.groups[3]
+            let placeholders = ["nil", "null", "none", "true", "false", "undefined", "redacted", "hidden", "empty"]
             guard value.count >= 3, !value.allSatisfy("*x•-.".contains),
-                  !["nil", "null", "none", "true", "false", "undefined", "redacted", "hidden", "empty"]
-                  .contains(value.lowercased()) else { return nil }
+                  !placeholders.contains(value.lowercased()) else { return nil }
             if key.hasSuffix("token") || key.hasSuffix("key") {
                 guard value.contains(where: \.isNumber) else { return nil }
                 if key == "token", !match.groups[2].contains("="), !match.groups[2].contains("\"") {
